@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
-    "test": "node --test dist/project-memory-service.test.js"
+    "test": "node --test dist/*.test.js"
   },
   "dependencies": {
     "@mind-palace/protocol": "workspace:*"

@@ -1,5 +1,13 @@
 import { DatabaseSync } from "node:sqlite";
-import type { EventEnvelope, MemoryPayload, MemoryRecord, SyncCursor } from "@mind-palace/protocol";
+import type {
+  CanonicalMemoryUpdate,
+  EventEnvelope,
+  MemoryPayload,
+  MemoryRecord,
+  SyncApplyResult,
+  SyncCursor,
+  SyncPreview
+} from "@mind-palace/protocol";
 import { sqliteSchema } from "./schema.js";
 
 function parseMemory(row: Record<string, unknown>): MemoryRecord {
@@ -210,6 +218,97 @@ export class MindPalaceDatabase {
     });
   }
 
+  storeCanonicalUpdates(updates: CanonicalMemoryUpdate[]): number {
+    const statement = this.db.prepare(`
+      INSERT INTO sync_inbox (
+        update_id, space_id, memory_id, update_kind, required,
+        status, payload_json, fetched_at
+      ) VALUES (
+        @updateId, @spaceId, @memoryId, @updateKind, @required,
+        'pending', @payloadJson, @fetchedAt
+      )
+      ON CONFLICT(update_id) DO UPDATE SET
+        payload_json = excluded.payload_json,
+        update_kind = excluded.update_kind,
+        required = excluded.required
+      WHERE sync_inbox.status = 'pending'
+    `);
+    let stored = 0;
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      for (const update of updates) {
+        const result = statement.run({
+          updateId: update.updateId,
+          spaceId: update.spaceId,
+          memoryId: update.memoryId,
+          updateKind: update.kind,
+          required: update.required ? 1 : 0,
+          payloadJson: JSON.stringify(update),
+          fetchedAt: update.generatedAt
+        });
+        stored += Number(result.changes);
+      }
+      this.db.exec("COMMIT;");
+      return stored;
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  previewCanonicalUpdates(spaceId: string): SyncPreview {
+    const rows = this.db.prepare(`
+      SELECT payload_json FROM sync_inbox
+      WHERE space_id = ? AND status = 'pending'
+      ORDER BY required DESC, fetched_at ASC, update_id ASC
+    `).all(spaceId) as Record<string, unknown>[];
+    const pending = rows.map(
+      row => JSON.parse(String(row.payload_json)) as CanonicalMemoryUpdate
+    );
+    return {
+      spaceId,
+      pending,
+      requiredUpdateIds: pending.filter(update => update.required).map(update => update.updateId)
+    };
+  }
+
+  applyCanonicalUpdates(
+    spaceId: string,
+    selectedUpdateIds?: string[],
+    requiredOnly = false
+  ): SyncApplyResult {
+    const preview = this.previewCanonicalUpdates(spaceId);
+    const selected = selectedUpdateIds ? new Set(selectedUpdateIds) : null;
+    const updates = preview.pending.filter(update => {
+      if (requiredOnly) return update.required;
+      return update.required || selected === null || selected.has(update.updateId);
+    });
+    const markApplied = this.db.prepare(`
+      UPDATE sync_inbox SET status = 'applied', applied_at = ?
+      WHERE update_id = ? AND status = 'pending'
+    `);
+    let applied = 0;
+    let requiredApplied = 0;
+    const appliedUpdateIds: string[] = [];
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      for (const update of updates) {
+        this.upsertMemory(update.memory);
+        const result = markApplied.run(new Date().toISOString(), update.updateId);
+        if (Number(result.changes) === 0) continue;
+        applied += 1;
+        if (update.required) requiredApplied += 1;
+        appliedUpdateIds.push(update.updateId);
+      }
+      this.db.exec("COMMIT;");
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+    const remaining = this.previewCanonicalUpdates(spaceId).pending.length;
+    return { applied, requiredApplied, remaining, appliedUpdateIds };
+  }
+
   listPendingOutbox(limit = 50): EventEnvelope[] {
     const statement = this.db.prepare(`
       SELECT e.payload_json
@@ -377,4 +476,10 @@ export type {
   RememberMemoryInput,
   UpdateMemoryInput
 } from "./project-memory-service.js";
-export type { SyncRunResult, SyncTransport } from "./sync-client.js";
+export type {
+  FetchResult,
+  PublishResult,
+  SynchronizeResult,
+  SyncRunResult,
+  SyncTransport
+} from "./sync-client.js";

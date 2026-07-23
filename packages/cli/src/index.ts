@@ -51,6 +51,13 @@ Commands:
   list <db-path> <project-dir> [--all]             List project memories
   recall <db-path> <project-dir> <prompt>          Print relevant active memories
   sync <db-path> <project-dir> <url> <device-id>   Download and merge central memory updates
+  fetch <db-path> <project-dir> <url> <device-id>  Fetch updates without applying optional changes
+  preview <db-path> <project-dir>                  Preview fetched canonical updates
+  apply <db-path> <project-dir> [update-id...]     Apply selected updates; no IDs applies all
+  apply-claude <db-path> <project-dir> [update-id...]
+                                                     Apply selection and refresh Claude native memory
+  apply-codex <db-path> <project-dir> [update-id...]
+                                                     Apply selection and refresh Codex native memory
   sync-claude <db-path> <project-dir> <url> <device-id>
                                                      Sync and materialize into Claude Auto Memory
   sync-codex <db-path> <project-dir> <url> <device-id>
@@ -458,6 +465,9 @@ async function main(): Promise<void> {
     const { database } = openDatabase(rawDbPath);
     const activeMemories = database.listActiveMemories(resolvedSpace.space.spaceId).length;
     const pendingOutboxEvents = database.listPendingOutboxForSpace(resolvedSpace.space.spaceId).length;
+    const pendingRemoteUpdates = database.previewCanonicalUpdates(
+      resolvedSpace.space.spaceId
+    ).pending.length;
     console.log(JSON.stringify({
       state: "linked",
       space: {
@@ -466,7 +476,8 @@ async function main(): Promise<void> {
         name: resolvedSpace.space.displayName
       },
       activeMemories,
-      pendingOutboxEvents
+      pendingOutboxEvents,
+      pendingRemoteUpdates
     }, null, 2));
     return;
   }
@@ -594,6 +605,61 @@ async function main(): Promise<void> {
     if (!url || !deviceId) throw new Error("Usage: mind-palace sync <db-path> <project-dir> <url> <device-id>");
     const result = await new MindPalaceSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
     console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "fetch") {
+    const [url, deviceId] = rest;
+    if (!url || !deviceId) {
+      throw new Error("Usage: mind-palace fetch <db-path> <project-dir> <url> <device-id>");
+    }
+    const result = await new MindPalaceSyncClient(
+      database,
+      createSyncTransport(url)
+    ).fetch(space.spaceId, deviceId);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "preview") {
+    const preview = database.previewCanonicalUpdates(space.spaceId);
+    console.log(JSON.stringify(preview, null, 2));
+    return;
+  }
+  if (command === "apply") {
+    const selected = rest.filter(value => value !== "--all");
+    const result = database.applyCanonicalUpdates(
+      space.spaceId,
+      rest.includes("--all") || selected.length === 0 ? undefined : selected
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "apply-claude") {
+    const selected = rest.filter(value => value !== "--all");
+    const applied = database.applyCanonicalUpdates(
+      space.spaceId,
+      rest.includes("--all") || selected.length === 0 ? undefined : selected
+    );
+    const importer = new ClaudeAutoMemoryImporter();
+    const localNativeMemoryIds = new Set(
+      importer.import(space, projectPath).candidates.map(candidate => candidate.memoryId)
+    );
+    const allMemories = service.list(space);
+    const projectedMemories = allMemories.filter(memory => !localNativeMemoryIds.has(memory.memoryId));
+    const materialized = new ClaudeAutoMemoryMaterializer().materialize(
+      projectPath,
+      projectedMemories
+    );
+    console.log(JSON.stringify({ applied, materialized }, null, 2));
+    return;
+  }
+  if (command === "apply-codex") {
+    const selected = rest.filter(value => value !== "--all");
+    const applied = database.applyCanonicalUpdates(
+      space.spaceId,
+      rest.includes("--all") || selected.length === 0 ? undefined : selected
+    );
+    const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
+    console.log(JSON.stringify({ applied, materialized }, null, 2));
     return;
   }
   if (command === "sync-claude") {

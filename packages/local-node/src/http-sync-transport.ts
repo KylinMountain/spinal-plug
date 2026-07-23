@@ -1,4 +1,11 @@
-import type { SyncPullRequest, SyncPullResponse, SyncPushRequest, SyncPushResponse } from "@mind-palace/protocol";
+import type {
+  SyncFetchRequest,
+  SyncFetchResponse,
+  SyncPullRequest,
+  SyncPullResponse,
+  SyncPushRequest,
+  SyncPushResponse
+} from "@mind-palace/protocol";
 import type { SyncTransport } from "./sync-client.js";
 
 export class HttpSyncTransport implements SyncTransport {
@@ -20,6 +27,13 @@ export class HttpSyncTransport implements SyncTransport {
     if (request.cursor) query.set("cursor", request.cursor);
     if (request.limit) query.set("limit", String(request.limit));
     return this.request(`/v1/events:pull?${query.toString()}`);
+  }
+
+  async fetchUpdates(request: SyncFetchRequest): Promise<SyncFetchResponse> {
+    const query = new URLSearchParams({ space_id: request.spaceId, device_id: request.deviceId });
+    if (request.cursor) query.set("cursor", request.cursor);
+    if (request.limit) query.set("limit", String(request.limit));
+    return this.request(`/v1/updates:fetch?${query.toString()}`);
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {

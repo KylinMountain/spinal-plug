@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type {
+  SyncApplyResult,
+  SyncFetchRequest,
+  SyncFetchResponse,
+  SyncPreview,
   SyncPullRequest,
   SyncPullResponse,
   SyncPushRequest,
@@ -10,6 +14,7 @@ import { MindPalaceDatabase } from "./index.js";
 export interface SyncTransport {
   push(request: SyncPushRequest): Promise<SyncPushResponse>;
   pull(request: SyncPullRequest): Promise<SyncPullResponse>;
+  fetchUpdates(request: SyncFetchRequest): Promise<SyncFetchResponse>;
 }
 
 export interface SyncRunResult {
@@ -28,6 +33,14 @@ export interface PublishResult {
 export interface SynchronizeResult {
   pulled: number;
   applied: number;
+  cursor: string;
+}
+
+export interface FetchResult {
+  fetched: number;
+  stored: number;
+  requiredApplied: number;
+  pending: number;
   cursor: string;
 }
 
@@ -57,30 +70,72 @@ export class MindPalaceSyncClient {
     };
   }
 
-  /** Pull central events and apply them to this device's local materialized memory. */
+  /** Fetch all canonical changes and apply them for Follow Stable compatibility. */
   async synchronize(spaceId: string, deviceId: string, batchSize = 50): Promise<SynchronizeResult> {
-    let cursor = this.database.getCursor("device", deviceId, spaceId)?.lastEventId;
-    let pulled = 0;
-    let applied = 0;
+    const fetched = await this.fetch(spaceId, deviceId, batchSize);
+    const applied = this.apply(spaceId);
+    this.database.upsertCursor({
+      schema: "mind-palace.sync-cursor/v0.1",
+      cursorId: `cur_${randomUUID()}`,
+      scope: "device",
+      ownerId: deviceId,
+      spaceId,
+      lastEventId: fetched.cursor,
+      updatedAt: new Date().toISOString()
+    });
+    return {
+      pulled: fetched.fetched,
+      applied: fetched.requiredApplied + applied.applied,
+      cursor: fetched.cursor
+    };
+  }
+
+  /** Fetch canonical central changes into a durable inbox without applying them. */
+  async fetch(spaceId: string, deviceId: string, batchSize = 50): Promise<FetchResult> {
+    const cursorOwner = `fetch:${deviceId}`;
+    let cursor = this.database.getCursor("adapter", cursorOwner, spaceId)?.lastEventId
+      ?? this.database.getCursor("device", deviceId, spaceId)?.lastEventId;
+    let fetched = 0;
+    let stored = 0;
+    let requiredApplied = 0;
     let hasMore = true;
     while (hasMore) {
-      const pullResult = await this.transport.pull({ spaceId, deviceId, cursor, limit: batchSize });
-      pulled += pullResult.events.length;
-      applied += this.database.applyRemoteMemoryEvents(pullResult.events);
-      cursor = pullResult.nextCursor;
+      const result = await this.transport.fetchUpdates({
+        spaceId,
+        deviceId,
+        cursor,
+        limit: batchSize
+      });
+      fetched += result.updates.length;
+      stored += this.database.storeCanonicalUpdates(result.updates);
+      requiredApplied += this.database.applyCanonicalUpdates(spaceId, [], true).requiredApplied;
+      cursor = result.nextCursor;
       this.database.upsertCursor({
         schema: "mind-palace.sync-cursor/v0.1",
         cursorId: `cur_${randomUUID()}`,
-        scope: "device",
-        ownerId: deviceId,
+        scope: "adapter",
+        ownerId: cursorOwner,
         spaceId,
         lastEventId: cursor,
         updatedAt: new Date().toISOString()
       });
-      hasMore = pullResult.hasMore;
+      hasMore = result.hasMore;
     }
+    return {
+      fetched,
+      stored,
+      requiredApplied,
+      pending: this.preview(spaceId).pending.length,
+      cursor: cursor ?? "cur:0"
+    };
+  }
 
-    return { pulled, applied, cursor: cursor ?? "cur:0" };
+  preview(spaceId: string): SyncPreview {
+    return this.database.previewCanonicalUpdates(spaceId);
+  }
+
+  apply(spaceId: string, updateIds?: string[]): SyncApplyResult {
+    return this.database.applyCanonicalUpdates(spaceId, updateIds);
   }
 
   /** Legacy combined operation retained for existing M2 callers and tests. */
