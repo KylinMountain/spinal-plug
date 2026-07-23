@@ -1,0 +1,22 @@
+{
+  "name": "@mind-palace/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "mind-palace": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@mind-palace/adapter-claude-code": "workspace:*",
+    "@mind-palace/adapter-codex": "workspace:*",
+    "@mind-palace/adapter-sdk": "workspace:*",
+    "@mind-palace/local-node": "workspace:*",
+    "@mind-palace/protocol": "workspace:*",
+    "@mind-palace/sync-server": "workspace:*"
+  }
+}

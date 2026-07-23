@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../protocol" },
+    { "path": "../local-node" },
+    { "path": "../adapter-sdk" },
+    { "path": "../adapter-claude-code" },
+    { "path": "../adapter-codex" },
+    { "path": "../sync-server" }
+  ]
+}

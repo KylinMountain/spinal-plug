@@ -1,0 +1,33 @@
+import type { SyncPullRequest, SyncPullResponse, SyncPushRequest, SyncPushResponse } from "@mind-palace/protocol";
+import type { SyncTransport } from "./sync-client.js";
+
+export class HttpSyncTransport implements SyncTransport {
+  constructor(private readonly baseUrl: string) {}
+
+  async push(request: SyncPushRequest): Promise<SyncPushResponse> {
+    return this.request("/v1/events:push", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  }
+
+  async pull(request: SyncPullRequest): Promise<SyncPullResponse> {
+    const query = new URLSearchParams({ space_id: request.spaceId, device_id: request.deviceId });
+    if (request.cursor) query.set("cursor", request.cursor);
+    if (request.limit) query.set("limit", String(request.limit));
+    return this.request(`/v1/events:pull?${query.toString()}`);
+  }
+
+  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    const response = await fetch(new URL(path, this.baseUrl), init);
+    const body = await response.json() as T | { error?: string };
+    if (!response.ok) {
+      const message = typeof body === "object" && body !== null && "error" in body
+        ? (body as { error?: string }).error
+        : undefined;
+      throw new Error(message ?? `Sync request failed: ${response.status}`);
+    }
+    return body as T;
+  }
+}
