@@ -14,6 +14,18 @@ function parseMemory(row: Record<string, unknown>): MemoryRecord {
     howToApply: row.how_to_apply ? String(row.how_to_apply) : undefined,
     references: JSON.parse(String(row.references_json)) as string[],
     status: row.status as MemoryRecord["status"],
+    semanticKey: row.semantic_key ? String(row.semantic_key) : undefined,
+    origin: row.origin ? row.origin as MemoryRecord["origin"] : undefined,
+    confidence: row.confidence === null || row.confidence === undefined
+      ? undefined
+      : Number(row.confidence),
+    sourceEventIds: row.source_event_ids_json
+      ? JSON.parse(String(row.source_event_ids_json)) as string[]
+      : [],
+    supersededByMemoryId: row.superseded_by_memory_id
+      ? String(row.superseded_by_memory_id)
+      : undefined,
+    disputeId: row.dispute_id ? String(row.dispute_id) : undefined,
     createdFromEventId: String(row.created_from_event_id),
     lastUpdatedFromEventId: String(row.last_updated_from_event_id),
     createdAt: String(row.created_at),
@@ -32,6 +44,7 @@ export class MindPalaceDatabase {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec(sqliteSchema);
+    this.ensureMemoryColumns();
   }
 
   appendEvent(event: EventEnvelope): void {
@@ -76,11 +89,13 @@ export class MindPalaceDatabase {
       INSERT INTO memories (
         memory_id, space_id, kind, title, statement, why_text, how_to_apply,
         references_json, status, created_from_event_id, last_updated_from_event_id,
-        created_at, updated_at
+        semantic_key, origin, confidence, source_event_ids_json,
+        superseded_by_memory_id, dispute_id, created_at, updated_at
       ) VALUES (
         @memoryId, @spaceId, @kind, @title, @statement, @whyText, @howToApply,
         @referencesJson, @status, @createdFromEventId, @lastUpdatedFromEventId,
-        @createdAt, @updatedAt
+        @semanticKey, @origin, @confidence, @sourceEventIdsJson,
+        @supersededByMemoryId, @disputeId, @createdAt, @updatedAt
       )
       ON CONFLICT(memory_id) DO UPDATE SET
         kind = excluded.kind,
@@ -90,6 +105,12 @@ export class MindPalaceDatabase {
         how_to_apply = excluded.how_to_apply,
         references_json = excluded.references_json,
         status = excluded.status,
+        semantic_key = excluded.semantic_key,
+        origin = excluded.origin,
+        confidence = excluded.confidence,
+        source_event_ids_json = excluded.source_event_ids_json,
+        superseded_by_memory_id = excluded.superseded_by_memory_id,
+        dispute_id = excluded.dispute_id,
         last_updated_from_event_id = excluded.last_updated_from_event_id,
         updated_at = excluded.updated_at
     `);
@@ -104,6 +125,12 @@ export class MindPalaceDatabase {
       howToApply: memory.howToApply ?? null,
       referencesJson: JSON.stringify(memory.references),
       status: memory.status,
+      semanticKey: memory.semanticKey ?? null,
+      origin: memory.origin ?? null,
+      confidence: memory.confidence ?? null,
+      sourceEventIdsJson: JSON.stringify(memory.sourceEventIds ?? []),
+      supersededByMemoryId: memory.supersededByMemoryId ?? null,
+      disputeId: memory.disputeId ?? null,
       createdFromEventId: memory.createdFromEventId,
       lastUpdatedFromEventId: memory.lastUpdatedFromEventId,
       createdAt: memory.createdAt,
@@ -246,7 +273,17 @@ export class MindPalaceDatabase {
           why: payload.why,
           howToApply: payload.howToApply,
           references: payload.references ?? [],
-          status: event.eventType === "memory.deleted" ? "deleted" : "active",
+          status: event.eventType === "memory.deleted"
+            ? "deleted"
+            : event.eventType === "memory.candidate.created"
+              ? "candidate"
+              : event.eventType === "memory.promoted"
+                ? "active"
+                : existing?.status ?? "active",
+          semanticKey: payload.semanticKey ?? existing?.semanticKey,
+          origin: payload.origin ?? existing?.origin ?? "sync_import",
+          confidence: payload.confidence ?? existing?.confidence,
+          sourceEventIds: [...new Set([...(existing?.sourceEventIds ?? []), event.eventId])],
           createdFromEventId: existing?.createdFromEventId ?? event.eventId,
           lastUpdatedFromEventId: event.eventId,
           createdAt: existing?.createdAt ?? event.createdAt,
@@ -309,6 +346,24 @@ export class MindPalaceDatabase {
       idempotencyKey: event.idempotencyKey,
       payloadJson: JSON.stringify(event)
     });
+  }
+
+  private ensureMemoryColumns(): void {
+    const existing = new Set(
+      (this.db.prepare("PRAGMA table_info(memories)").all() as Record<string, unknown>[])
+        .map(row => String(row.name))
+    );
+    const additions = [
+      ["semantic_key", "TEXT"],
+      ["origin", "TEXT"],
+      ["confidence", "REAL"],
+      ["source_event_ids_json", "TEXT NOT NULL DEFAULT '[]'"],
+      ["superseded_by_memory_id", "TEXT"],
+      ["dispute_id", "TEXT"]
+    ] as const;
+    for (const [name, definition] of additions) {
+      if (!existing.has(name)) this.db.exec(`ALTER TABLE memories ADD COLUMN ${name} ${definition}`);
+    }
   }
 }
 

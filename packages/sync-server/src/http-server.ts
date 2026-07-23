@@ -48,6 +48,11 @@ export function createSyncHttpServer(sync: PersistentSyncServer): SyncHttpServer
         sendJson(response, 200, sync.snapshot(decodeURIComponent(snapshotMatch[1])));
         return;
       }
+      const compilationMatch = /^\/v1\/spaces\/([^/]+)\/compilation$/.exec(url.pathname);
+      if (request.method === "GET" && compilationMatch) {
+        sendJson(response, 200, sync.compilation(decodeURIComponent(compilationMatch[1])));
+        return;
+      }
       sendJson(response, 404, { error: "Not found" });
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });

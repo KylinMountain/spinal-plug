@@ -5,6 +5,7 @@ import type {
   EventEnvelope,
   EventRuntimeContext,
   MemoryKind,
+  MemoryOrigin,
   MemoryRecord,
   ProjectionKind,
   ProjectSpace
@@ -28,6 +29,10 @@ export interface RememberMemoryInput {
   why?: string;
   howToApply?: string;
   references?: string[];
+  semanticKey?: string;
+  origin?: MemoryOrigin;
+  confidence?: number;
+  asCandidate?: boolean;
   actor?: Partial<EventActor>;
   runtimeContext?: Partial<EventRuntimeContext>;
 }
@@ -39,6 +44,9 @@ export interface UpdateMemoryInput {
   why?: string;
   howToApply?: string;
   references?: string[];
+  semanticKey?: string;
+  origin?: MemoryOrigin;
+  confidence?: number;
   actor?: Partial<EventActor>;
 }
 
@@ -93,7 +101,11 @@ function makeEvent(
       statement: memory.statement,
       why: memory.why,
       howToApply: memory.howToApply,
-      references: memory.references
+      references: memory.references,
+      semanticKey: memory.semanticKey,
+      origin: memory.origin,
+      confidence: memory.confidence,
+      observedAt: memory.updatedAt
     },
     createdAt,
     idempotencyKey: eventId
@@ -135,15 +147,25 @@ export class ProjectMemoryService {
       why: input.why?.trim() || undefined,
       howToApply: input.howToApply?.trim() || undefined,
       references: input.references ?? [],
-      status: "active",
+      status: input.asCandidate ? "candidate" : "active",
+      semanticKey: input.semanticKey?.trim() || undefined,
+      origin: input.origin ?? "user_explicit",
+      confidence: input.confidence ?? (input.origin === "agent_inferred" ? 0.7 : 1),
+      sourceEventIds: [],
       createdFromEventId: "",
       lastUpdatedFromEventId: "",
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    const event = makeEvent("memory.created", memory, input.actor ?? {}, input.runtimeContext);
+    const event = makeEvent(
+      input.asCandidate ? "memory.candidate.created" : "memory.created",
+      memory,
+      input.actor ?? {},
+      input.runtimeContext
+    );
     memory.createdFromEventId = event.eventId;
     memory.lastUpdatedFromEventId = event.eventId;
+    memory.sourceEventIds = [event.eventId];
     this.database.recordMemoryMutation(event, memory);
     return memory;
   }
@@ -160,10 +182,14 @@ export class ProjectMemoryService {
       why: input.why?.trim() || existing.why,
       howToApply: input.howToApply?.trim() || existing.howToApply,
       references: input.references ?? existing.references,
+      semanticKey: input.semanticKey?.trim() || existing.semanticKey,
+      origin: input.origin ?? existing.origin,
+      confidence: input.confidence ?? existing.confidence,
       updatedAt: now()
     };
     const event = makeEvent("memory.updated", memory, input.actor ?? {});
     memory.lastUpdatedFromEventId = event.eventId;
+    memory.sourceEventIds = [...new Set([...(memory.sourceEventIds ?? []), event.eventId])];
     this.database.recordMemoryMutation(event, memory);
     return memory;
   }
@@ -176,6 +202,25 @@ export class ProjectMemoryService {
     const memory: MemoryRecord = { ...existing, status: "deleted", updatedAt: now() };
     const event = makeEvent("memory.deleted", memory, actor);
     memory.lastUpdatedFromEventId = event.eventId;
+    memory.sourceEventIds = [...new Set([...(memory.sourceEventIds ?? []), event.eventId])];
+    this.database.recordMemoryMutation(event, memory);
+    return memory;
+  }
+
+  promote(space: ProjectSpace, memoryId: string, actor: Partial<EventActor> = {}): MemoryRecord {
+    const existing = this.database.getMemory(memoryId);
+    if (!existing || existing.spaceId !== space.spaceId || existing.status !== "candidate") {
+      throw new Error(`Candidate memory not found in Project Space: ${memoryId}`);
+    }
+    const memory: MemoryRecord = {
+      ...existing,
+      status: "active",
+      confidence: Math.max(existing.confidence ?? 0, 0.92),
+      updatedAt: now()
+    };
+    const event = makeEvent("memory.promoted", memory, actor);
+    memory.lastUpdatedFromEventId = event.eventId;
+    memory.sourceEventIds = [...new Set([...(memory.sourceEventIds ?? []), event.eventId])];
     this.database.recordMemoryMutation(event, memory);
     return memory;
   }

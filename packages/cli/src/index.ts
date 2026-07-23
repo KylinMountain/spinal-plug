@@ -147,6 +147,9 @@ async function shareClaudeAutoMemory(
         title: candidate.title,
         statement: candidate.statement,
         references: [candidate.sourceUri],
+        semanticKey: candidate.semanticKey,
+        origin: "host_native",
+        confidence: 0.95,
         actor: { agentInstallationId: "claude-code-auto-memory", host: "claude-code" }
       });
       created += 1;
@@ -161,6 +164,9 @@ async function shareClaudeAutoMemory(
         title: candidate.title,
         statement: candidate.statement,
         references: [candidate.sourceUri],
+        semanticKey: candidate.semanticKey,
+        origin: "host_native",
+        confidence: 0.95,
         actor: { agentInstallationId: "claude-code-auto-memory", host: "claude-code" }
       });
       updated += 1;
@@ -523,9 +529,11 @@ async function main(): Promise<void> {
     if (!url || !deviceId) throw new Error("Usage: mind-palace sync-claude <db-path> <project-dir> <url> <device-id>");
     const synchronized = await new MindPalaceSyncClient(database, new HttpSyncTransport(url)).synchronize(space.spaceId, deviceId);
     const importer = new ClaudeAutoMemoryImporter();
-    const localSourcePrefix = importer.sourceUriPrefix(projectPath);
+    const localNativeMemoryIds = new Set(
+      importer.import(space, projectPath).candidates.map(candidate => candidate.memoryId)
+    );
     const allMemories = service.list(space);
-    const projectedMemories = allMemories.filter(memory => !memory.references.some(reference => reference.startsWith(localSourcePrefix)));
+    const projectedMemories = allMemories.filter(memory => !localNativeMemoryIds.has(memory.memoryId));
     const materialized = new ClaudeAutoMemoryMaterializer().materialize(projectPath, projectedMemories);
     console.log(JSON.stringify({
       synchronized,
