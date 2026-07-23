@@ -24,3 +24,16 @@ export const syncPullRequestSchema: JsonSchema = {
     limit: { type: "number" }
   }
 };
+
+export const syncFetchRequestSchema: JsonSchema = {
+  $id: "mind-palace.sync-fetch-request/v0.1",
+  type: "object",
+  additionalProperties: false,
+  required: ["spaceId", "deviceId"],
+  properties: {
+    spaceId: { type: "string" },
+    deviceId: { type: "string" },
+    cursor: { type: "string" },
+    limit: { type: "number" }
+  }
+};

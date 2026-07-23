@@ -2,11 +2,14 @@ import type {
   EventEnvelope,
   MemoryCompilation,
   ProjectSnapshot,
+  SyncFetchRequest,
+  SyncFetchResponse,
   SyncPullRequest,
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
 } from "@mind-palace/protocol";
+import { createCanonicalUpdates } from "./canonical-updates.js";
 import { MemoryCompiler } from "./memory-compiler.js";
 
 interface StoredEvent {
@@ -73,6 +76,25 @@ export class InMemorySyncServer {
     };
   }
 
+  async fetchUpdates(request: SyncFetchRequest): Promise<SyncFetchResponse> {
+    const after = parseCursor(request.cursor);
+    const limit = Math.min(Math.max(request.limit ?? 50, 1), 200);
+    const allEvents = this.eventsBySpace.get(request.spaceId) ?? [];
+    const matching = allEvents.filter(item => item.sequence > after);
+    const page = matching.slice(0, limit);
+    const lastSequence = page.at(-1)?.sequence ?? after;
+    const compilation = this.compiler.compile(request.spaceId, allEvents);
+    return {
+      updates: createCanonicalUpdates(
+        request.spaceId,
+        page.map(item => item.event),
+        compilation
+      ),
+      nextCursor: cursorFor(lastSequence),
+      hasMore: matching.length > page.length
+    };
+  }
+
   snapshot(spaceId: string): ProjectSnapshot {
     const events = this.eventsBySpace.get(spaceId) ?? [];
     const compilation = this.compiler.compile(spaceId, events);
@@ -96,6 +118,7 @@ export class InMemorySyncServer {
 export { PersistentSyncServer } from "./persistent-server.js";
 export { createSyncHttpServer } from "./http-server.js";
 export { MemoryCompiler } from "./memory-compiler.js";
+export { createCanonicalUpdates } from "./canonical-updates.js";
 export { MindPalaceControlPlane, ControlPlaneError } from "./control-plane.js";
 export { createControlPlaneHttpServer } from "./control-plane-http-server.js";
 export type { MemoryCompilerOptions, SequencedMemoryEvent } from "./memory-compiler.js";

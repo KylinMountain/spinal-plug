@@ -5,11 +5,14 @@ import type {
   MemoryDispute,
   MemoryRecord,
   ProjectSnapshot,
+  SyncFetchRequest,
+  SyncFetchResponse,
   SyncPullRequest,
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
 } from "@mind-palace/protocol";
+import { createCanonicalUpdates } from "./canonical-updates.js";
 import { MemoryCompiler } from "./memory-compiler.js";
 
 interface StoredEvent {
@@ -134,6 +137,29 @@ export class PersistentSyncServer {
     const lastSequence = page.at(-1)?.sequence ?? after;
     return {
       events: page.map(item => item.event),
+      nextCursor: cursorFor(lastSequence),
+      hasMore
+    };
+  }
+
+  async fetchUpdates(request: SyncFetchRequest): Promise<SyncFetchResponse> {
+    const after = parseCursor(request.cursor);
+    const limit = Math.min(Math.max(request.limit ?? 50, 1), 200);
+    const rows = this.database.prepare(`
+      SELECT sequence, payload_json FROM remote_events
+      WHERE space_id = ? AND sequence > ?
+      ORDER BY sequence ASC
+      LIMIT ?
+    `).all(request.spaceId, after, limit + 1) as Record<string, unknown>[];
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit).map(parseStoredEvent);
+    const lastSequence = page.at(-1)?.sequence ?? after;
+    return {
+      updates: createCanonicalUpdates(
+        request.spaceId,
+        page.map(item => item.event),
+        this.compilation(request.spaceId)
+      ),
       nextCursor: cursorFor(lastSequence),
       hasMore
     };

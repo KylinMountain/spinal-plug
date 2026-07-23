@@ -10,6 +10,8 @@ import type {
   RegisteredDevice,
   SpaceMembership,
   SpaceRole,
+  SyncFetchRequest,
+  SyncFetchResponse,
   SyncPullRequest,
   SyncPullResponse,
   SyncPushRequest,
@@ -384,6 +386,15 @@ export class MindPalaceControlPlane {
     this.requireDevice(principal, request.deviceId);
     this.authorizeSpace(principal, request.spaceId, "viewer");
     return this.sync.pull(request);
+  }
+
+  async fetchUpdates(
+    principal: AuthenticatedPrincipal,
+    request: SyncFetchRequest
+  ): Promise<SyncFetchResponse> {
+    this.requireDevice(principal, request.deviceId);
+    this.authorizeSpace(principal, request.spaceId, "viewer");
+    return this.sync.fetchUpdates(request);
   }
 
   snapshot(principal: AuthenticatedPrincipal, spaceId: string): ProjectSnapshot {

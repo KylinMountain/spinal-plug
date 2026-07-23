@@ -49,6 +49,18 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sync_inbox (
+  update_id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL,
+  memory_id TEXT NOT NULL,
+  update_kind TEXT NOT NULL,
+  required INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  payload_json TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  applied_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_space_created_at
   ON events(space_id, created_at);
 
@@ -63,4 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_outbox_status_available_at
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_cursors_unique_scope
   ON sync_cursors(scope, owner_id, space_id);
+
+CREATE INDEX IF NOT EXISTS idx_sync_inbox_space_status
+  ON sync_inbox(space_id, status, fetched_at);
 `;
