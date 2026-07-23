@@ -26,7 +26,10 @@ export const eventEnvelopeSchema: JsonSchema = {
       type: "string",
       enum: [
         "memory.created",
+        "memory.candidate.created",
         "memory.updated",
+        "memory.promoted",
+        "memory.dispute.resolved",
         "memory.deleted",
         "sync.cursor.advanced"
       ]
@@ -43,4 +46,3 @@ export const eventEnvelopeSchema: JsonSchema = {
     idempotencyKey: { type: "string" }
   }
 };
-
