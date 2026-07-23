@@ -161,3 +161,48 @@ test("persistent server rebuilds compiled state after restart", async () => {
   assert.equal(second.snapshot(spaceId).memories.length, 0);
   second.close();
 });
+
+test("fetch exposes compiled disputes instead of raw active variants", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "mind-palace-fetch-"));
+  const server = new PersistentSyncServer(join(directory, "central.db"));
+  await server.push({
+    spaceId,
+    deviceId: "device_a",
+    events: [
+      memoryEvent({ id: "evt_01", memoryId: "mem_kafka", statement: "Use Kafka" }),
+      memoryEvent({ id: "evt_02", memoryId: "mem_nats", statement: "Use NATS" })
+    ]
+  });
+
+  const fetched = await server.fetchUpdates({ spaceId, deviceId: "device_b" });
+  assert.equal(fetched.updates.length, 2);
+  assert.deepEqual(fetched.updates.map(update => update.kind).sort(), ["dispute", "dispute"]);
+  assert.ok(fetched.updates.every(update => update.memory.status === "disputed"));
+  server.close();
+});
+
+test("fetch marks tombstones as required updates", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "mind-palace-delete-"));
+  const server = new PersistentSyncServer(join(directory, "central.db"));
+  const created = memoryEvent({
+    id: "evt_01",
+    memoryId: "mem_delete",
+    statement: "Old decision",
+    semanticKey: "decision:delete"
+  });
+  const deleted = memoryEvent({
+    id: "evt_02",
+    memoryId: "mem_delete",
+    statement: "Old decision",
+    semanticKey: "decision:delete",
+    eventType: "memory.deleted",
+    parents: ["evt_01"]
+  });
+  await server.push({ spaceId, deviceId: "device_a", events: [created, deleted] });
+
+  const fetched = await server.fetchUpdates({ spaceId, deviceId: "device_b" });
+  assert.equal(fetched.updates.length, 1);
+  assert.equal(fetched.updates[0].kind, "delete");
+  assert.equal(fetched.updates[0].required, true);
+  server.close();
+});

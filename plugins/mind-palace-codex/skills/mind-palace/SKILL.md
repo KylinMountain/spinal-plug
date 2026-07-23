@@ -72,13 +72,20 @@ Report what was shared and why it is durable. The selection step is internal beh
 
 ## Sync
 
-For `sync`, "同步记忆", or "下载记忆", run:
+For `sync`, "同步记忆", or "下载记忆", fetch and preview first:
 
 ```bash
-mind-palace sync-codex "$MIND_PALACE_DB" . "$MIND_PALACE_SYNC_URL" "$MIND_PALACE_DEVICE_ID"
+mind-palace fetch "$MIND_PALACE_DB" . "$MIND_PALACE_SYNC_URL" "$MIND_PALACE_DEVICE_ID"
+mind-palace preview "$MIND_PALACE_DB" .
 ```
 
-Report how many central memories were received and applied. The next Codex session reads the refreshed native memory projection.
+Show the optional updates and ask which ones to apply. Required tombstones are applied during fetch. After the user selects update IDs, run:
+
+```bash
+mind-palace apply-codex "$MIND_PALACE_DB" . <update-id>...
+```
+
+Omit IDs only when the user explicitly chooses all updates. The next Codex session reads the refreshed native memory projection.
 
 ## Status
 

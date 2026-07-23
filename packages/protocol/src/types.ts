@@ -216,6 +216,51 @@ export interface SyncPullResponse {
   hasMore: boolean;
 }
 
+export type CanonicalUpdateKind =
+  | "activate"
+  | "candidate"
+  | "dispute"
+  | "supersede"
+  | "delete";
+
+export interface CanonicalMemoryUpdate {
+  schema: "mind-palace.canonical-memory-update/v0.1";
+  updateId: string;
+  spaceId: string;
+  memoryId: string;
+  kind: CanonicalUpdateKind;
+  required: boolean;
+  sourceEventIds: string[];
+  memory: MemoryRecord;
+  generatedAt: string;
+}
+
+export interface SyncFetchRequest {
+  spaceId: string;
+  deviceId: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface SyncFetchResponse {
+  updates: CanonicalMemoryUpdate[];
+  nextCursor: string;
+  hasMore: boolean;
+}
+
+export interface SyncPreview {
+  spaceId: string;
+  pending: CanonicalMemoryUpdate[];
+  requiredUpdateIds: string[];
+}
+
+export interface SyncApplyResult {
+  applied: number;
+  requiredApplied: number;
+  remaining: number;
+  appliedUpdateIds: string[];
+}
+
 export interface ProjectSnapshot {
   schema: "mind-palace.project-snapshot/v0.1";
   spaceId: string;

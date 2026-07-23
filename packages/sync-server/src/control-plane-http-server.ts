@@ -209,6 +209,21 @@ export function createControlPlaneHttpServer(
         }));
         return;
       }
+      if (request.method === "GET" && url.pathname === "/v1/updates:fetch") {
+        const spaceId = url.searchParams.get("space_id");
+        const deviceId = url.searchParams.get("device_id");
+        if (!spaceId || !deviceId) {
+          throw new ControlPlaneError("space_id and device_id are required.", 400, "invalid_request");
+        }
+        const limit = url.searchParams.get("limit");
+        sendJson(response, 200, await controlPlane.fetchUpdates(principal, {
+          spaceId,
+          deviceId,
+          cursor: url.searchParams.get("cursor") ?? undefined,
+          limit: limit ? Number(limit) : undefined
+        }));
+        return;
+      }
       const snapshotMatch = /^\/v1\/spaces\/([^/]+)\/snapshot$/.exec(url.pathname);
       if (request.method === "GET" && snapshotMatch) {
         sendJson(response, 200, controlPlane.snapshot(

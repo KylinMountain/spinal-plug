@@ -43,6 +43,19 @@ export function createSyncHttpServer(sync: PersistentSyncServer): SyncHttpServer
         }));
         return;
       }
+      if (request.method === "GET" && url.pathname === "/v1/updates:fetch") {
+        const spaceId = url.searchParams.get("space_id");
+        const deviceId = url.searchParams.get("device_id");
+        if (!spaceId || !deviceId) throw new Error("space_id and device_id are required.");
+        const limitValue = url.searchParams.get("limit");
+        sendJson(response, 200, await sync.fetchUpdates({
+          spaceId,
+          deviceId,
+          cursor: url.searchParams.get("cursor") ?? undefined,
+          limit: limitValue ? Number(limitValue) : undefined
+        }));
+        return;
+      }
       const snapshotMatch = /^\/v1\/spaces\/([^/]+)\/snapshot$/.exec(url.pathname);
       if (request.method === "GET" && snapshotMatch) {
         sendJson(response, 200, sync.snapshot(decodeURIComponent(snapshotMatch[1])));

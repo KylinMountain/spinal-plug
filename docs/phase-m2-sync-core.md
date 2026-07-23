@@ -19,6 +19,8 @@ Agent / CLI
 
 - `SyncPushRequest` / `SyncPushResponse`
 - `SyncPullRequest` / `SyncPullResponse`
+- `SyncFetchRequest` / `SyncFetchResponse`
+- `CanonicalMemoryUpdate`
 - `ProjectSnapshot`
 
 Push 使用 `eventId` 幂等。重复事件会出现在 `duplicateEventIds`，客户端会安全地将对应 Outbox 项标记为已投递。Pull 使用 `cur:<sequence>` 形式的不透明 cursor，客户端只会在远端事件成功应用到本地 SQLite 后保存新 cursor。
@@ -38,9 +40,6 @@ Push 使用 `eventId` 幂等。重复事件会出现在 `duplicateEventIds`，�
 
 尚未实现：
 
-- HTTP API、身份认证、设备注册和 ACL
-- 中心服务的持久化数据库
-- Fetch / Preview / Apply 的交互层
 - 自动语义键生成和基于模型的候选归一化
 - 实时通知、重试策略和 Secret Scanner
 
@@ -66,6 +65,7 @@ mind-palace sync ./.mind-palace/mind-palace.db . http://127.0.0.1:8787 device-ma
 | --- | --- | --- |
 | `POST` | `/v1/events:push` | 幂等接收一个 Space 的事件批次。 |
 | `GET` | `/v1/events:pull` | 按 `space_id`、`device_id`、`cursor` 和 `limit` 拉取增量。 |
+| `GET` | `/v1/updates:fetch` | 获取中心编译后的规范更新，供本地预览和选择。 |
 | `GET` | `/v1/spaces/:spaceId/snapshot` | 获取当前 active memory 的物化快照。 |
 | `GET` | `/v1/spaces/:spaceId/compilation` | 获取 active、candidate、disputed、superseded 与争议详情。 |
 
@@ -82,3 +82,13 @@ mind-palace sync ./.mind-palace/mind-palace.db . http://127.0.0.1:8787 device-ma
 - TLS 配置，以及无 TLS 时强制回环监听
 
 详细安全决策见 [ADR-008](adr/ADR-008-authenticated-control-plane.md)。
+
+## 选择性同步
+
+```bash
+mind-palace fetch ~/.mind-palace/mind-palace.db . <url> <device-id>
+mind-palace preview ~/.mind-palace/mind-palace.db .
+mind-palace apply-codex ~/.mind-palace/mind-palace.db . <update-id>...
+```
+
+本地 `sync_inbox` 保存尚未应用的更新。普通更新由用户选择；Tombstone 是必需更新，在 fetch 后立即落地。协议决策见 [ADR-009](adr/ADR-009-fetch-preview-apply-sync.md)。
