@@ -2,12 +2,15 @@ import type { SyncPullRequest, SyncPullResponse, SyncPushRequest, SyncPushRespon
 import type { SyncTransport } from "./sync-client.js";
 
 export class HttpSyncTransport implements SyncTransport {
-  constructor(private readonly baseUrl: string) {}
+  constructor(
+    private readonly baseUrl: string,
+    private readonly deviceToken?: string
+  ) {}
 
   async push(request: SyncPushRequest): Promise<SyncPushResponse> {
     return this.request("/v1/events:push", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: this.headers({ "content-type": "application/json" }),
       body: JSON.stringify(request)
     });
   }
@@ -20,7 +23,10 @@ export class HttpSyncTransport implements SyncTransport {
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(new URL(path, this.baseUrl), init);
+    const response = await fetch(new URL(path, this.baseUrl), {
+      ...init,
+      headers: this.headers(init?.headers)
+    });
     const body = await response.json() as T | { error?: string };
     if (!response.ok) {
       const message = typeof body === "object" && body !== null && "error" in body
@@ -29,5 +35,11 @@ export class HttpSyncTransport implements SyncTransport {
       throw new Error(message ?? `Sync request failed: ${response.status}`);
     }
     return body as T;
+  }
+
+  private headers(input?: RequestInit["headers"]): Headers {
+    const headers = new Headers(input);
+    if (this.deviceToken) headers.set("authorization", `Bearer ${this.deviceToken}`);
+    return headers;
   }
 }

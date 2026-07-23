@@ -73,7 +73,8 @@ function makeEvent(
   eventType: EventEnvelope["eventType"],
   memory: MemoryRecord,
   actor: Partial<EventActor>,
-  runtimeContext: Partial<EventRuntimeContext> = {}
+  runtimeContext: Partial<EventRuntimeContext> = {},
+  identity: { accountId: string; personaId: string }
 ): EventEnvelope {
   const eventId = `evt_${randomUUID()}`;
   const createdAt = now();
@@ -82,8 +83,8 @@ function makeEvent(
     eventId,
     eventType,
     eventVersion: 1,
-    accountId: "local",
-    personaId: "persona_default",
+    accountId: identity.accountId,
+    personaId: identity.personaId,
     spaceId: memory.spaceId,
     actor: defaultActor(actor),
     causality: { parentEventIds: [memory.lastUpdatedFromEventId].filter(Boolean) },
@@ -132,7 +133,11 @@ function scoreMemory(memory: MemoryRecord, prompt: string): number {
 }
 
 export class ProjectMemoryService {
-  constructor(private readonly database: MindPalaceDatabase) {}
+  constructor(
+    private readonly database: MindPalaceDatabase,
+    private readonly identity = { accountId: "local", personaId: "persona_default" },
+    private readonly actorDefaults: Partial<EventActor> = {}
+  ) {}
 
   remember(input: RememberMemoryInput): MemoryRecord {
     const timestamp = now();
@@ -160,8 +165,9 @@ export class ProjectMemoryService {
     const event = makeEvent(
       input.asCandidate ? "memory.candidate.created" : "memory.created",
       memory,
-      input.actor ?? {},
-      input.runtimeContext
+      { ...this.actorDefaults, ...input.actor },
+      input.runtimeContext,
+      this.identity
     );
     memory.createdFromEventId = event.eventId;
     memory.lastUpdatedFromEventId = event.eventId;
@@ -187,7 +193,13 @@ export class ProjectMemoryService {
       confidence: input.confidence ?? existing.confidence,
       updatedAt: now()
     };
-    const event = makeEvent("memory.updated", memory, input.actor ?? {});
+    const event = makeEvent(
+      "memory.updated",
+      memory,
+      { ...this.actorDefaults, ...input.actor },
+      {},
+      this.identity
+    );
     memory.lastUpdatedFromEventId = event.eventId;
     memory.sourceEventIds = [...new Set([...(memory.sourceEventIds ?? []), event.eventId])];
     this.database.recordMemoryMutation(event, memory);
@@ -200,7 +212,13 @@ export class ProjectMemoryService {
       throw new Error(`Active memory not found in Project Space: ${memoryId}`);
     }
     const memory: MemoryRecord = { ...existing, status: "deleted", updatedAt: now() };
-    const event = makeEvent("memory.deleted", memory, actor);
+    const event = makeEvent(
+      "memory.deleted",
+      memory,
+      { ...this.actorDefaults, ...actor },
+      {},
+      this.identity
+    );
     memory.lastUpdatedFromEventId = event.eventId;
     memory.sourceEventIds = [...new Set([...(memory.sourceEventIds ?? []), event.eventId])];
     this.database.recordMemoryMutation(event, memory);
@@ -218,7 +236,13 @@ export class ProjectMemoryService {
       confidence: Math.max(existing.confidence ?? 0, 0.92),
       updatedAt: now()
     };
-    const event = makeEvent("memory.promoted", memory, actor);
+    const event = makeEvent(
+      "memory.promoted",
+      memory,
+      { ...this.actorDefaults, ...actor },
+      {},
+      this.identity
+    );
     memory.lastUpdatedFromEventId = event.eventId;
     memory.sourceEventIds = [...new Set([...(memory.sourceEventIds ?? []), event.eventId])];
     this.database.recordMemoryMutation(event, memory);

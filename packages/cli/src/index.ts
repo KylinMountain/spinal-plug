@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer, ClaudeCodeAdapter } from "@mind-palace/adapter-claude-code";
 import { CodexAdapter, CodexNativeMemoryStore } from "@mind-palace/adapter-codex";
@@ -13,7 +13,12 @@ import {
   ProjectSpaceResolver
 } from "@mind-palace/local-node";
 import type { MemoryKind } from "@mind-palace/protocol";
-import { createSyncHttpServer, PersistentSyncServer } from "@mind-palace/sync-server";
+import {
+  createControlPlaneHttpServer,
+  createSyncHttpServer,
+  MindPalaceControlPlane,
+  PersistentSyncServer
+} from "@mind-palace/sync-server";
 
 const MEMORY_KINDS: ReadonlySet<string> = new Set(["directive", "decision", "context", "reference"]);
 const HOOK_EVENTS: ReadonlySet<string> = new Set([
@@ -51,6 +56,9 @@ Commands:
   sync-codex <db-path> <project-dir> <url> <device-id>
                                                      Sync and materialize into Codex native memory
   serve <server-db-path> [port]                    Start a durable local sync HTTP server
+  serve-control-plane <server-db-path> [port]      Start authenticated Control Plane
+  control-provision <server-db-path> <account> <email> <owner> <device>
+                                                     Provision an account and first device
   hook <host> <event> <db-path> <project-dir> [prompt]
                                                      Emit Claude Code / Codex hook context as JSON
   hook-stdin <host> <db-path>                        Read a host Hook payload from stdin
@@ -70,6 +78,18 @@ function openDatabase(rawPath: string): { dbPath: string; database: MindPalaceDa
   const database = new MindPalaceDatabase(dbPath);
   database.init();
   return { dbPath, database };
+}
+
+function createMemoryService(database: MindPalaceDatabase): ProjectMemoryService {
+  const deviceId = process.env.MIND_PALACE_DEVICE_ID;
+  return new ProjectMemoryService(database, {
+    accountId: process.env.MIND_PALACE_ACCOUNT_ID ?? "local",
+    personaId: process.env.MIND_PALACE_PERSONA_ID ?? "persona_default"
+  }, deviceId ? { deviceId } : {});
+}
+
+function createSyncTransport(url: string): HttpSyncTransport {
+  return new HttpSyncTransport(url, process.env.MIND_PALACE_DEVICE_TOKEN);
 }
 
 function requireMemoryKind(value: string): MemoryKind {
@@ -174,7 +194,7 @@ async function shareClaudeAutoMemory(
       unchanged += 1;
     }
   }
-  const shared = await new MindPalaceSyncClient(database, new HttpSyncTransport(url)).publish(space.spaceId, deviceId);
+  const shared = await new MindPalaceSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
   return {
     source: "claude-code-auto-memory",
     discovered: imported.candidates.length,
@@ -221,7 +241,7 @@ async function executeHook(
   }
 
   const { database } = openDatabase(rawDbPath);
-  const service = new ProjectMemoryService(database);
+  const service = createMemoryService(database);
   if (payload.event === "session.start") {
     // Claude's own extractor is asynchronous. Import at session boundaries so
     // completed native writes are eventually published without user commands.
@@ -358,6 +378,58 @@ async function main(): Promise<void> {
     console.log(`Mind Palace sync server listening on http://127.0.0.1:${port}`);
     return;
   }
+  if (command === "serve-control-plane") {
+    const [serverDbPath, rawPort] = args;
+    if (!serverDbPath) {
+      throw new Error("Usage: mind-palace serve-control-plane <server-db-path> [port]");
+    }
+    const bootstrapToken = process.env.MIND_PALACE_BOOTSTRAP_TOKEN;
+    if (!bootstrapToken) throw new Error("MIND_PALACE_BOOTSTRAP_TOKEN is required.");
+    const databasePath = resolve(process.cwd(), serverDbPath);
+    ensureParentDir(databasePath);
+    const certPath = process.env.MIND_PALACE_TLS_CERT;
+    const keyPath = process.env.MIND_PALACE_TLS_KEY;
+    if (Boolean(certPath) !== Boolean(keyPath)) {
+      throw new Error("MIND_PALACE_TLS_CERT and MIND_PALACE_TLS_KEY must be set together.");
+    }
+    const controlPlane = new MindPalaceControlPlane(databasePath);
+    const httpServer = createControlPlaneHttpServer(controlPlane, {
+      bootstrapToken,
+      tls: certPath && keyPath
+        ? { cert: readFileSync(certPath), key: readFileSync(keyPath) }
+        : undefined
+    });
+    const port = rawPort ? Number(rawPort) : 8787;
+    const host = process.env.MIND_PALACE_LISTEN_HOST ?? "127.0.0.1";
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error("Port must be an integer from 1 to 65535.");
+    }
+    await httpServer.listen(port, host);
+    console.log(`Mind Palace Control Plane listening on ${httpServer.secure ? "https" : "http"}://${host}:${port}`);
+    return;
+  }
+  if (command === "control-provision") {
+    const [serverDbPath, accountName, ownerEmail, ownerName, deviceName] = args;
+    if (!serverDbPath || !accountName || !ownerEmail || !ownerName || !deviceName) {
+      throw new Error(
+        "Usage: mind-palace control-provision <server-db-path> <account> <email> <owner> <device>"
+      );
+    }
+    const databasePath = resolve(process.cwd(), serverDbPath);
+    ensureParentDir(databasePath);
+    const controlPlane = new MindPalaceControlPlane(databasePath);
+    try {
+      console.log(JSON.stringify(controlPlane.provisionAccount({
+        accountName,
+        ownerEmail,
+        ownerName,
+        deviceName
+      }), null, 2));
+    } finally {
+      controlPlane.close();
+    }
+    return;
+  }
 
   const [rawDbPath, projectDir, ...rest] = args;
   if (!rawDbPath) {
@@ -447,7 +519,7 @@ async function main(): Promise<void> {
 
   const space = resolvedSpace.space;
   const { database } = openDatabase(rawDbPath);
-  const service = new ProjectMemoryService(database);
+  const service = createMemoryService(database);
   if (command === "share-claude") {
     const [url, deviceId] = rest;
     if (!url || !deviceId) {
@@ -465,7 +537,7 @@ async function main(): Promise<void> {
       throw new Error("Usage: mind-palace share <db-path> <project-dir> <kind> <text> <url> <device-id>");
     }
     const memory = service.remember({ space, kind: requireMemoryKind(kind), statement });
-    const publish = await new MindPalaceSyncClient(database, new HttpSyncTransport(url)).publish(space.spaceId, deviceId);
+    const publish = await new MindPalaceSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
     console.log(JSON.stringify({ memory, shared: publish }, null, 2));
     return;
   }
@@ -520,14 +592,14 @@ async function main(): Promise<void> {
   if (command === "sync") {
     const [url, deviceId] = rest;
     if (!url || !deviceId) throw new Error("Usage: mind-palace sync <db-path> <project-dir> <url> <device-id>");
-    const result = await new MindPalaceSyncClient(database, new HttpSyncTransport(url)).synchronize(space.spaceId, deviceId);
+    const result = await new MindPalaceSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
     console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "sync-claude") {
     const [url, deviceId] = rest;
     if (!url || !deviceId) throw new Error("Usage: mind-palace sync-claude <db-path> <project-dir> <url> <device-id>");
-    const synchronized = await new MindPalaceSyncClient(database, new HttpSyncTransport(url)).synchronize(space.spaceId, deviceId);
+    const synchronized = await new MindPalaceSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
     const importer = new ClaudeAutoMemoryImporter();
     const localNativeMemoryIds = new Set(
       importer.import(space, projectPath).candidates.map(candidate => candidate.memoryId)
@@ -545,7 +617,7 @@ async function main(): Promise<void> {
   if (command === "sync-codex") {
     const [url, deviceId] = rest;
     if (!url || !deviceId) throw new Error("Usage: mind-palace sync-codex <db-path> <project-dir> <url> <device-id>");
-    const synchronized = await new MindPalaceSyncClient(database, new HttpSyncTransport(url)).synchronize(space.spaceId, deviceId);
+    const synchronized = await new MindPalaceSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
     const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
     console.log(JSON.stringify({ synchronized, materialized }, null, 2));
     return;
