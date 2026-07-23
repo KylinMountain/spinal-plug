@@ -1,5 +1,9 @@
 export type ProjectSpaceType = "project" | "archive" | "general";
 
+export type SpaceRole = "owner" | "editor" | "viewer";
+
+export type DeviceStatus = "active" | "revoked";
+
 export type RepositoryProvider = "github" | "gitlab" | "generic-git";
 
 export type MemoryKind = "directive" | "decision" | "context" | "reference";
@@ -42,6 +46,50 @@ export interface ProjectSpace {
   displayName: string;
   repository?: RepositoryRef;
   metadata?: Record<string, string>;
+}
+
+export interface Account {
+  accountId: string;
+  displayName: string;
+  createdAt: string;
+}
+
+export interface MindPalaceUser {
+  userId: string;
+  accountId: string;
+  email: string;
+  displayName: string;
+  createdAt: string;
+}
+
+export interface RegisteredDevice {
+  deviceId: string;
+  accountId: string;
+  userId: string;
+  displayName: string;
+  status: DeviceStatus;
+  createdAt: string;
+  lastSeenAt?: string;
+  revokedAt?: string;
+}
+
+export interface SpaceMembership {
+  spaceId: string;
+  userId: string;
+  role: SpaceRole;
+  createdAt: string;
+}
+
+export interface AuthenticatedPrincipal {
+  accountId: string;
+  userId: string;
+  deviceId: string;
+  deviceStatus: DeviceStatus;
+}
+
+export interface DeviceCredential {
+  device: RegisteredDevice;
+  token: string;
 }
 
 export interface EventActor {

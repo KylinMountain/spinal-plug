@@ -96,5 +96,15 @@ export class InMemorySyncServer {
 export { PersistentSyncServer } from "./persistent-server.js";
 export { createSyncHttpServer } from "./http-server.js";
 export { MemoryCompiler } from "./memory-compiler.js";
+export { MindPalaceControlPlane, ControlPlaneError } from "./control-plane.js";
+export { createControlPlaneHttpServer } from "./control-plane-http-server.js";
 export type { MemoryCompilerOptions, SequencedMemoryEvent } from "./memory-compiler.js";
+export type {
+  ProvisionAccountInput,
+  ProvisionAccountResult
+} from "./control-plane.js";
+export type {
+  ControlPlaneHttpOptions,
+  ControlPlaneHttpServer
+} from "./control-plane-http-server.js";
 export type { SyncHttpServer } from "./http-server.js";
