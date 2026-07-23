@@ -69,4 +69,16 @@ mind-palace sync ./.mind-palace/mind-palace.db . http://127.0.0.1:8787 device-ma
 | `GET` | `/v1/spaces/:spaceId/snapshot` | 获取当前 active memory 的物化快照。 |
 | `GET` | `/v1/spaces/:spaceId/compilation` | 获取 active、candidate、disputed、superseded 与争议详情。 |
 
-该服务是本地开发与协议验证服务，默认只监听 `127.0.0.1`。它**尚未有认证、授权、设备注册、限流或 TLS**，不得直接暴露到公网；这些属于 M2 的下一子阶段。
+`mind-palace serve` 是本地开发与协议验证服务，默认只监听 `127.0.0.1`，不得直接暴露公网。
+
+正式控制面入口为 `mind-palace serve-control-plane`，已经实现：
+
+- 账户与用户隔离
+- 一次性设备令牌与服务端摘要存储
+- 设备注册、列表和撤销
+- Project Space `owner / editor / viewer` ACL
+- 事件账户与设备来源校验
+- 每设备限流
+- TLS 配置，以及无 TLS 时强制回环监听
+
+详细安全决策见 [ADR-008](adr/ADR-008-authenticated-control-plane.md)。
