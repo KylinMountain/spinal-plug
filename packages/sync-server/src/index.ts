@@ -1,13 +1,13 @@
 import type {
   EventEnvelope,
-  MemoryPayload,
-  MemoryRecord,
+  MemoryCompilation,
   ProjectSnapshot,
   SyncPullRequest,
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
 } from "@mind-palace/protocol";
+import { MemoryCompiler } from "./memory-compiler.js";
 
 interface StoredEvent {
   sequence: number;
@@ -25,33 +25,6 @@ function parseCursor(cursor: string | undefined): number {
   return Number(match[1]);
 }
 
-function materialize(events: StoredEvent[], spaceId: string): MemoryRecord[] {
-  const records = new Map<string, MemoryRecord>();
-  for (const { event } of events) {
-    if (!event.eventType.startsWith("memory.")) continue;
-    const payload = event.payload as Partial<MemoryPayload>;
-    if (!payload.memoryId || !payload.kind || !payload.title || !payload.statement) continue;
-    const existing = records.get(payload.memoryId);
-    records.set(payload.memoryId, {
-      schema: "mind-palace.memory-record/v0.1",
-      memoryId: payload.memoryId,
-      spaceId,
-      kind: payload.kind,
-      title: payload.title,
-      statement: payload.statement,
-      why: payload.why,
-      howToApply: payload.howToApply,
-      references: payload.references ?? [],
-      status: event.eventType === "memory.deleted" ? "deleted" : "active",
-      createdFromEventId: existing?.createdFromEventId ?? event.eventId,
-      lastUpdatedFromEventId: event.eventId,
-      createdAt: existing?.createdAt ?? event.createdAt,
-      updatedAt: event.createdAt
-    });
-  }
-  return [...records.values()].filter(memory => memory.status === "active");
-}
-
 /**
  * Authoritative M2 semantics without an HTTP framework or authentication.
  * The production API will wrap this contract behind device authorization.
@@ -60,6 +33,7 @@ export class InMemorySyncServer {
   private nextSequence = 1;
   private readonly eventsBySpace = new Map<string, StoredEvent[]>();
   private readonly eventsById = new Map<string, StoredEvent>();
+  private readonly compiler = new MemoryCompiler();
 
   async push(request: SyncPushRequest): Promise<SyncPushResponse> {
     const acceptedEventIds: string[] = [];
@@ -101,16 +75,26 @@ export class InMemorySyncServer {
 
   snapshot(spaceId: string): ProjectSnapshot {
     const events = this.eventsBySpace.get(spaceId) ?? [];
+    const compilation = this.compiler.compile(spaceId, events);
     return {
       schema: "mind-palace.project-snapshot/v0.1",
       spaceId,
       cursor: cursorFor(events.at(-1)?.sequence ?? 0),
       generatedAt: new Date().toISOString(),
-      memories: materialize(events, spaceId)
+      memories: compilation.active,
+      candidates: compilation.candidates,
+      disputes: compilation.disputes,
+      superseded: compilation.superseded
     };
+  }
+
+  compilation(spaceId: string): MemoryCompilation {
+    return this.compiler.compile(spaceId, this.eventsBySpace.get(spaceId) ?? []);
   }
 }
 
 export { PersistentSyncServer } from "./persistent-server.js";
 export { createSyncHttpServer } from "./http-server.js";
+export { MemoryCompiler } from "./memory-compiler.js";
+export type { MemoryCompilerOptions, SequencedMemoryEvent } from "./memory-compiler.js";
 export type { SyncHttpServer } from "./http-server.js";

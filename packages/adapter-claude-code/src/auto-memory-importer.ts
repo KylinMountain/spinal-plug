@@ -9,6 +9,7 @@ export interface ClaudeAutoMemoryCandidate {
   title: string;
   statement: string;
   sourceUri: string;
+  semanticKey: string;
 }
 
 function sanitizePath(value: string): string {
@@ -53,8 +54,8 @@ export class ClaudeAutoMemoryImporter {
     return join(homedir(), ".claude", "projects", sanitizePath(resolve(cwd)), "memory");
   }
 
-  sourceUriPrefix(cwd: string): string {
-    return `claude-auto-memory://${sanitizePath(resolve(cwd))}/`;
+  sourceUriPrefix(spaceId: string): string {
+    return `claude-auto-memory://${spaceId}/`;
   }
 
   import(space: ProjectSpace, cwd: string): { candidates: ClaudeAutoMemoryCandidate[]; skippedSecretFiles: number } {
@@ -70,12 +71,18 @@ export class ClaudeAutoMemoryImporter {
         if (containsLikelySecret(statement)) skippedSecretFiles += 1;
         return [];
       }
-      const sourceUri = `${this.sourceUriPrefix(cwd)}${relativePath}`;
+      const sourceUri = `${this.sourceUriPrefix(space.spaceId)}${relativePath}`;
       const memoryId = `mem_cc_${createHash("sha256")
-        .update(`${space.spaceId}:${sourceUri}`)
+        .update(`${space.spaceId}:${relativePath}`)
         .digest("hex")
         .slice(0, 32)}`;
-      return [{ memoryId, title: topicTitle(relativePath, raw), statement, sourceUri }];
+      return [{
+        memoryId,
+        title: topicTitle(relativePath, raw),
+        statement,
+        sourceUri,
+        semanticKey: `claude-topic:${relativePath.toLowerCase()}`
+      }];
     });
 
     return { candidates, skippedSecretFiles };

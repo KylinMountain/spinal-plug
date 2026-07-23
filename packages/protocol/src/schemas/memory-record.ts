@@ -36,12 +36,23 @@ export const memoryRecordSchema: JsonSchema = {
     },
     status: {
       type: "string",
-      enum: ["active", "superseded", "deleted", "disputed"]
+      enum: ["candidate", "active", "superseded", "deleted", "disputed"]
     },
+    semanticKey: { type: "string" },
+    origin: {
+      type: "string",
+      enum: ["user_explicit", "host_native", "agent_inferred", "sync_import"]
+    },
+    confidence: { type: "number" },
+    sourceEventIds: {
+      type: "array",
+      items: { type: "string" }
+    },
+    supersededByMemoryId: { type: "string" },
+    disputeId: { type: "string" },
     createdFromEventId: { type: "string" },
     lastUpdatedFromEventId: { type: "string" },
     createdAt: { type: "string" },
     updatedAt: { type: "string" }
   }
 };
-

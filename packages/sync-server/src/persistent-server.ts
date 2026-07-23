@@ -1,7 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
 import type {
   EventEnvelope,
-  MemoryPayload,
+  MemoryCompilation,
+  MemoryDispute,
   MemoryRecord,
   ProjectSnapshot,
   SyncPullRequest,
@@ -9,6 +10,7 @@ import type {
   SyncPushRequest,
   SyncPushResponse
 } from "@mind-palace/protocol";
+import { MemoryCompiler } from "./memory-compiler.js";
 
 interface StoredEvent {
   sequence: number;
@@ -25,6 +27,27 @@ CREATE TABLE IF NOT EXISTS remote_events (
 );
 CREATE INDEX IF NOT EXISTS idx_remote_events_space_sequence
   ON remote_events(space_id, sequence);
+
+CREATE TABLE IF NOT EXISTS canonical_memories (
+  space_id TEXT NOT NULL,
+  memory_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  semantic_key TEXT,
+  updated_at TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (space_id, memory_id)
+);
+CREATE INDEX IF NOT EXISTS idx_canonical_memories_space_status
+  ON canonical_memories(space_id, status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS memory_disputes (
+  space_id TEXT NOT NULL,
+  dispute_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (space_id, dispute_id)
+);
 `;
 
 function cursorFor(sequence: number): string {
@@ -45,41 +68,16 @@ function parseStoredEvent(row: Record<string, unknown>): StoredEvent {
   };
 }
 
-function materialize(events: StoredEvent[], spaceId: string): MemoryRecord[] {
-  const records = new Map<string, MemoryRecord>();
-  for (const { event } of events) {
-    if (!event.eventType.startsWith("memory.")) continue;
-    const payload = event.payload as Partial<MemoryPayload>;
-    if (!payload.memoryId || !payload.kind || !payload.title || !payload.statement) continue;
-    const existing = records.get(payload.memoryId);
-    records.set(payload.memoryId, {
-      schema: "mind-palace.memory-record/v0.1",
-      memoryId: payload.memoryId,
-      spaceId,
-      kind: payload.kind,
-      title: payload.title,
-      statement: payload.statement,
-      why: payload.why,
-      howToApply: payload.howToApply,
-      references: payload.references ?? [],
-      status: event.eventType === "memory.deleted" ? "deleted" : "active",
-      createdFromEventId: existing?.createdFromEventId ?? event.eventId,
-      lastUpdatedFromEventId: event.eventId,
-      createdAt: existing?.createdAt ?? event.createdAt,
-      updatedAt: event.createdAt
-    });
-  }
-  return [...records.values()].filter(memory => memory.status === "active");
-}
-
 /** Durable server implementation for local development and single-node deployment. */
 export class PersistentSyncServer {
   private readonly database: DatabaseSync;
+  private readonly compiler = new MemoryCompiler();
 
   constructor(databasePath: string) {
     this.database = new DatabaseSync(databasePath);
     this.database.exec("PRAGMA journal_mode = WAL;");
     this.database.exec(schema);
+    this.rebuildAllSpaces();
   }
 
   async push(request: SyncPushRequest): Promise<SyncPushResponse> {
@@ -113,6 +111,7 @@ export class PersistentSyncServer {
       this.database.exec("ROLLBACK;");
       throw error;
     }
+    this.compileSpace(request.spaceId);
 
     return {
       acceptedEventIds,
@@ -141,17 +140,39 @@ export class PersistentSyncServer {
   }
 
   snapshot(spaceId: string): ProjectSnapshot {
-    const rows = this.database.prepare(`
-      SELECT sequence, payload_json FROM remote_events
-      WHERE space_id = ? ORDER BY sequence ASC
-    `).all(spaceId) as Record<string, unknown>[];
-    const events = rows.map(parseStoredEvent);
+    const compilation = this.compilation(spaceId);
     return {
       schema: "mind-palace.project-snapshot/v0.1",
       spaceId,
-      cursor: cursorFor(events.at(-1)?.sequence ?? 0),
+      cursor: cursorFor(this.latestSequence(spaceId)),
       generatedAt: new Date().toISOString(),
-      memories: materialize(events, spaceId)
+      memories: compilation.active,
+      candidates: compilation.candidates,
+      disputes: compilation.disputes,
+      superseded: compilation.superseded
+    };
+  }
+
+  compilation(spaceId: string): MemoryCompilation {
+    const memoryRows = this.database.prepare(`
+      SELECT payload_json FROM canonical_memories
+      WHERE space_id = ? ORDER BY updated_at DESC, memory_id ASC
+    `).all(spaceId) as Record<string, unknown>[];
+    const memories = memoryRows.map(row => JSON.parse(String(row.payload_json)) as MemoryRecord);
+    const disputeRows = this.database.prepare(`
+      SELECT payload_json FROM memory_disputes
+      WHERE space_id = ? ORDER BY created_at ASC, dispute_id ASC
+    `).all(spaceId) as Record<string, unknown>[];
+    const disputes = disputeRows.map(row => JSON.parse(String(row.payload_json)) as MemoryDispute);
+    return {
+      spaceId,
+      generatedAt: new Date().toISOString(),
+      active: memories.filter(memory => memory.status === "active"),
+      candidates: memories.filter(memory => memory.status === "candidate"),
+      disputed: memories.filter(memory => memory.status === "disputed"),
+      superseded: memories.filter(memory => memory.status === "superseded"),
+      deleted: memories.filter(memory => memory.status === "deleted"),
+      disputes
     };
   }
 
@@ -164,5 +185,71 @@ export class PersistentSyncServer {
       SELECT COALESCE(MAX(sequence), 0) AS sequence FROM remote_events WHERE space_id = ?
     `).get(spaceId) as Record<string, unknown>;
     return Number(row.sequence);
+  }
+
+  private compileSpace(spaceId: string): void {
+    const rows = this.database.prepare(`
+      SELECT sequence, payload_json FROM remote_events
+      WHERE space_id = ? ORDER BY sequence ASC
+    `).all(spaceId) as Record<string, unknown>[];
+    const compilation = this.compiler.compile(spaceId, rows.map(parseStoredEvent));
+    const memories = [
+      ...compilation.active,
+      ...compilation.candidates,
+      ...compilation.disputed,
+      ...compilation.superseded,
+      ...compilation.deleted
+    ];
+    const deleteMemories = this.database.prepare("DELETE FROM canonical_memories WHERE space_id = ?");
+    const deleteDisputes = this.database.prepare("DELETE FROM memory_disputes WHERE space_id = ?");
+    const insertMemory = this.database.prepare(`
+      INSERT INTO canonical_memories (
+        space_id, memory_id, status, semantic_key, updated_at, payload_json
+      ) VALUES (
+        @spaceId, @memoryId, @status, @semanticKey, @updatedAt, @payloadJson
+      )
+    `);
+    const insertDispute = this.database.prepare(`
+      INSERT INTO memory_disputes (
+        space_id, dispute_id, status, created_at, payload_json
+      ) VALUES (
+        @spaceId, @disputeId, @status, @createdAt, @payloadJson
+      )
+    `);
+    try {
+      this.database.exec("BEGIN IMMEDIATE TRANSACTION;");
+      deleteMemories.run(spaceId);
+      deleteDisputes.run(spaceId);
+      for (const memory of memories) {
+        insertMemory.run({
+          spaceId,
+          memoryId: memory.memoryId,
+          status: memory.status,
+          semanticKey: memory.semanticKey ?? null,
+          updatedAt: memory.updatedAt,
+          payloadJson: JSON.stringify(memory)
+        });
+      }
+      for (const dispute of compilation.disputes) {
+        insertDispute.run({
+          spaceId,
+          disputeId: dispute.disputeId,
+          status: dispute.status,
+          createdAt: dispute.createdAt,
+          payloadJson: JSON.stringify(dispute)
+        });
+      }
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  private rebuildAllSpaces(): void {
+    const rows = this.database.prepare(
+      "SELECT DISTINCT space_id FROM remote_events ORDER BY space_id ASC"
+    ).all() as Record<string, unknown>[];
+    for (const row of rows) this.compileSpace(String(row.space_id));
   }
 }

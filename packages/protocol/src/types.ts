@@ -4,11 +4,20 @@ export type RepositoryProvider = "github" | "gitlab" | "generic-git";
 
 export type MemoryKind = "directive" | "decision" | "context" | "reference";
 
-export type MemoryStatus = "active" | "superseded" | "deleted" | "disputed";
+export type MemoryStatus = "candidate" | "active" | "superseded" | "deleted" | "disputed";
+
+export type MemoryOrigin =
+  | "user_explicit"
+  | "host_native"
+  | "agent_inferred"
+  | "sync_import";
 
 export type EventType =
   | "memory.created"
+  | "memory.candidate.created"
   | "memory.updated"
+  | "memory.promoted"
+  | "memory.dispute.resolved"
   | "memory.deleted"
   | "sync.cursor.advanced";
 
@@ -64,6 +73,11 @@ export interface MemoryPayload {
   why?: string;
   howToApply?: string;
   references?: string[];
+  semanticKey?: string;
+  origin?: MemoryOrigin;
+  confidence?: number;
+  observedAt?: string;
+  resolvesMemoryIds?: string[];
 }
 
 export interface EventEnvelope {
@@ -93,10 +107,30 @@ export interface MemoryRecord {
   howToApply?: string;
   references: string[];
   status: MemoryStatus;
+  semanticKey?: string;
+  origin?: MemoryOrigin;
+  confidence?: number;
+  sourceEventIds?: string[];
+  supersededByMemoryId?: string;
+  disputeId?: string;
   createdFromEventId: string;
   lastUpdatedFromEventId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MemoryDispute {
+  schema: "mind-palace.memory-dispute/v0.1";
+  disputeId: string;
+  spaceId: string;
+  semanticKey: string;
+  memoryIds: string[];
+  sourceEventIds: string[];
+  reason: "concurrent_variants";
+  status: "open" | "resolved";
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedByMemoryId?: string;
 }
 
 export interface SyncCursor {
@@ -140,4 +174,18 @@ export interface ProjectSnapshot {
   cursor: string;
   generatedAt: string;
   memories: MemoryRecord[];
+  candidates?: MemoryRecord[];
+  disputes?: MemoryDispute[];
+  superseded?: MemoryRecord[];
+}
+
+export interface MemoryCompilation {
+  spaceId: string;
+  generatedAt: string;
+  active: MemoryRecord[];
+  candidates: MemoryRecord[];
+  disputed: MemoryRecord[];
+  superseded: MemoryRecord[];
+  deleted: MemoryRecord[];
+  disputes: MemoryDispute[];
 }
