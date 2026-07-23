@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "incremental": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@mind-palace/protocol": ["packages/protocol/src/index.ts"],
+      "@mind-palace/local-node": ["packages/local-node/src/index.ts"],
+      "@mind-palace/adapter-sdk": ["packages/adapter-sdk/src/index.ts"],
+      "@mind-palace/adapter-claude-code": ["packages/adapter-claude-code/src/index.ts"],
+      "@mind-palace/adapter-codex": ["packages/adapter-codex/src/index.ts"],
+      "@mind-palace/mcp-server": ["packages/mcp-server/src/index.ts"],
+      "@mind-palace/cli": ["packages/cli/src/index.ts"]
+    }
+  }
+}
+

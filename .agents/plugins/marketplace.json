@@ -1,0 +1,20 @@
+{
+  "name": "mind-palace-local",
+  "interface": {
+    "displayName": "Mind Palace Local"
+  },
+  "plugins": [
+    {
+      "name": "mind-palace-codex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mind-palace-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
