@@ -1,0 +1,15 @@
+{
+  "name": "mind-palace",
+  "version": "0.1.1",
+  "description": "Mind Palace project-memory context, explicit memory commands, and local sync guidance for Claude Code.",
+  "author": {
+    "name": "KylinMountain"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "memory",
+    "project-memory",
+    "sync",
+    "mind-palace"
+  ]
+}

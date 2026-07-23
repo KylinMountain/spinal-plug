@@ -1,0 +1,41 @@
+{
+  "description": "Load Mind Palace project memory at session and prompt boundaries.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/mind-palace-hook.sh\"",
+            "statusMessage": "Mind Palace // memory core boot sequence",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/mind-palace-hook.sh\"",
+            "statusMessage": "Mind Palace // incarnation link recall",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/mind-palace-hook.sh\"",
+            "statusMessage": "Mind Palace // native memory uplink",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
