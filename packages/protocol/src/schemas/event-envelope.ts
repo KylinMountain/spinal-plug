@@ -1,7 +1,7 @@
 import type { JsonSchema } from "./common.js";
 
 export const eventEnvelopeSchema: JsonSchema = {
-  $id: "mind-palace.event-envelope/v0.1",
+  $id: "spinal-plug.event-envelope/v0.1",
   type: "object",
   additionalProperties: false,
   required: [

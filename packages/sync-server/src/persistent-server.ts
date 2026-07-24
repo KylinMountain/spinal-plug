@@ -12,7 +12,7 @@ import type {
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
-} from "@mind-palace/protocol";
+} from "@spinal-plug/protocol";
 import { createCanonicalUpdates } from "./canonical-updates.js";
 import { MemoryCompiler } from "./memory-compiler.js";
 
@@ -169,7 +169,7 @@ export class PersistentSyncServer {
   snapshot(spaceId: string): ProjectSnapshot {
     const compilation = this.compilation(spaceId);
     return {
-      schema: "mind-palace.project-snapshot/v0.1",
+      schema: "spinal-plug.project-snapshot/v0.1",
       spaceId,
       cursor: cursorFor(this.latestSequence(spaceId)),
       generatedAt: new Date().toISOString(),

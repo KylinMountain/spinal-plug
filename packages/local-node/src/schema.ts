@@ -84,7 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_runtime_entities_space_type_updated
   ON runtime_entities(space_id, entity_type, updated_at DESC);
 
 -- Stores only extracted candidate drafts and a one-way source digest. The raw
--- prompt and model response never enter the Mind Palace database.
+-- prompt and model response never enter the Spinal Plug database.
 CREATE TABLE IF NOT EXISTS candidate_extraction_jobs (
   job_id TEXT PRIMARY KEY,
   host TEXT NOT NULL,

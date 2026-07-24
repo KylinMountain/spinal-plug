@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/mind-palace-hook.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/spinal-plug-hook.sh\"",
             "statusMessage": "SPINAL-PLUG // neural link initialization",
             "timeout": 5
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/mind-palace-hook.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/spinal-plug-hook.sh\"",
             "statusMessage": "SPINAL-PLUG // synaptic recall channel",
             "timeout": 5
           }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/mind-palace-hook.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/spinal-plug-hook.sh\"",
             "statusMessage": "SPINAL-PLUG // memory uplink sequence",
             "timeout": 5
           }

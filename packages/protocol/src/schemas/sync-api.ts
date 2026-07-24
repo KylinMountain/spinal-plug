@@ -1,7 +1,7 @@
 import type { JsonSchema } from "./common.js";
 
 export const syncPushRequestSchema: JsonSchema = {
-  $id: "mind-palace.sync-push-request/v0.1",
+  $id: "spinal-plug.sync-push-request/v0.1",
   type: "object",
   additionalProperties: false,
   required: ["spaceId", "deviceId", "events"],
@@ -13,7 +13,7 @@ export const syncPushRequestSchema: JsonSchema = {
 };
 
 export const syncPullRequestSchema: JsonSchema = {
-  $id: "mind-palace.sync-pull-request/v0.1",
+  $id: "spinal-plug.sync-pull-request/v0.1",
   type: "object",
   additionalProperties: false,
   required: ["spaceId", "deviceId"],
@@ -26,7 +26,7 @@ export const syncPullRequestSchema: JsonSchema = {
 };
 
 export const syncFetchRequestSchema: JsonSchema = {
-  $id: "mind-palace.sync-fetch-request/v0.1",
+  $id: "spinal-plug.sync-fetch-request/v0.1",
   type: "object",
   additionalProperties: false,
   required: ["spaceId", "deviceId"],

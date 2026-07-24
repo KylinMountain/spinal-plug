@@ -1,5 +1,5 @@
 {
-  "name": "@mind-palace/sync-server",
+  "name": "@spinal-plug/sync-server",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -10,6 +10,6 @@
     "test": "node --test dist/*.test.js"
   },
   "dependencies": {
-    "@mind-palace/protocol": "workspace:*"
+    "@spinal-plug/protocol": "workspace:*"
   }
 }

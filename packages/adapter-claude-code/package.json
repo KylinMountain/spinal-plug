@@ -1,5 +1,5 @@
 {
-  "name": "@mind-palace/adapter-claude-code",
+  "name": "@spinal-plug/adapter-claude-code",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -9,8 +9,8 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@mind-palace/adapter-sdk": "workspace:*",
-    "@mind-palace/local-node": "workspace:*",
-    "@mind-palace/protocol": "workspace:*"
+    "@spinal-plug/adapter-sdk": "workspace:*",
+    "@spinal-plug/local-node": "workspace:*",
+    "@spinal-plug/protocol": "workspace:*"
   }
 }

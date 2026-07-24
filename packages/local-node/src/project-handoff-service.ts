@@ -6,8 +6,8 @@ import type {
   EventRuntimeContext,
   ProjectCheckpoint,
   ProjectSpace
-} from "@mind-palace/protocol";
-import { MindPalaceDatabase } from "./index.js";
+} from "@spinal-plug/protocol";
+import { SpinalPlugDatabase } from "./index.js";
 
 export interface CreateCheckpointInput {
   space: ProjectSpace;
@@ -35,8 +35,8 @@ function compact(values: string[] | undefined): string[] {
 function actor(overrides: Partial<EventActor> = {}): EventActor {
   return {
     deviceId: `device:${hostname()}`,
-    agentInstallationId: "mind-palace-cli",
-    host: "mind-palace",
+    agentInstallationId: "spinal-plug-cli",
+    host: "spinal-plug",
     sessionId: "local",
     adapterVersion: "0.1.0",
     ...overrides
@@ -46,7 +46,7 @@ function actor(overrides: Partial<EventActor> = {}): EventActor {
 /** Work-state service. Checkpoints are handoff artifacts, never canonical memory. */
 export class ProjectHandoffService {
   constructor(
-    private readonly database: MindPalaceDatabase,
+    private readonly database: SpinalPlugDatabase,
     private readonly identity = { accountId: "local", personaId: "persona_default" },
     private readonly actorDefaults: Partial<EventActor> = {}
   ) {}
@@ -56,7 +56,7 @@ export class ProjectHandoffService {
     const checkpointId = `chk_${randomUUID()}`;
     const previous = input.parentCheckpointId ?? this.database.latestCheckpoint(input.space.spaceId)?.checkpointId;
     const checkpoint: ProjectCheckpoint = {
-      schema: "mind-palace.project-checkpoint/v0.1",
+      schema: "spinal-plug.project-checkpoint/v0.1",
       checkpointId,
       spaceId: input.space.spaceId,
       title: input.title.trim(),
@@ -115,7 +115,7 @@ export class ProjectHandoffService {
     if (!checkpoint) return null;
     const section = (name: string, values: string[]) => values.length ? `\n${name}:\n${values.map(value => `- ${value}`).join("\n")}` : "";
     return [
-      `<mind-palace_handoff checkpoint="${checkpoint.checkpointId}">`,
+      `<spinal-plug_handoff checkpoint="${checkpoint.checkpointId}">`,
       `Title: ${checkpoint.title}`,
       checkpoint.summary ? `Summary: ${checkpoint.summary}` : "",
       section("Completed", checkpoint.completed),
@@ -124,7 +124,7 @@ export class ProjectHandoffService {
       section("Blockers", checkpoint.blockers),
       checkpoint.nextAction ? `\nNext action: ${checkpoint.nextAction}` : "",
       section("Artifacts", checkpoint.artifactRefs),
-      "</mind-palace_handoff>"
+      "</spinal-plug_handoff>"
     ].filter(Boolean).join("\n");
   }
 }

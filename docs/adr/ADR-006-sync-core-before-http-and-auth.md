@@ -15,7 +15,7 @@ M2 需要解决跨设备的 Event Push、Cursor Pull、Snapshot 与 tombstone �
 ## 决策
 
 - `SyncTransport` 是本地节点依赖的唯一同步接口，提供 `push` 与 `pull`。
-- `MindPalaceSyncClient` 负责 Outbox 推送、远端事件应用和 cursor 提交。
+- `SpinalPlugSyncClient` 负责 Outbox 推送、远端事件应用和 cursor 提交。
 - 最初由 `InMemorySyncServer` 实现权威服务端语义，用于协议测试和本地开发；它按 Project Space 单调排列事件，并以全局 `eventId` 去重。
 - `ProjectSnapshot` 是事件流的只读物化视图，仅包含 active MemoryRecord；删除仍由事件流中的 tombstone 保留。
 - 后续实现由持久化中心、账户/设备认证、Space ACL、TLS 约束和限流替代，详见 ADR-007、ADR-008。

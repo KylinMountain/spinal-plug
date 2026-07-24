@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import type { ProjectSpace, ProjectSpaceType, RepositoryProvider } from "@mind-palace/protocol";
+import type { ProjectSpace, ProjectSpaceType, RepositoryProvider } from "@spinal-plug/protocol";
 
-const SPACE_FILE = join(".mind-palace", "space.json");
+const SPACE_FILE = join(".spinal-plug", "space.json");
 
 function findProjectRoot(cwd: string): string {
   let current = resolve(cwd);
@@ -22,10 +22,10 @@ function findProjectRoot(cwd: string): string {
 function parseSpace(path: string): ProjectSpace {
   const parsed = JSON.parse(readFileSync(path, "utf8")) as ProjectSpace;
   if (
-    parsed.schema !== "mind-palace.project-space/v0.1"
+    parsed.schema !== "spinal-plug.project-space/v0.1"
     || !["project", "archive", "general"].includes(parsed.type)
   ) {
-    throw new Error(`Unsupported Mind Palace Project Space file: ${path}`);
+    throw new Error(`Unsupported Spinal Plug Project Space file: ${path}`);
   }
   return parsed;
 }
@@ -117,7 +117,7 @@ export class ProjectSpaceResolver {
 
     const repository = repositoryFromGit(rootPath);
     const space: ProjectSpace = {
-      schema: "mind-palace.project-space/v0.1",
+      schema: "spinal-plug.project-space/v0.1",
       spaceId: spaceIdFromRepository(repository),
       type: "project",
       displayName: displayName ?? displayNameFromRepository(repository, rootPath),
@@ -158,7 +158,7 @@ export class ProjectSpaceResolver {
     }
 
     const space: ProjectSpace = {
-      schema: "mind-palace.project-space/v0.1",
+      schema: "spinal-plug.project-space/v0.1",
       spaceId,
       type,
       displayName

@@ -4,7 +4,7 @@ import type {
   MemoryCompilation,
   MemoryPayload,
   MemoryRecord
-} from "@mind-palace/protocol";
+} from "@spinal-plug/protocol";
 
 function updateKind(memory: MemoryRecord): CanonicalMemoryUpdate["kind"] {
   switch (memory.status) {
@@ -43,7 +43,7 @@ export function createCanonicalUpdates(
     const memory = records.get(memoryId);
     if (!memory) return [];
     return [{
-      schema: "mind-palace.canonical-memory-update/v0.1" as const,
+      schema: "spinal-plug.canonical-memory-update/v0.1" as const,
       updateId: `upd_${memory.lastUpdatedFromEventId}`,
       spaceId,
       memoryId,

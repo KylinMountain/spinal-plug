@@ -7,7 +7,7 @@ import type {
   MemoryPayload,
   MemoryRecord,
   MemoryStatus
-} from "@mind-palace/protocol";
+} from "@spinal-plug/protocol";
 
 export interface SequencedMemoryEvent {
   sequence: number;
@@ -124,7 +124,7 @@ export class MemoryCompiler {
           : initialStatus(event, payload, this.autoPromoteThreshold);
       const sourceEventIds = unique([...(existing?.sourceEventIds ?? []), event.eventId]);
       const record: CompiledRecord = {
-        schema: "mind-palace.memory-record/v0.1",
+        schema: "spinal-plug.memory-record/v0.1",
         memoryId: payload.memoryId,
         spaceId,
         kind: payload.kind,
@@ -232,7 +232,7 @@ export class MemoryCompiler {
         record.disputeId = id;
       }
       disputes.push({
-        schema: "mind-palace.memory-dispute/v0.1",
+        schema: "spinal-plug.memory-dispute/v0.1",
         disputeId: id,
         spaceId,
         semanticKey: key,

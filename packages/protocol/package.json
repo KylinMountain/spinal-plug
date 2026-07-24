@@ -1,5 +1,5 @@
 {
-  "name": "@mind-palace/protocol",
+  "name": "@spinal-plug/protocol",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",

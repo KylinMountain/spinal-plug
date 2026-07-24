@@ -8,7 +8,7 @@ import type {
   EventType,
   MemoryOrigin,
   MemoryPayload
-} from "@mind-palace/protocol";
+} from "@spinal-plug/protocol";
 import { MemoryCompiler, type SequencedMemoryEvent } from "./memory-compiler.js";
 import { PersistentSyncServer } from "./persistent-server.js";
 
@@ -145,7 +145,7 @@ test("explicit resolution closes an existing conflict", () => {
 });
 
 test("persistent server rebuilds compiled state after restart", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "mind-palace-compiler-"));
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-compiler-"));
   const databasePath = join(directory, "central.db");
   const events = [
     memoryEvent({ id: "evt_01", memoryId: "mem_kafka", statement: "Use Kafka" }),
@@ -163,7 +163,7 @@ test("persistent server rebuilds compiled state after restart", async () => {
 });
 
 test("fetch exposes compiled disputes instead of raw active variants", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "mind-palace-fetch-"));
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-fetch-"));
   const server = new PersistentSyncServer(join(directory, "central.db"));
   await server.push({
     spaceId,
@@ -182,7 +182,7 @@ test("fetch exposes compiled disputes instead of raw active variants", async () 
 });
 
 test("fetch marks tombstones as required updates", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "mind-palace-delete-"));
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-delete-"));
   const server = new PersistentSyncServer(join(directory, "central.db"));
   const created = memoryEvent({
     id: "evt_01",
@@ -208,7 +208,7 @@ test("fetch marks tombstones as required updates", async () => {
 });
 
 test("snapshot exposes work-state checkpoints without mixing them into memory compilation", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "mind-palace-checkpoint-snapshot-"));
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-checkpoint-snapshot-"));
   const server = new PersistentSyncServer(join(directory, "central.db"));
   const checkpoint: EventEnvelope = {
     schemaVersion: 1,
@@ -229,7 +229,7 @@ test("snapshot exposes work-state checkpoints without mixing them into memory co
     runtimeContext: { missionId: "payments-migration", branchId: "codex-mac" },
     payload: {
       checkpoint: {
-        schema: "mind-palace.project-checkpoint/v0.1",
+        schema: "spinal-plug.project-checkpoint/v0.1",
         checkpointId: "chk_payments",
         spaceId,
         title: "Payment migration handoff",

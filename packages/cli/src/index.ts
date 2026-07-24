@@ -3,25 +3,25 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer, ClaudeCodeAdapter } from "@mind-palace/adapter-claude-code";
-import { CodexAdapter, CodexNativeMemoryStore } from "@mind-palace/adapter-codex";
-import type { HookEventName, MindPalaceAdapter } from "@mind-palace/adapter-sdk";
+import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer, ClaudeCodeAdapter } from "@spinal-plug/adapter-claude-code";
+import { CodexAdapter, CodexNativeMemoryStore } from "@spinal-plug/adapter-codex";
+import type { HookEventName, SpinalPlugAdapter } from "@spinal-plug/adapter-sdk";
 import {
   HttpSyncTransport,
-  MindPalaceDatabase,
-  MindPalaceSyncClient,
+  SpinalPlugDatabase,
+  SpinalPlugSyncClient,
   MindRuntimeService,
   ProjectHandoffService,
   ProjectMemoryService,
   ProjectSpaceResolver
-} from "@mind-palace/local-node";
-import type { MindCapsule, MemoryKind, ProjectSpace } from "@mind-palace/protocol";
+} from "@spinal-plug/local-node";
+import type { MindCapsule, MemoryKind, ProjectSpace } from "@spinal-plug/protocol";
 import {
   createControlPlaneHttpServer,
   createSyncHttpServer,
-  MindPalaceControlPlane,
+  SpinalPlugControlPlane,
   PersistentSyncServer
-} from "@mind-palace/sync-server";
+} from "@spinal-plug/sync-server";
 
 const MEMORY_KINDS: ReadonlySet<string> = new Set(["directive", "decision", "context", "reference"]);
 const HOOK_EVENTS: ReadonlySet<string> = new Set([
@@ -36,14 +36,13 @@ const HOOK_EVENTS: ReadonlySet<string> = new Set([
 function printHelp(): void {
   console.log(`spinal-plug
 
-Spinal Plug is the current product command. The legacy mind-palace alias remains available for existing Hooks.
+Spinal Plug is the project command and lifecycle runtime.
 
 Commands:
   connect <db-path> <project-dir>                  Create a project or archive binding for this directory
   archive <db-path> <project-dir> [name]           Create a named non-Git workspace archive
   general <db-path> <project-dir>                  Bind this directory to General Space
   link <db-path> <project-dir> <space-id> [name]   Bind this directory to an existing archive
-  init <db-path> [project-dir]                     Legacy alias for connect (development compatibility)
   status <db-path> [project-dir]                   Show user-facing status for the current Space
   boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
   share <db-path> <project-dir> <kind> <text> <url> <device-id>
@@ -96,24 +95,24 @@ function ensureParentDir(filePath: string): void {
   mkdirSync(dirname(filePath), { recursive: true });
 }
 
-function openDatabase(rawPath: string): { dbPath: string; database: MindPalaceDatabase } {
+function openDatabase(rawPath: string): { dbPath: string; database: SpinalPlugDatabase } {
   const dbPath = resolve(process.cwd(), rawPath);
   ensureParentDir(dbPath);
-  const database = new MindPalaceDatabase(dbPath);
+  const database = new SpinalPlugDatabase(dbPath);
   database.init();
   return { dbPath, database };
 }
 
-function createMemoryService(database: MindPalaceDatabase): ProjectMemoryService {
-  const deviceId = process.env.MIND_PALACE_DEVICE_ID;
+function createMemoryService(database: SpinalPlugDatabase): ProjectMemoryService {
+  const deviceId = process.env.SPINAL_PLUG_DEVICE_ID;
   return new ProjectMemoryService(database, {
-    accountId: process.env.MIND_PALACE_ACCOUNT_ID ?? "local",
-    personaId: process.env.MIND_PALACE_PERSONA_ID ?? "persona_default"
+    accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
+    personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
   }, deviceId ? { deviceId } : {});
 }
 
 function createSyncTransport(url: string): HttpSyncTransport {
-  return new HttpSyncTransport(url, process.env.MIND_PALACE_DEVICE_TOKEN);
+  return new HttpSyncTransport(url, process.env.SPINAL_PLUG_DEVICE_TOKEN);
 }
 
 function digest(value: string): string {
@@ -127,7 +126,7 @@ function requireMemoryKind(value: string): MemoryKind {
   return value as MemoryKind;
 }
 
-function resolveAdapter(host: string): MindPalaceAdapter {
+function resolveAdapter(host: string): SpinalPlugAdapter {
   if (host === "claude-code") return new ClaudeCodeAdapter();
   if (host === "codex") return new CodexAdapter();
   throw new Error(`Unsupported host: ${host}`);
@@ -152,11 +151,11 @@ function toHostHookOutput(host: string, event: HookEventName, output: { addition
 function createWorkspaceDiscoveryContext(projectDir: string): string {
   const suggestedName = basename(resolve(projectDir));
   return [
-    '<mind-palace_workspace_discovery schema="v0.1">',
-    `This non-Git workspace has no Mind Palace binding. Suggested archive name: ${suggestedName}.`,
-    "Ask one concise question before using Mind Palace memory: create this archive, use General, link an existing archive, or keep Mind Palace disabled for this directory.",
+    '<spinal-plug_workspace_discovery schema="v0.1">',
+    `This non-Git workspace has no Spinal Plug binding. Suggested archive name: ${suggestedName}.`,
+    "Ask one concise question before using Spinal Plug memory: create this archive, use General, link an existing archive, or keep Spinal Plug disabled for this directory.",
     "Do not create a binding, write memory, or share anything until the user selects an option.",
-    "</mind-palace_workspace_discovery>"
+    "</spinal-plug_workspace_discovery>"
   ].join("\n");
 }
 
@@ -174,9 +173,9 @@ interface ClaudeAutoMemoryShareResult {
 
 /** Import native Claude topic files before publishing; the SQLite cache itself never leaves the device. */
 async function shareClaudeAutoMemory(
-  database: MindPalaceDatabase,
+  database: SpinalPlugDatabase,
   service: ProjectMemoryService,
-  space: import("@mind-palace/protocol").ProjectSpace,
+  space: import("@spinal-plug/protocol").ProjectSpace,
   projectPath: string,
   url: string,
   deviceId: string
@@ -222,7 +221,7 @@ async function shareClaudeAutoMemory(
       unchanged += 1;
     }
   }
-  const shared = await new MindPalaceSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
+  const shared = await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
   return {
     source: "claude-code-auto-memory",
     discovered: imported.candidates.length,
@@ -236,7 +235,7 @@ async function shareClaudeAutoMemory(
 
 /** Persist a bounded, reviewable candidate queue; no source transcript is retained. */
 function drainCodexCandidateJobs(
-  database: MindPalaceDatabase,
+  database: SpinalPlugDatabase,
   service: ProjectMemoryService,
   space: ProjectSpace
 ): number {
@@ -260,7 +259,7 @@ function drainCodexCandidateJobs(
           confidence: candidate.confidence,
           asCandidate: true,
           actor: {
-            agentInstallationId: "mind-palace-codex-hook",
+            agentInstallationId: "spinal-plug-codex-hook",
             host: "codex",
             sessionId: job.sessionId
           }
@@ -282,7 +281,7 @@ async function executeHook(
   rawDbPath: string,
   projectDir: string,
   prompt?: string,
-  sessionId = process.env.MIND_PALACE_SESSION_ID ?? "hook-session",
+  sessionId = process.env.SPINAL_PLUG_SESSION_ID ?? "hook-session",
   output?: string
 ): Promise<void> {
   if (!HOOK_EVENTS.has(rawEvent)) {
@@ -324,8 +323,8 @@ async function executeHook(
           service,
           space,
           payload.cwd,
-          process.env.MIND_PALACE_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
-          process.env.MIND_PALACE_DEVICE_ID ?? "device-local"
+          process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
+          process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
         );
       } catch {
         // An unavailable development Control Plane must not delay host startup.
@@ -333,15 +332,15 @@ async function executeHook(
     }
     if (host === "codex") {
       // Keep Codex's reserved native-memory projection current without
-      // overwriting any non-Mind-Palace rows in its private database.
+      // overwriting any non-Spinal-Plug rows in its private database.
       new CodexNativeMemoryStore().materialize(space, service.list(space));
     }
     const baseProjection = service.createBootProjection(space);
-    const requestedCapsuleId = process.env.MIND_PALACE_CAPSULE_ID;
+    const requestedCapsuleId = process.env.SPINAL_PLUG_CAPSULE_ID;
     const capsule = requestedCapsuleId
       ? database.getRuntimeEntity<MindCapsule>(requestedCapsuleId)
       : null;
-    if (capsule && (capsule.schema !== "mind-palace.mind-capsule/v0.1" || capsule.spaceId !== space.spaceId)) {
+    if (capsule && (capsule.schema !== "spinal-plug.mind-capsule/v0.1" || capsule.spaceId !== space.spaceId)) {
       throw new Error(`Mind Capsule is unavailable for this Project Space: ${requestedCapsuleId}`);
     }
     const projection = capsule
@@ -354,13 +353,13 @@ async function executeHook(
       : baseProjection;
     if (capsule) {
       new MindRuntimeService(database, {
-        accountId: process.env.MIND_PALACE_ACCOUNT_ID ?? "local",
-        personaId: process.env.MIND_PALACE_PERSONA_ID ?? "persona_default"
+        accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
+        personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
       }).spawn({
         space,
         capsuleId: capsule.capsuleId,
         host,
-        deviceId: process.env.MIND_PALACE_DEVICE_ID ?? `device-${host}`,
+        deviceId: process.env.SPINAL_PLUG_DEVICE_ID ?? `device-${host}`,
         sessionId: payload.sessionId,
         compatibilityWarnings: []
       });
@@ -377,8 +376,8 @@ async function executeHook(
           service,
           space,
           payload.cwd,
-          process.env.MIND_PALACE_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
-          process.env.MIND_PALACE_DEVICE_ID ?? "device-local"
+          process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
+          process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
         );
       } catch {
         // Keep the host prompt path available while the local development server is down.
@@ -396,8 +395,8 @@ async function executeHook(
         service,
         space,
         payload.cwd,
-        process.env.MIND_PALACE_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
-        process.env.MIND_PALACE_DEVICE_ID ?? "device-local"
+        process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
+        process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
       );
     } catch {
       // The next session boundary retries idempotently from the local cache.
@@ -434,10 +433,10 @@ async function executeHook(
     try {
       // Held candidate events are intentionally excluded; only confirmed
       // memory and work-state events are eligible for automatic publication.
-      await new MindPalaceSyncClient(
+      await new SpinalPlugSyncClient(
         database,
-        createSyncTransport(process.env.MIND_PALACE_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL)
-      ).publish(space.spaceId, process.env.MIND_PALACE_DEVICE_ID ?? "device-local");
+        createSyncTransport(process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL)
+      ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
     } catch {
       // The local WAL/outbox retries on a later lifecycle boundary.
     }
@@ -445,8 +444,8 @@ async function executeHook(
   console.log(JSON.stringify({
     notices: [
       candidatesCreated > 0
-        ? `Mind Palace stored ${candidatesCreated} reviewable candidate memor${candidatesCreated === 1 ? "y" : "ies"}.`
-        : "Mind Palace hook completed."
+        ? `Spinal Plug stored ${candidatesCreated} reviewable candidate memor${candidatesCreated === 1 ? "y" : "ies"}.`
+        : "Spinal Plug hook completed."
     ]
   }));
 }
@@ -454,7 +453,7 @@ async function executeHook(
 async function runHook(args: string[]): Promise<void> {
   const [host, rawEvent, rawDbPath, projectDir, ...promptParts] = args;
   if (!host || !rawEvent || !rawDbPath || !projectDir) {
-    throw new Error("Usage: mind-palace hook <host> <event> <db-path> <project-dir> [prompt]");
+    throw new Error("Usage: spinal-plug hook <host> <event> <db-path> <project-dir> [prompt]");
   }
   await executeHook(host, rawEvent, rawDbPath, projectDir, promptParts.join(" ") || undefined);
 }
@@ -476,7 +475,7 @@ function mapHostEvent(host: string, hookEventName: unknown): HookEventName | nul
 async function runStdinHook(args: string[]): Promise<void> {
   const [host, rawDbPath] = args;
   if (!host || !rawDbPath) {
-    throw new Error("Usage: mind-palace hook-stdin <host> <db-path>");
+    throw new Error("Usage: spinal-plug hook-stdin <host> <db-path>");
   }
   const rawInput = await new Promise<string>((resolveInput, reject) => {
     let content = "";
@@ -526,7 +525,7 @@ async function main(): Promise<void> {
   }
   if (command === "serve") {
     const [serverDbPath, rawPort] = args;
-    if (!serverDbPath) throw new Error("Usage: mind-palace serve <server-db-path> [port]");
+    if (!serverDbPath) throw new Error("Usage: spinal-plug serve <server-db-path> [port]");
     const databasePath = resolve(process.cwd(), serverDbPath);
     ensureParentDir(databasePath);
     const syncServer = new PersistentSyncServer(databasePath);
@@ -534,24 +533,24 @@ async function main(): Promise<void> {
     const port = rawPort ? Number(rawPort) : 8787;
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Port must be an integer from 1 to 65535.");
     await httpServer.listen(port);
-    console.log(`Mind Palace sync server listening on http://127.0.0.1:${port}`);
+    console.log(`Spinal Plug sync server listening on http://127.0.0.1:${port}`);
     return;
   }
   if (command === "serve-control-plane") {
     const [serverDbPath, rawPort] = args;
     if (!serverDbPath) {
-      throw new Error("Usage: mind-palace serve-control-plane <server-db-path> [port]");
+      throw new Error("Usage: spinal-plug serve-control-plane <server-db-path> [port]");
     }
-    const bootstrapToken = process.env.MIND_PALACE_BOOTSTRAP_TOKEN;
-    if (!bootstrapToken) throw new Error("MIND_PALACE_BOOTSTRAP_TOKEN is required.");
+    const bootstrapToken = process.env.SPINAL_PLUG_BOOTSTRAP_TOKEN;
+    if (!bootstrapToken) throw new Error("SPINAL_PLUG_BOOTSTRAP_TOKEN is required.");
     const databasePath = resolve(process.cwd(), serverDbPath);
     ensureParentDir(databasePath);
-    const certPath = process.env.MIND_PALACE_TLS_CERT;
-    const keyPath = process.env.MIND_PALACE_TLS_KEY;
+    const certPath = process.env.SPINAL_PLUG_TLS_CERT;
+    const keyPath = process.env.SPINAL_PLUG_TLS_KEY;
     if (Boolean(certPath) !== Boolean(keyPath)) {
-      throw new Error("MIND_PALACE_TLS_CERT and MIND_PALACE_TLS_KEY must be set together.");
+      throw new Error("SPINAL_PLUG_TLS_CERT and SPINAL_PLUG_TLS_KEY must be set together.");
     }
-    const controlPlane = new MindPalaceControlPlane(databasePath);
+    const controlPlane = new SpinalPlugControlPlane(databasePath);
     const httpServer = createControlPlaneHttpServer(controlPlane, {
       bootstrapToken,
       tls: certPath && keyPath
@@ -559,24 +558,24 @@ async function main(): Promise<void> {
         : undefined
     });
     const port = rawPort ? Number(rawPort) : 8787;
-    const host = process.env.MIND_PALACE_LISTEN_HOST ?? "127.0.0.1";
+    const host = process.env.SPINAL_PLUG_LISTEN_HOST ?? "127.0.0.1";
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error("Port must be an integer from 1 to 65535.");
     }
     await httpServer.listen(port, host);
-    console.log(`Mind Palace Control Plane listening on ${httpServer.secure ? "https" : "http"}://${host}:${port}`);
+    console.log(`Spinal Plug Control Plane listening on ${httpServer.secure ? "https" : "http"}://${host}:${port}`);
     return;
   }
   if (command === "control-provision") {
     const [serverDbPath, accountName, ownerEmail, ownerName, deviceName] = args;
     if (!serverDbPath || !accountName || !ownerEmail || !ownerName || !deviceName) {
       throw new Error(
-        "Usage: mind-palace control-provision <server-db-path> <account> <email> <owner> <device>"
+        "Usage: spinal-plug control-provision <server-db-path> <account> <email> <owner> <device>"
       );
     }
     const databasePath = resolve(process.cwd(), serverDbPath);
     ensureParentDir(databasePath);
-    const controlPlane = new MindPalaceControlPlane(databasePath);
+    const controlPlane = new SpinalPlugControlPlane(databasePath);
     try {
       console.log(JSON.stringify(controlPlane.provisionAccount({
         accountName,
@@ -596,7 +595,7 @@ async function main(): Promise<void> {
   }
   if (command === "init-db") {
     const { dbPath } = openDatabase(rawDbPath);
-    console.log(`Initialized Mind Palace local cache at ${dbPath}`);
+    console.log(`Initialized Spinal Plug local cache at ${dbPath}`);
     return;
   }
   if (command === "status") {
@@ -642,7 +641,7 @@ async function main(): Promise<void> {
 
   const resolver = new ProjectSpaceResolver();
   const projectPath = resolve(process.cwd(), projectDir);
-  if (command === "init" || command === "connect" || command === "archive" || command === "general" || command === "link") {
+  if (command === "connect" || command === "archive" || command === "general" || command === "link") {
     // The database is a private device cache and outbox, not a synced project artifact.
     openDatabase(rawDbPath);
     let result;
@@ -652,7 +651,7 @@ async function main(): Promise<void> {
       result = resolver.initializeArchive(projectPath, rest.join(" ") || undefined);
     } else if (command === "link") {
       const [spaceId, ...nameParts] = rest;
-      if (!spaceId) throw new Error("Usage: mind-palace link <db-path> <project-dir> <space-id> [name]");
+      if (!spaceId) throw new Error("Usage: spinal-plug link <db-path> <project-dir> <space-id> [name]");
       result = resolver.linkExisting(projectPath, spaceId, nameParts.join(" ") || spaceId);
     } else if (resolver.isGitWorkspace(projectPath)) {
       result = resolver.initialize(projectPath);
@@ -687,16 +686,16 @@ async function main(): Promise<void> {
   const { database } = openDatabase(rawDbPath);
   const service = createMemoryService(database);
   const handoffs = new ProjectHandoffService(database, {
-    accountId: process.env.MIND_PALACE_ACCOUNT_ID ?? "local",
-    personaId: process.env.MIND_PALACE_PERSONA_ID ?? "persona_default"
+    accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
+    personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
   });
   const runtime = new MindRuntimeService(database, {
-    accountId: process.env.MIND_PALACE_ACCOUNT_ID ?? "local",
-    personaId: process.env.MIND_PALACE_PERSONA_ID ?? "persona_default"
+    accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
+    personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
   });
   if (["mind-core", "role", "mission", "task-graph", "capsule", "incarnate"].includes(command)) {
     const rawInput = rest.join(" ");
-    if (!rawInput) throw new Error(`Usage: mind-palace ${command} <db-path> <project-dir> <json>`);
+    if (!rawInput) throw new Error(`Usage: spinal-plug ${command} <db-path> <project-dir> <json>`);
     let input: Record<string, unknown>;
     try {
       input = JSON.parse(rawInput) as Record<string, unknown>;
@@ -749,7 +748,7 @@ async function main(): Promise<void> {
                 space,
                 capsuleId: String(input.capsuleId ?? ""),
                 host: String(input.host ?? ""),
-                deviceId: String(input.deviceId ?? process.env.MIND_PALACE_DEVICE_ID ?? "device-local"),
+                deviceId: String(input.deviceId ?? process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"),
                 sessionId: String(input.sessionId ?? "runtime-session"),
                 compatibilityWarnings: Array.isArray(input.compatibilityWarnings)
                   ? input.compatibilityWarnings.map(String)
@@ -765,7 +764,7 @@ async function main(): Promise<void> {
   if (command === "share-claude") {
     const [url, deviceId] = rest;
     if (!url || !deviceId) {
-      throw new Error("Usage: mind-palace share-claude <db-path> <project-dir> <url> <device-id>");
+      throw new Error("Usage: spinal-plug share-claude <db-path> <project-dir> <url> <device-id>");
     }
     console.log(JSON.stringify(await shareClaudeAutoMemory(database, service, space, projectPath, url, deviceId), null, 2));
     return;
@@ -776,17 +775,17 @@ async function main(): Promise<void> {
     const url = shareArgs.pop();
     const statement = shareArgs.join(" ");
     if (!kind || !statement || !url || !deviceId) {
-      throw new Error("Usage: mind-palace share <db-path> <project-dir> <kind> <text> <url> <device-id>");
+      throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> <text> <url> <device-id>");
     }
     const memory = service.remember({ space, kind: requireMemoryKind(kind), statement });
-    const publish = await new MindPalaceSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
+    const publish = await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
     console.log(JSON.stringify({ memory, shared: publish }, null, 2));
     return;
   }
   if (command === "remember") {
     const [kind, ...statementParts] = rest;
     if (!kind || statementParts.length === 0) {
-      throw new Error("Usage: mind-palace remember <db-path> <project-dir> <kind> <text>");
+      throw new Error("Usage: spinal-plug remember <db-path> <project-dir> <kind> <text>");
     }
     const memory = service.remember({ space, kind: requireMemoryKind(kind), statement: statementParts.join(" ") });
     console.log(JSON.stringify(memory, null, 2));
@@ -802,19 +801,19 @@ async function main(): Promise<void> {
   }
   if (command === "promote") {
     const [memoryId] = rest;
-    if (!memoryId) throw new Error("Usage: mind-palace promote <db-path> <project-dir> <memory-id>");
+    if (!memoryId) throw new Error("Usage: spinal-plug promote <db-path> <project-dir> <memory-id>");
     const memory = service.promote(space, memoryId, {
-      agentInstallationId: "mind-palace-cli-review",
-      host: "mind-palace",
+      agentInstallationId: "spinal-plug-cli-review",
+      host: "spinal-plug",
       sessionId: "candidate-review"
     });
     let published: unknown = undefined;
-    if (process.env.MIND_PALACE_SYNC_URL) {
+    if (process.env.SPINAL_PLUG_SYNC_URL) {
       try {
-        published = await new MindPalaceSyncClient(
+        published = await new SpinalPlugSyncClient(
           database,
-          createSyncTransport(process.env.MIND_PALACE_SYNC_URL)
-        ).publish(space.spaceId, process.env.MIND_PALACE_DEVICE_ID ?? "device-local");
+          createSyncTransport(process.env.SPINAL_PLUG_SYNC_URL)
+        ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
       } catch {
         // The candidate and promotion events remain in the durable outbox.
       }
@@ -825,7 +824,7 @@ async function main(): Promise<void> {
   if (command === "checkpoint") {
     const rawCheckpoint = rest.join(" ");
     if (!rawCheckpoint) {
-      throw new Error("Usage: mind-palace checkpoint <db-path> <project-dir> <json>");
+      throw new Error("Usage: spinal-plug checkpoint <db-path> <project-dir> <json>");
     }
     let input: Record<string, unknown>;
     try {
@@ -850,7 +849,7 @@ async function main(): Promise<void> {
       nextAction: typeof input.nextAction === "string" ? input.nextAction : undefined,
       artifactRefs: strings("artifactRefs"),
       parentCheckpointId: typeof input.parentCheckpointId === "string" ? input.parentCheckpointId : undefined,
-      actor: { agentInstallationId: "mind-palace-cli-handoff", host: "mind-palace", sessionId: "handoff" },
+      actor: { agentInstallationId: "spinal-plug-cli-handoff", host: "spinal-plug", sessionId: "handoff" },
       runtimeContext: {
         missionId: typeof input.missionId === "string" ? input.missionId : null,
         branchId: typeof input.branchId === "string" ? input.branchId : null
@@ -870,14 +869,14 @@ async function main(): Promise<void> {
   if (command === "update") {
     const [memoryId, ...statementParts] = rest;
     if (!memoryId || statementParts.length === 0) {
-      throw new Error("Usage: mind-palace update <db-path> <project-dir> <memory-id> <text>");
+      throw new Error("Usage: spinal-plug update <db-path> <project-dir> <memory-id> <text>");
     }
     console.log(JSON.stringify(service.update(space, { memoryId, statement: statementParts.join(" ") }), null, 2));
     return;
   }
   if (command === "forget") {
     const [memoryId] = rest;
-    if (!memoryId) throw new Error("Usage: mind-palace forget <db-path> <project-dir> <memory-id>");
+    if (!memoryId) throw new Error("Usage: spinal-plug forget <db-path> <project-dir> <memory-id>");
     console.log(JSON.stringify(service.forget(space, memoryId), null, 2));
     return;
   }
@@ -886,7 +885,7 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "recall") {
-    if (rest.length === 0) throw new Error("Usage: mind-palace recall <db-path> <project-dir> <prompt>");
+    if (rest.length === 0) throw new Error("Usage: spinal-plug recall <db-path> <project-dir> <prompt>");
     console.log(JSON.stringify(service.recall(space, rest.join(" ")), null, 2));
     return;
   }
@@ -908,17 +907,17 @@ async function main(): Promise<void> {
   }
   if (command === "sync") {
     const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: mind-palace sync <db-path> <project-dir> <url> <device-id>");
-    const result = await new MindPalaceSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
+    if (!url || !deviceId) throw new Error("Usage: spinal-plug sync <db-path> <project-dir> <url> <device-id>");
+    const result = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
     console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "fetch") {
     const [url, deviceId] = rest;
     if (!url || !deviceId) {
-      throw new Error("Usage: mind-palace fetch <db-path> <project-dir> <url> <device-id>");
+      throw new Error("Usage: spinal-plug fetch <db-path> <project-dir> <url> <device-id>");
     }
-    const result = await new MindPalaceSyncClient(
+    const result = await new SpinalPlugSyncClient(
       database,
       createSyncTransport(url)
     ).fetch(space.spaceId, deviceId);
@@ -970,8 +969,8 @@ async function main(): Promise<void> {
   }
   if (command === "sync-claude") {
     const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: mind-palace sync-claude <db-path> <project-dir> <url> <device-id>");
-    const synchronized = await new MindPalaceSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
+    if (!url || !deviceId) throw new Error("Usage: spinal-plug sync-claude <db-path> <project-dir> <url> <device-id>");
+    const synchronized = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
     const importer = new ClaudeAutoMemoryImporter();
     const localNativeMemoryIds = new Set(
       importer.import(space, projectPath).candidates.map(candidate => candidate.memoryId)
@@ -988,8 +987,8 @@ async function main(): Promise<void> {
   }
   if (command === "sync-codex") {
     const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: mind-palace sync-codex <db-path> <project-dir> <url> <device-id>");
-    const synchronized = await new MindPalaceSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
+    if (!url || !deviceId) throw new Error("Usage: spinal-plug sync-codex <db-path> <project-dir> <url> <device-id>");
+    const synchronized = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
     const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
     console.log(JSON.stringify({ synchronized, materialized }, null, 2));
     return;

@@ -1,4 +1,4 @@
-# Mind Palace Control Plane Console
+# Spinal Plug Control Plane Console
 
 认证控制面启动后，访问同源地址：
 
@@ -21,8 +21,8 @@ http://127.0.0.1:<port>/console
 ## 本地启动
 
 ```bash
-export MIND_PALACE_BOOTSTRAP_TOKEN="choose-a-long-random-value"
-mind-palace serve-control-plane "$HOME/.mind-palace/control-plane.db" 8787
+export SPINAL_PLUG_BOOTSTRAP_TOKEN="choose-a-long-random-value"
+spinal-plug serve-control-plane "$HOME/.spinal-plug/control-plane.db" 8787
 ```
 
-纯 HTTP 仅允许 loopback listener。需要非本机监听时，必须设置 `MIND_PALACE_TLS_CERT` 与 `MIND_PALACE_TLS_KEY`。
+纯 HTTP 仅允许 loopback listener。需要非本机监听时，必须设置 `SPINAL_PLUG_TLS_CERT` 与 `SPINAL_PLUG_TLS_KEY`。

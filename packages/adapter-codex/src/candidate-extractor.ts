@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { AdapterObservation, HostHookPayload } from "@mind-palace/adapter-sdk";
+import type { AdapterObservation, HostHookPayload } from "@spinal-plug/adapter-sdk";
 
 const SECRET_PATTERN = /(?:api[_-]?key|access[_-]?token|token|secret|password|private[_ -]?key|bearer\s+)[=:"'\s]*[A-Za-z0-9_\-/.+=]{8,}/i;
 const EPHEMERAL_PATTERN = /(?:\btodo\b|\bnext\s+(?:step|action)\b|\bworking on\b|\brunning tests?\b|\bcurrently\b|下一步|正在|待处理|临时|本轮)/i;

@@ -19,7 +19,7 @@ Claude Code 与 Codex 都有各自的原生记忆或上下文机制，但这些�
 - 使用宿主公开生命周期 Hook。
 - 使用宿主允许的上下文注入入口。
 - 不把宿主原生记忆目录或数据库作为事实源、同步日志或任意写入目标。
-- 允许宿主专用 Adapter 将已应用的规范记忆投影到受保留标识保护的位置：Claude Code 的 `mind-palace-synced.md` 与 Codex 的 `mind-palace:<space-id>` 记录。
+- 允许宿主专用 Adapter 将已应用的规范记忆投影到受保留标识保护的位置：Claude Code 的 `spinal-plug-synced.md` 与 Codex 的 `spinal-plug:<space-id>` 记录。
 - 投影只能由 `apply-claude`、`apply-codex` 或对应生命周期适配器维护，绝不覆盖用户拥有的原生记忆。
 - 每次 Codex 升级必须运行私有数据库兼容测试；不兼容时降级为 Context Projection 与 MCP，不尝试猜测写入格式。
 - 原生记忆在未来只可作为一次性导入源或只读参考源。
@@ -29,7 +29,7 @@ Claude Code 与 Codex 都有各自的原生记忆或上下文机制，但这些�
 优点：
 
 - 降低因宿主升级造成的破坏。
-- 明确 Mind Palace 是独立记忆层，而不是宿主补丁。
+- 明确 Spinal Plug 是独立记忆层，而不是宿主补丁。
 
 代价：
 

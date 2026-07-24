@@ -4,13 +4,13 @@ import type {
   ContextProjection,
   HostCapabilities,
   HostHookPayload,
-  MindPalaceAdapter
-} from "@mind-palace/adapter-sdk";
-import type { ProjectSpace } from "@mind-palace/protocol";
-import { ProjectSpaceResolver } from "@mind-palace/local-node";
+  SpinalPlugAdapter
+} from "@spinal-plug/adapter-sdk";
+import type { ProjectSpace } from "@spinal-plug/protocol";
+import { ProjectSpaceResolver } from "@spinal-plug/local-node";
 import { extractCodexCandidates } from "./candidate-extractor.js";
 
-export class CodexAdapter implements MindPalaceAdapter {
+export class CodexAdapter implements SpinalPlugAdapter {
   readonly name = "codex";
   private readonly spaceResolver = new ProjectSpaceResolver();
 

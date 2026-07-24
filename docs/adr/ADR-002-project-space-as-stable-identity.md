@@ -19,7 +19,7 @@ Claude Code 与 Codex 常运行在不同机器、不同目录、不同 worktree�
 - `space_id` 是全局稳定主键。
 - `type` 在 v0.1 仅实现 `project`。
 - `repository` 只作为辅助定位，不等同于 `space_id`。
-- 本地允许通过 `.mind-palace/space.json` 固化绑定关系。
+- 本地允许通过 `.spinal-plug/space.json` 固化绑定关系。
 
 ## 结果
 

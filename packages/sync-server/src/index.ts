@@ -8,7 +8,7 @@ import type {
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
-} from "@mind-palace/protocol";
+} from "@spinal-plug/protocol";
 import { createCanonicalUpdates } from "./canonical-updates.js";
 import { MemoryCompiler } from "./memory-compiler.js";
 
@@ -99,7 +99,7 @@ export class InMemorySyncServer {
     const events = this.eventsBySpace.get(spaceId) ?? [];
     const compilation = this.compiler.compile(spaceId, events);
     return {
-      schema: "mind-palace.project-snapshot/v0.1",
+      schema: "spinal-plug.project-snapshot/v0.1",
       spaceId,
       cursor: cursorFor(events.at(-1)?.sequence ?? 0),
       generatedAt: new Date().toISOString(),
@@ -119,7 +119,7 @@ export { PersistentSyncServer } from "./persistent-server.js";
 export { createSyncHttpServer } from "./http-server.js";
 export { MemoryCompiler } from "./memory-compiler.js";
 export { createCanonicalUpdates } from "./canonical-updates.js";
-export { MindPalaceControlPlane, ControlPlaneError } from "./control-plane.js";
+export { SpinalPlugControlPlane, ControlPlaneError } from "./control-plane.js";
 export { createControlPlaneHttpServer } from "./control-plane-http-server.js";
 export type { MemoryCompilerOptions, SequencedMemoryEvent } from "./memory-compiler.js";
 export type {

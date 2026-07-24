@@ -37,7 +37,7 @@ export function renderControlPlaneConsole(): string {
   <section class="layout"><aside><div class="aside-head"><span>Memory Chambers</span><span id="space-count">0</span></div><div id="spaces" class="space-list"></div><div class="section-label">Linked Incarnations</div><div id="devices" class="device-list"></div></aside><main id="main"><div class="empty"><div><b>脊椎栓未锁定</b>输入设备令牌后，建立神经链路并查看项目记忆、候选、冲突、删除记录与工作交接。</div></div></main></section>
 </div>
 <script>
-  const state={token:localStorage.getItem("spinal-plug.console.token")||localStorage.getItem("mind-palace.console.token")||"",spaces:[],devices:[],spaceId:null};
+  const state={token:localStorage.getItem("spinal-plug.console.token")||localStorage.getItem("spinal-plug.console.token")||"",spaces:[],devices:[],spaceId:null};
   const $=id=>document.getElementById(id); $("token").value=state.token;
   const esc=value=>String(value??"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
   const setStatus=(text,ok=false)=>{ $("status-text").textContent=text; $("status-dot").classList.toggle("ok",ok); };

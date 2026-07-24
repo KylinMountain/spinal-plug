@@ -3,16 +3,16 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { MindPalaceDatabase } from "./index.js";
+import { SpinalPlugDatabase } from "./index.js";
 
-function openTestDatabase(): MindPalaceDatabase {
-  const directory = mkdtempSync(join(tmpdir(), "mind-palace-extraction-"));
-  const database = new MindPalaceDatabase(join(directory, "local.db"));
+function openTestDatabase(): SpinalPlugDatabase {
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-extraction-"));
+  const database = new SpinalPlugDatabase(join(directory, "local.db"));
   database.init();
   return database;
 }
 
-function enqueue(database: MindPalaceDatabase, jobId = "job_1"): boolean {
+function enqueue(database: SpinalPlugDatabase, jobId = "job_1"): boolean {
   return database.enqueueCandidateExtraction({
     jobId,
     host: "codex",

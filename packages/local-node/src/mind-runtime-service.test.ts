@@ -3,21 +3,21 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { Incarnation, MindCapsule, ProjectSpace } from "@mind-palace/protocol";
-import { InMemorySyncServer } from "@mind-palace/sync-server";
-import { MindPalaceDatabase } from "./index.js";
+import type { Incarnation, MindCapsule, ProjectSpace } from "@spinal-plug/protocol";
+import { InMemorySyncServer } from "@spinal-plug/sync-server";
+import { SpinalPlugDatabase } from "./index.js";
 import { MindRuntimeService } from "./mind-runtime-service.js";
-import { MindPalaceSyncClient } from "./sync-client.js";
+import { SpinalPlugSyncClient } from "./sync-client.js";
 
 const space: ProjectSpace = {
-  schema: "mind-palace.project-space/v0.1",
+  schema: "spinal-plug.project-space/v0.1",
   spaceId: "spc_runtime",
   type: "project",
   displayName: "payments"
 };
 
-function openDatabase(): MindPalaceDatabase {
-  const database = new MindPalaceDatabase(join(mkdtempSync(join(tmpdir(), "mind-palace-runtime-")), "local.db"));
+function openDatabase(): SpinalPlugDatabase {
+  const database = new SpinalPlugDatabase(join(mkdtempSync(join(tmpdir(), "spinal-plug-runtime-")), "local.db"));
   database.init();
   return database;
 }
@@ -75,11 +75,11 @@ test("Mind Core compiles a capsule and incarnates it without polluting Canonical
   assert.equal(source.listPendingOutboxForSpace(space.spaceId).length, 6);
 
   const controlPlane = new InMemorySyncServer();
-  const sourceClient = new MindPalaceSyncClient(source, controlPlane);
+  const sourceClient = new SpinalPlugSyncClient(source, controlPlane);
   assert.equal((await sourceClient.publish(space.spaceId, "device_mac")).pushed, 6);
 
   const target = openDatabase();
-  const result = await new MindPalaceSyncClient(target, controlPlane).fetch(space.spaceId, "device_linux");
+  const result = await new SpinalPlugSyncClient(target, controlPlane).fetch(space.spaceId, "device_linux");
   assert.equal(result.runtimeEntitiesStored, 6);
   assert.equal(target.getRuntimeEntity<MindCapsule>(capsule.capsuleId)?.missionId, mission.missionId);
   assert.equal(target.getRuntimeEntity<Incarnation>(incarnation.incarnationId)?.host, "codex");
