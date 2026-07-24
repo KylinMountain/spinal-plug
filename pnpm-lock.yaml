@@ -71,6 +71,9 @@ importers:
       '@mind-palace/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@mind-palace/sync-server':
+        specifier: workspace:*
+        version: link:../sync-server
 
   packages/mcp-server:
     dependencies:

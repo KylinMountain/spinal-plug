@@ -13,6 +13,8 @@ Mind Palace 是一个面向 Agent 的跨设备项目记忆层。当前仓库实�
 
 当前版本只覆盖项目记忆同步最小闭环，并为未来的 `Mind Core`、`Mind Capsule`、`Incarnation`、`Work State` 预留协议字段和模块边界。
 
+运行时最小垂直切片现已可用：可创建 `Mind Core`、角色、Mission、Task Graph、Mind Capsule 与 Incarnation，并与项目记忆和 Checkpoint 分离同步。使用方式见 [docs/mind-runtime.md](docs/mind-runtime.md)。
+
 `mind-palace boot` 使用固定的 `Memory Core Boot Sequence` 表达加载过程：`Mind Palace Control Plane`、`Incarnation Link`、`Mind Capsule` 与 `Memory Fidelity` 都对应可验证的本地项目记忆状态；它不表示模型权重、隐藏状态或“意识”被复制。
 
 Claude Code 本地参考实现的同步、Hook 与后台记忆整理观察见 [docs/research/claude-code-reference-notes.md](docs/research/claude-code-reference-notes.md)。Mind Palace 不把宿主原生记忆当作事实源；适配器只能维护各自受保留标识保护的投影，并在宿主升级后通过兼容测试重新验证。

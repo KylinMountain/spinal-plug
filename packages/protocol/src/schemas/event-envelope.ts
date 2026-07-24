@@ -33,6 +33,13 @@ export const eventEnvelopeSchema: JsonSchema = {
         "memory.deleted",
         "checkpoint.created",
         "checkpoint.superseded",
+        "runtime.mind-core.created",
+        "runtime.role-profile.created",
+        "runtime.mission.created",
+        "runtime.task-graph.updated",
+        "runtime.capsule.created",
+        "runtime.incarnation.spawned",
+        "runtime.incarnation.updated",
         "sync.cursor.advanced"
       ]
     },
