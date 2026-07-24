@@ -10,6 +10,47 @@ import type {
 } from "@mind-palace/protocol";
 import { sqliteSchema } from "./schema.js";
 
+export interface CandidateMemoryDraft {
+  kind: MemoryRecord["kind"];
+  title: string;
+  statement: string;
+  why?: string;
+  howToApply?: string;
+  references?: string[];
+  semanticKey?: string;
+  confidence: number;
+}
+
+export interface CandidateExtractionJob {
+  jobId: string;
+  host: string;
+  spaceId: string;
+  sessionId: string;
+  sourceDigest: string;
+  candidates: CandidateMemoryDraft[];
+  status: "pending" | "processing" | "completed";
+  attempts: number;
+  leaseExpiresAt?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+function parseCandidateExtractionJob(row: Record<string, unknown>): CandidateExtractionJob {
+  return {
+    jobId: String(row.job_id),
+    host: String(row.host),
+    spaceId: String(row.space_id),
+    sessionId: String(row.session_id),
+    sourceDigest: String(row.source_digest),
+    candidates: JSON.parse(String(row.candidates_json)) as CandidateMemoryDraft[],
+    status: row.status as CandidateExtractionJob["status"],
+    attempts: Number(row.attempts),
+    leaseExpiresAt: row.lease_expires_at ? String(row.lease_expires_at) : undefined,
+    createdAt: String(row.created_at),
+    completedAt: row.completed_at ? String(row.completed_at) : undefined
+  };
+}
+
 function parseMemory(row: Record<string, unknown>): MemoryRecord {
   return {
     schema: "mind-palace.memory-record/v0.1",
@@ -64,7 +105,7 @@ export class MindPalaceDatabase {
 
     const enqueueOutbox = this.db.prepare(`
       INSERT INTO outbox (event_id, space_id, status, attempts, available_at, created_at)
-      VALUES (@eventId, @spaceId, 'pending', 0, @availableAt, @createdAt)
+      VALUES (@eventId, @spaceId, @status, 0, @availableAt, @createdAt)
       ON CONFLICT(event_id) DO NOTHING
     `);
 
@@ -82,6 +123,7 @@ export class MindPalaceDatabase {
       enqueueOutbox.run({
         eventId: event.eventId,
         spaceId: event.spaceId,
+        status: event.eventType === "memory.candidate.created" ? "held" : "pending",
         availableAt: event.createdAt,
         createdAt: event.createdAt
       });
@@ -149,6 +191,19 @@ export class MindPalaceDatabase {
   recordMemoryMutation(event: EventEnvelope, memory: MemoryRecord): void {
     try {
       this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      this.appendEventWithoutTransaction(event);
+      this.upsertMemory(memory);
+      this.db.exec("COMMIT;");
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  recordMemoryPromotion(event: EventEnvelope, memory: MemoryRecord): void {
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      this.releaseHeldCandidateEventsWithoutTransaction(memory.memoryId);
       this.appendEventWithoutTransaction(event);
       this.upsertMemory(memory);
       this.db.exec("COMMIT;");
@@ -341,6 +396,20 @@ export class MindPalaceDatabase {
       .map((row: unknown) => JSON.parse(String((row as Record<string, unknown>).payload_json)) as EventEnvelope);
   }
 
+  listHeldOutboxForSpace(spaceId: string, limit = 50): EventEnvelope[] {
+    const statement = this.db.prepare(`
+      SELECT e.payload_json
+      FROM outbox o
+      JOIN events e ON e.event_id = o.event_id
+      WHERE o.status = 'held' AND o.space_id = ?
+      ORDER BY o.available_at ASC
+      LIMIT ?
+    `);
+    return statement
+      .all(spaceId, limit)
+      .map((row: unknown) => JSON.parse(String((row as Record<string, unknown>).payload_json)) as EventEnvelope);
+  }
+
   markOutboxDelivered(eventId: string): void {
     const statement = this.db.prepare(`
       UPDATE outbox
@@ -400,6 +469,94 @@ export class MindPalaceDatabase {
     }
   }
 
+  enqueueCandidateExtraction(job: Omit<CandidateExtractionJob, "status" | "attempts" | "leaseExpiresAt" | "completedAt">): boolean {
+    const result = this.db.prepare(`
+      INSERT INTO candidate_extraction_jobs (
+        job_id, host, space_id, session_id, source_digest, candidates_json,
+        status, attempts, created_at
+      ) VALUES (
+        @jobId, @host, @spaceId, @sessionId, @sourceDigest, @candidatesJson,
+        'pending', 0, @createdAt
+      ) ON CONFLICT(job_id) DO NOTHING
+    `).run({
+      jobId: job.jobId,
+      host: job.host,
+      spaceId: job.spaceId,
+      sessionId: job.sessionId,
+      sourceDigest: job.sourceDigest,
+      candidatesJson: JSON.stringify(job.candidates),
+      createdAt: job.createdAt
+    });
+    return Number(result.changes) === 1;
+  }
+
+  claimCandidateExtraction(
+    spaceId?: string,
+    now: Date = new Date(),
+    leaseMs = 120_000
+  ): CandidateExtractionJob | null {
+    const nowIso = now.toISOString();
+    const leaseExpiresAt = new Date(now.getTime() + leaseMs).toISOString();
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      this.db.prepare(`
+        UPDATE candidate_extraction_jobs
+        SET status = 'pending', lease_expires_at = NULL
+        WHERE status = 'processing' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?
+      `).run(nowIso);
+      const row = this.db.prepare(`
+        SELECT * FROM candidate_extraction_jobs
+        WHERE status = 'pending' ${spaceId ? "AND space_id = ?" : ""}
+        ORDER BY created_at ASC, job_id ASC
+        LIMIT 1
+      `).get(...(spaceId ? [spaceId] : [])) as Record<string, unknown> | undefined;
+      if (!row) {
+        this.db.exec("COMMIT;");
+        return null;
+      }
+      const claimed = this.db.prepare(`
+        UPDATE candidate_extraction_jobs
+        SET status = 'processing', attempts = attempts + 1, lease_expires_at = ?
+        WHERE job_id = ? AND status = 'pending'
+      `).run(leaseExpiresAt, String(row.job_id));
+      if (Number(claimed.changes) !== 1) {
+        this.db.exec("COMMIT;");
+        return null;
+      }
+      const claimedRow = this.db.prepare("SELECT * FROM candidate_extraction_jobs WHERE job_id = ?")
+        .get(String(row.job_id)) as Record<string, unknown>;
+      this.db.exec("COMMIT;");
+      return parseCandidateExtractionJob(claimedRow);
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  completeCandidateExtraction(jobId: string, completedAt = new Date().toISOString()): boolean {
+    const result = this.db.prepare(`
+      UPDATE candidate_extraction_jobs
+      SET status = 'completed', completed_at = ?, lease_expires_at = NULL
+      WHERE job_id = ? AND status = 'processing'
+    `).run(completedAt, jobId);
+    return Number(result.changes) === 1;
+  }
+
+  requeueCandidateExtraction(jobId: string): boolean {
+    const result = this.db.prepare(`
+      UPDATE candidate_extraction_jobs
+      SET status = 'pending', lease_expires_at = NULL
+      WHERE job_id = ? AND status = 'processing'
+    `).run(jobId);
+    return Number(result.changes) === 1;
+  }
+
+  listCandidateExtractionJobs(spaceId: string): CandidateExtractionJob[] {
+    return (this.db.prepare(`
+      SELECT * FROM candidate_extraction_jobs WHERE space_id = ? ORDER BY created_at ASC
+    `).all(spaceId) as Record<string, unknown>[]).map(parseCandidateExtractionJob);
+  }
+
   private appendEventWithoutTransaction(event: EventEnvelope): void {
     const insertEvent = this.db.prepare(`
       INSERT INTO events (event_id, space_id, event_type, created_at, idempotency_key, payload_json)
@@ -408,7 +565,7 @@ export class MindPalaceDatabase {
     `);
     const enqueueOutbox = this.db.prepare(`
       INSERT INTO outbox (event_id, space_id, status, attempts, available_at, created_at)
-      VALUES (@eventId, @spaceId, 'pending', 0, @availableAt, @createdAt)
+      VALUES (@eventId, @spaceId, @status, 0, @availableAt, @createdAt)
       ON CONFLICT(event_id) DO NOTHING
     `);
     insertEvent.run({
@@ -422,6 +579,7 @@ export class MindPalaceDatabase {
     enqueueOutbox.run({
       eventId: event.eventId,
       spaceId: event.spaceId,
+      status: event.eventType === "memory.candidate.created" ? "held" : "pending",
       availableAt: event.createdAt,
       createdAt: event.createdAt
     });
@@ -430,6 +588,21 @@ export class MindPalaceDatabase {
   private hasEvent(eventId: string): boolean {
     const statement = this.db.prepare("SELECT 1 FROM events WHERE event_id = ? LIMIT 1");
     return statement.get(eventId) !== undefined;
+  }
+
+  private releaseHeldCandidateEventsWithoutTransaction(memoryId: string): void {
+    const candidates = this.db.prepare(`
+      SELECT o.event_id, e.payload_json
+      FROM outbox o
+      JOIN events e ON e.event_id = o.event_id
+      WHERE o.status = 'held' AND e.event_type = 'memory.candidate.created'
+    `).all() as Record<string, unknown>[];
+    const release = this.db.prepare("UPDATE outbox SET status = 'pending' WHERE event_id = ? AND status = 'held'");
+    for (const row of candidates) {
+      const event = JSON.parse(String(row.payload_json)) as EventEnvelope;
+      const payload = event.payload as Partial<MemoryPayload>;
+      if (payload.memoryId === memoryId) release.run(String(row.event_id));
+    }
   }
 
   private insertRemoteEventWithoutOutbox(event: EventEnvelope): void {

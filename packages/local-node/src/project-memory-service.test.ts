@@ -36,13 +36,17 @@ test("persists candidate provenance and promotes it explicitly", () => {
   assert.equal(database.getMemory(candidate.memoryId)?.status, "candidate");
   assert.equal(database.getMemory(candidate.memoryId)?.origin, "agent_inferred");
   assert.equal(database.getMemory(candidate.memoryId)?.confidence, 0.74);
-  const pendingCandidate = database.listPendingOutboxForSpace(space.spaceId)[0];
-  assert.equal(pendingCandidate.eventType, "memory.candidate.created");
+  const heldCandidate = database.listHeldOutboxForSpace(space.spaceId)[0];
+  assert.equal(heldCandidate.eventType, "memory.candidate.created");
 
   const promoted = service.promote(space, candidate.memoryId);
   assert.equal(promoted.status, "active");
   assert.equal(promoted.sourceEventIds?.length, 2);
   assert.equal(database.listActiveMemories(space.spaceId)[0].memoryId, candidate.memoryId);
+  assert.deepEqual(
+    database.listPendingOutboxForSpace(space.spaceId).map(event => event.eventType).sort(),
+    ["memory.candidate.created", "memory.promoted"]
+  );
 });
 
 test("marks explicit memory with user provenance by default", () => {
