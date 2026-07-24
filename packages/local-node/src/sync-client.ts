@@ -8,8 +8,8 @@ import type {
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
-} from "@mind-palace/protocol";
-import { MindPalaceDatabase } from "./index.js";
+} from "@spinal-plug/protocol";
+import { SpinalPlugDatabase } from "./index.js";
 
 export interface SyncTransport {
   push(request: SyncPushRequest): Promise<SyncPushResponse>;
@@ -50,13 +50,13 @@ export interface FetchResult {
  * Transport-neutral M2 synchronizer. It makes a local write durable before
  * network activity, and only advances its cursor after remote events apply.
  */
-export class MindPalaceSyncClient {
+export class SpinalPlugSyncClient {
   constructor(
-    private readonly database: MindPalaceDatabase,
+    private readonly database: SpinalPlugDatabase,
     private readonly transport: SyncTransport
   ) {}
 
-  /** Publish this device's durable local events to the Mind Palace Control Plane. */
+  /** Publish this device's durable local events to the Spinal Plug Control Plane. */
   async publish(spaceId: string, deviceId: string, batchSize = 50): Promise<PublishResult> {
     const pending = this.database.listPendingOutboxForSpace(spaceId, batchSize);
     if (pending.length === 0) return { pushed: 0, duplicates: 0 };
@@ -77,7 +77,7 @@ export class MindPalaceSyncClient {
     const fetched = await this.fetch(spaceId, deviceId, batchSize);
     const applied = this.apply(spaceId);
     this.database.upsertCursor({
-      schema: "mind-palace.sync-cursor/v0.1",
+      schema: "spinal-plug.sync-cursor/v0.1",
       cursorId: `cur_${randomUUID()}`,
       scope: "device",
       ownerId: deviceId,
@@ -115,7 +115,7 @@ export class MindPalaceSyncClient {
       requiredApplied += this.database.applyCanonicalUpdates(spaceId, [], true).requiredApplied;
       cursor = result.nextCursor;
       this.database.upsertCursor({
-        schema: "mind-palace.sync-cursor/v0.1",
+        schema: "spinal-plug.sync-cursor/v0.1",
         cursorId: `cur_${randomUUID()}`,
         scope: "adapter",
         ownerId: cursorOwner,
@@ -139,7 +139,7 @@ export class MindPalaceSyncClient {
       runtimeEntitiesStored += this.database.applyRemoteRuntimeEvents(result.events);
       runtimeCursor = result.nextCursor;
       this.database.upsertCursor({
-        schema: "mind-palace.sync-cursor/v0.1",
+        schema: "spinal-plug.sync-cursor/v0.1",
         cursorId: `cur_${randomUUID()}`,
         scope: "adapter",
         ownerId: runtimeCursorOwner,

@@ -12,7 +12,7 @@ import type {
   SyncApplyResult,
   SyncCursor,
   SyncPreview
-} from "@mind-palace/protocol";
+} from "@spinal-plug/protocol";
 import { sqliteSchema } from "./schema.js";
 
 export interface CandidateMemoryDraft {
@@ -67,23 +67,23 @@ function parseCheckpoint(row: Record<string, unknown>): ProjectCheckpoint {
 
 function runtimeEntityId(entity: RuntimeEntity): string {
   switch (entity.schema) {
-    case "mind-palace.mind-core/v0.1": return entity.mindId;
-    case "mind-palace.role-profile/v0.1": return entity.roleProfileId;
-    case "mind-palace.mission/v0.1": return entity.missionId;
-    case "mind-palace.task-graph/v0.1": return entity.taskGraphId;
-    case "mind-palace.mind-capsule/v0.1": return entity.capsuleId;
-    case "mind-palace.incarnation/v0.1": return entity.incarnationId;
+    case "spinal-plug.mind-core/v0.1": return entity.mindId;
+    case "spinal-plug.role-profile/v0.1": return entity.roleProfileId;
+    case "spinal-plug.mission/v0.1": return entity.missionId;
+    case "spinal-plug.task-graph/v0.1": return entity.taskGraphId;
+    case "spinal-plug.mind-capsule/v0.1": return entity.capsuleId;
+    case "spinal-plug.incarnation/v0.1": return entity.incarnationId;
   }
 }
 
 function runtimeEntityType(entity: RuntimeEntity): RuntimeEntityType {
   switch (entity.schema) {
-    case "mind-palace.mind-core/v0.1": return "mind_core";
-    case "mind-palace.role-profile/v0.1": return "role_profile";
-    case "mind-palace.mission/v0.1": return "mission";
-    case "mind-palace.task-graph/v0.1": return "task_graph";
-    case "mind-palace.mind-capsule/v0.1": return "mind_capsule";
-    case "mind-palace.incarnation/v0.1": return "incarnation";
+    case "spinal-plug.mind-core/v0.1": return "mind_core";
+    case "spinal-plug.role-profile/v0.1": return "role_profile";
+    case "spinal-plug.mission/v0.1": return "mission";
+    case "spinal-plug.task-graph/v0.1": return "task_graph";
+    case "spinal-plug.mind-capsule/v0.1": return "mind_capsule";
+    case "spinal-plug.incarnation/v0.1": return "incarnation";
   }
 }
 
@@ -102,7 +102,7 @@ function isRuntimePayload(payload: EventEnvelope["payload"]): payload is Runtime
 
 function parseMemory(row: Record<string, unknown>): MemoryRecord {
   return {
-    schema: "mind-palace.memory-record/v0.1",
+    schema: "spinal-plug.memory-record/v0.1",
     memoryId: String(row.memory_id),
     spaceId: String(row.space_id),
     kind: row.kind as MemoryRecord["kind"],
@@ -131,7 +131,7 @@ function parseMemory(row: Record<string, unknown>): MemoryRecord {
   };
 }
 
-export class MindPalaceDatabase {
+export class SpinalPlugDatabase {
   private readonly db: DatabaseSync;
 
   constructor(databasePath: string) {
@@ -385,7 +385,7 @@ export class MindPalaceDatabase {
     }
 
     return {
-      schema: "mind-palace.sync-cursor/v0.1",
+      schema: "spinal-plug.sync-cursor/v0.1",
       cursorId: String(row.cursor_id),
       scope: row.scope as SyncCursor["scope"],
       ownerId: String(row.owner_id),
@@ -573,7 +573,7 @@ export class MindPalaceDatabase {
         }
         const existing = this.getMemory(payload.memoryId);
         const memory: MemoryRecord = {
-          schema: "mind-palace.memory-record/v0.1",
+          schema: "spinal-plug.memory-record/v0.1",
           memoryId: payload.memoryId,
           spaceId: event.spaceId,
           kind: payload.kind,
@@ -830,7 +830,7 @@ export { ProjectSpaceResolver } from "./project-space.js";
 export { ProjectMemoryService } from "./project-memory-service.js";
 export { ProjectHandoffService } from "./project-handoff-service.js";
 export { MindRuntimeService } from "./mind-runtime-service.js";
-export { MindPalaceSyncClient } from "./sync-client.js";
+export { SpinalPlugSyncClient } from "./sync-client.js";
 export { HttpSyncTransport } from "./http-sync-transport.js";
 export type { ResolvedProjectSpace } from "./project-space.js";
 export type {

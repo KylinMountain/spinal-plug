@@ -15,8 +15,8 @@ import type {
   SyncProfile,
   TaskGraph,
   TaskNode
-} from "@mind-palace/protocol";
-import { MindPalaceDatabase } from "./index.js";
+} from "@spinal-plug/protocol";
+import { SpinalPlugDatabase } from "./index.js";
 import { ProjectMemoryService } from "./project-memory-service.js";
 
 const defaultSyncProfile: SyncProfile = {
@@ -36,8 +36,8 @@ function compact(values: string[] | undefined): string[] {
 function defaultActor(overrides: Partial<EventActor> = {}): EventActor {
   return {
     deviceId: `device:${hostname()}`,
-    agentInstallationId: "mind-palace-runtime",
-    host: "mind-palace",
+    agentInstallationId: "spinal-plug-runtime",
+    host: "spinal-plug",
     sessionId: "runtime",
     adapterVersion: "0.1.0",
     ...overrides
@@ -45,29 +45,29 @@ function defaultActor(overrides: Partial<EventActor> = {}): EventActor {
 }
 
 function entityId(entity: RuntimeEntity): string {
-  if (entity.schema === "mind-palace.mind-core/v0.1") return entity.mindId;
-  if (entity.schema === "mind-palace.role-profile/v0.1") return entity.roleProfileId;
-  if (entity.schema === "mind-palace.mission/v0.1") return entity.missionId;
-  if (entity.schema === "mind-palace.task-graph/v0.1") return entity.taskGraphId;
-  if (entity.schema === "mind-palace.mind-capsule/v0.1") return entity.capsuleId;
+  if (entity.schema === "spinal-plug.mind-core/v0.1") return entity.mindId;
+  if (entity.schema === "spinal-plug.role-profile/v0.1") return entity.roleProfileId;
+  if (entity.schema === "spinal-plug.mission/v0.1") return entity.missionId;
+  if (entity.schema === "spinal-plug.task-graph/v0.1") return entity.taskGraphId;
+  if (entity.schema === "spinal-plug.mind-capsule/v0.1") return entity.capsuleId;
   return entity.incarnationId;
 }
 
 function entityType(entity: RuntimeEntity): RuntimeEntityType {
-  if (entity.schema === "mind-palace.mind-core/v0.1") return "mind_core";
-  if (entity.schema === "mind-palace.role-profile/v0.1") return "role_profile";
-  if (entity.schema === "mind-palace.mission/v0.1") return "mission";
-  if (entity.schema === "mind-palace.task-graph/v0.1") return "task_graph";
-  if (entity.schema === "mind-palace.mind-capsule/v0.1") return "mind_capsule";
+  if (entity.schema === "spinal-plug.mind-core/v0.1") return "mind_core";
+  if (entity.schema === "spinal-plug.role-profile/v0.1") return "role_profile";
+  if (entity.schema === "spinal-plug.mission/v0.1") return "mission";
+  if (entity.schema === "spinal-plug.task-graph/v0.1") return "task_graph";
+  if (entity.schema === "spinal-plug.mind-capsule/v0.1") return "mind_capsule";
   return "incarnation";
 }
 
 function eventTypeFor(entity: RuntimeEntity, update = false): EventEnvelope["eventType"] {
-  if (entity.schema === "mind-palace.mind-core/v0.1") return "runtime.mind-core.created";
-  if (entity.schema === "mind-palace.role-profile/v0.1") return "runtime.role-profile.created";
-  if (entity.schema === "mind-palace.mission/v0.1") return "runtime.mission.created";
-  if (entity.schema === "mind-palace.task-graph/v0.1") return "runtime.task-graph.updated";
-  if (entity.schema === "mind-palace.mind-capsule/v0.1") return "runtime.capsule.created";
+  if (entity.schema === "spinal-plug.mind-core/v0.1") return "runtime.mind-core.created";
+  if (entity.schema === "spinal-plug.role-profile/v0.1") return "runtime.role-profile.created";
+  if (entity.schema === "spinal-plug.mission/v0.1") return "runtime.mission.created";
+  if (entity.schema === "spinal-plug.task-graph/v0.1") return "runtime.task-graph.updated";
+  if (entity.schema === "spinal-plug.mind-capsule/v0.1") return "runtime.capsule.created";
   return update ? "runtime.incarnation.updated" : "runtime.incarnation.spawned";
 }
 
@@ -133,7 +133,7 @@ export interface SpawnIncarnationInput {
  */
 export class MindRuntimeService {
   constructor(
-    private readonly database: MindPalaceDatabase,
+    private readonly database: SpinalPlugDatabase,
     private readonly identity = { accountId: "local", personaId: "persona_default" },
     private readonly actorDefaults: Partial<EventActor> = {}
   ) {}
@@ -141,7 +141,7 @@ export class MindRuntimeService {
   createMindCore(input: CreateMindCoreInput): MindCore {
     const timestamp = now();
     const core: MindCore = {
-      schema: "mind-palace.mind-core/v0.1",
+      schema: "spinal-plug.mind-core/v0.1",
       mindId: `mind_${randomUUID()}`,
       spaceId: input.space.spaceId,
       personaId: input.personaId ?? this.identity.personaId,
@@ -159,7 +159,7 @@ export class MindRuntimeService {
     this.requireCore(input.mindId, input.space);
     const timestamp = now();
     const role: RoleProfile = {
-      schema: "mind-palace.role-profile/v0.1",
+      schema: "spinal-plug.role-profile/v0.1",
       roleProfileId: `role_${randomUUID()}`,
       mindId: input.mindId,
       spaceId: input.space.spaceId,
@@ -177,7 +177,7 @@ export class MindRuntimeService {
     this.requireCore(input.mindId, input.space);
     const timestamp = now();
     const mission: Mission = {
-      schema: "mind-palace.mission/v0.1",
+      schema: "spinal-plug.mission/v0.1",
       missionId: `mission_${randomUUID()}`,
       mindId: input.mindId,
       spaceId: input.space.spaceId,
@@ -193,12 +193,12 @@ export class MindRuntimeService {
   }
 
   upsertTaskGraph(input: UpsertTaskGraphInput): TaskGraph {
-    const mission = this.requireEntity<Mission>(input.missionId, "mind-palace.mission/v0.1", input.space);
+    const mission = this.requireEntity<Mission>(input.missionId, "spinal-plug.mission/v0.1", input.space);
     if (mission.mindId !== input.mindId) throw new Error("Task Graph Mind Core does not match Mission.");
     const previous = input.taskGraphId ? this.database.getRuntimeEntity<TaskGraph>(input.taskGraphId) : null;
     const timestamp = now();
     const graph: TaskGraph = {
-      schema: "mind-palace.task-graph/v0.1",
+      schema: "spinal-plug.task-graph/v0.1",
       taskGraphId: input.taskGraphId ?? `tasks_${randomUUID()}`,
       missionId: input.missionId,
       mindId: input.mindId,
@@ -218,20 +218,20 @@ export class MindRuntimeService {
 
   compileCapsule(input: CompileCapsuleInput): MindCapsule {
     const core = this.requireCore(input.mindId, input.space);
-    const role = this.requireEntity<RoleProfile>(input.roleProfileId, "mind-palace.role-profile/v0.1", input.space);
-    const mission = this.requireEntity<Mission>(input.missionId, "mind-palace.mission/v0.1", input.space);
+    const role = this.requireEntity<RoleProfile>(input.roleProfileId, "spinal-plug.role-profile/v0.1", input.space);
+    const mission = this.requireEntity<Mission>(input.missionId, "spinal-plug.mission/v0.1", input.space);
     if (role.mindId !== core.mindId || mission.mindId !== core.mindId) {
       throw new Error("Role Profile and Mission must belong to the same Mind Core.");
     }
     const graph = input.taskGraphId
-      ? this.requireEntity<TaskGraph>(input.taskGraphId, "mind-palace.task-graph/v0.1", input.space)
+      ? this.requireEntity<TaskGraph>(input.taskGraphId, "spinal-plug.task-graph/v0.1", input.space)
       : null;
     if (graph && graph.missionId !== mission.missionId) throw new Error("Task Graph does not belong to Mission.");
     const memories = this.database.listActiveMemories(input.space.spaceId);
     const checkpoint = this.database.latestCheckpoint(input.space.spaceId);
     const timestamp = now();
     const capsule: MindCapsule = {
-      schema: "mind-palace.mind-capsule/v0.1",
+      schema: "spinal-plug.mind-capsule/v0.1",
       capsuleId: `capsule_${randomUUID()}`,
       mindId: core.mindId,
       spaceId: input.space.spaceId,
@@ -251,10 +251,10 @@ export class MindRuntimeService {
   }
 
   spawn(input: SpawnIncarnationInput): Incarnation {
-    const capsule = this.requireEntity<MindCapsule>(input.capsuleId, "mind-palace.mind-capsule/v0.1", input.space);
+    const capsule = this.requireEntity<MindCapsule>(input.capsuleId, "spinal-plug.mind-capsule/v0.1", input.space);
     const timestamp = now();
     const incarnation: Incarnation = {
-      schema: "mind-palace.incarnation/v0.1",
+      schema: "spinal-plug.incarnation/v0.1",
       incarnationId: `inc_${randomUUID()}`,
       mindId: capsule.mindId,
       capsuleId: capsule.capsuleId,
@@ -273,7 +273,7 @@ export class MindRuntimeService {
   }
 
   setIncarnationStatus(incarnationId: string, status: IncarnationStatus, actor?: Partial<EventActor>): Incarnation {
-    const existing = this.requireEntity<Incarnation>(incarnationId, "mind-palace.incarnation/v0.1");
+    const existing = this.requireEntity<Incarnation>(incarnationId, "spinal-plug.incarnation/v0.1");
     return this.persist({ ...existing, status, updatedAt: now() }, true, actor) as Incarnation;
   }
 
@@ -289,7 +289,7 @@ export class MindRuntimeService {
       : "- No task graph loaded.";
     const projectBoot = new ProjectMemoryService(this.database).createBootProjection(space).content;
     return [
-      `<mind-palace_capsule schema="v0.1" mind="${core.displayName}" role="${role.displayName}">`,
+      `<spinal-plug_capsule schema="v0.1" mind="${core.displayName}" role="${role.displayName}">`,
       `Persona: ${core.personaId}`,
       `Mission: ${mission.title}`,
       `Objective: ${mission.objective}`,
@@ -298,12 +298,12 @@ export class MindRuntimeService {
       `Task graph:\n${tasks}`,
       `Sync: pull=${core.syncProfile.pullMode}; push=${core.syncProfile.pushMode}; apply=${core.syncProfile.applyAt}`,
       projectBoot,
-      "</mind-palace_capsule>"
+      "</spinal-plug_capsule>"
     ].filter(Boolean).join("\n\n");
   }
 
   private requireCore(mindId: string, space: ProjectSpace): MindCore {
-    return this.requireEntity<MindCore>(mindId, "mind-palace.mind-core/v0.1", space);
+    return this.requireEntity<MindCore>(mindId, "spinal-plug.mind-core/v0.1", space);
   }
 
   private requireEntity<T extends RuntimeEntity>(entityId: string, schema: T["schema"], space?: ProjectSpace): T {
@@ -328,9 +328,9 @@ export class MindRuntimeService {
       actor: defaultActor({ ...this.actorDefaults, ...actor }),
       causality: { parentEventIds: entity.sourceEventIds.slice(0, -1) },
       runtimeContext: {
-        incarnationId: entity.schema === "mind-palace.incarnation/v0.1" ? entity.incarnationId : null,
-        roleProfileId: entity.schema === "mind-palace.role-profile/v0.1" ? entity.roleProfileId : null,
-        missionId: entity.schema === "mind-palace.mission/v0.1" ? entity.missionId : null,
+        incarnationId: entity.schema === "spinal-plug.incarnation/v0.1" ? entity.incarnationId : null,
+        roleProfileId: entity.schema === "spinal-plug.role-profile/v0.1" ? entity.roleProfileId : null,
+        missionId: entity.schema === "spinal-plug.mission/v0.1" ? entity.missionId : null,
         branchId: null,
         taskCheckpointId: null
       },

@@ -1,12 +1,11 @@
 {
-  "name": "@mind-palace/cli",
+  "name": "@spinal-plug/cli",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "spinal-plug": "dist/index.js",
-    "mind-palace": "dist/index.js"
+    "spinal-plug": "dist/index.js"
   },
   "scripts": {
     "build": "tsc -b",
@@ -14,11 +13,11 @@
     "test": "node --test dist/*.test.js"
   },
   "dependencies": {
-    "@mind-palace/adapter-claude-code": "workspace:*",
-    "@mind-palace/adapter-codex": "workspace:*",
-    "@mind-palace/adapter-sdk": "workspace:*",
-    "@mind-palace/local-node": "workspace:*",
-    "@mind-palace/protocol": "workspace:*",
-    "@mind-palace/sync-server": "workspace:*"
+    "@spinal-plug/adapter-claude-code": "workspace:*",
+    "@spinal-plug/adapter-codex": "workspace:*",
+    "@spinal-plug/adapter-sdk": "workspace:*",
+    "@spinal-plug/local-node": "workspace:*",
+    "@spinal-plug/protocol": "workspace:*",
+    "@spinal-plug/sync-server": "workspace:*"
   }
 }

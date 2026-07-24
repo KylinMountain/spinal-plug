@@ -1,5 +1,5 @@
-import type { MemoryRecord, ProjectSpace } from "@mind-palace/protocol";
-import { MindPalaceDatabase, ProjectMemoryService, ProjectSpaceResolver } from "@mind-palace/local-node";
+import type { MemoryRecord, ProjectSpace } from "@spinal-plug/protocol";
+import { SpinalPlugDatabase, ProjectMemoryService, ProjectSpaceResolver } from "@spinal-plug/local-node";
 
 export interface McpToolDescriptor {
   name: string;
@@ -7,7 +7,7 @@ export interface McpToolDescriptor {
   inputSchema: Record<string, unknown>;
 }
 
-export interface MindPalaceStatus {
+export interface SpinalPlugStatus {
   space: ProjectSpace | null;
   activeMemoryCount: number;
   pendingOutboxEvents: number;
@@ -17,19 +17,19 @@ export interface MindPalaceStatus {
  * Host-neutral tool implementation. Transport wiring stays outside M1 so the
  * same service can be exposed by each host's public MCP configuration.
  */
-export class MindPalaceMcpServer {
+export class SpinalPlugMcpServer {
   private readonly memories: ProjectMemoryService;
   private readonly spaces = new ProjectSpaceResolver();
 
-  constructor(private readonly database: MindPalaceDatabase) {
+  constructor(private readonly database: SpinalPlugDatabase) {
     this.memories = new ProjectMemoryService(database);
   }
 
   listTools(): McpToolDescriptor[] {
     return [
       {
-        name: "mind-palace_status",
-        description: "Return local Mind Palace project memory and Outbox status.",
+        name: "spinal-plug_status",
+        description: "Return local Spinal Plug project memory and Outbox status.",
         inputSchema: {
           type: "object",
           properties: { cwd: { type: "string" } },
@@ -37,7 +37,7 @@ export class MindPalaceMcpServer {
         }
       },
       {
-        name: "mind-palace_recall",
+        name: "spinal-plug_recall",
         description: "Recall active project memories relevant to the current task.",
         inputSchema: {
           type: "object",
@@ -51,7 +51,7 @@ export class MindPalaceMcpServer {
     ];
   }
 
-  status(cwd: string): MindPalaceStatus {
+  status(cwd: string): SpinalPlugStatus {
     const space = this.spaces.resolve(cwd)?.space ?? null;
     return {
       space,
@@ -63,7 +63,7 @@ export class MindPalaceMcpServer {
   recall(cwd: string, query: string): MemoryRecord[] {
     const space = this.spaces.resolve(cwd)?.space;
     if (!space) {
-      throw new Error("Mind Palace Project Space is not initialized for this directory.");
+      throw new Error("Spinal Plug Project Space is not initialized for this directory.");
     }
     return this.memories.recall(space, query);
   }

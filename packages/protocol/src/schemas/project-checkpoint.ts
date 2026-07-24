@@ -1,7 +1,7 @@
 import type { JsonSchema } from "./common.js";
 
 export const projectCheckpointSchema: JsonSchema = {
-  $id: "mind-palace.project-checkpoint/v0.1",
+  $id: "spinal-plug.project-checkpoint/v0.1",
   type: "object",
   additionalProperties: false,
   required: [
@@ -20,7 +20,7 @@ export const projectCheckpointSchema: JsonSchema = {
     "updatedAt"
   ],
   properties: {
-    schema: { type: "string", enum: ["mind-palace.project-checkpoint/v0.1"] },
+    schema: { type: "string", enum: ["spinal-plug.project-checkpoint/v0.1"] },
     checkpointId: { type: "string" },
     spaceId: { type: "string" },
     title: { type: "string" },

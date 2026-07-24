@@ -5,7 +5,7 @@ import type {
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
-} from "@mind-palace/protocol";
+} from "@spinal-plug/protocol";
 import type { SyncTransport } from "./sync-client.js";
 
 export class HttpSyncTransport implements SyncTransport {

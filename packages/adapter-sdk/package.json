@@ -1,5 +1,5 @@
 {
-  "name": "@mind-palace/adapter-sdk",
+  "name": "@spinal-plug/adapter-sdk",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@mind-palace/protocol": "workspace:*"
+    "@spinal-plug/protocol": "workspace:*"
   }
 }
 

@@ -3,20 +3,20 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ProjectSpace } from "@mind-palace/protocol";
-import { MindPalaceDatabase } from "./index.js";
+import type { ProjectSpace } from "@spinal-plug/protocol";
+import { SpinalPlugDatabase } from "./index.js";
 import { ProjectMemoryService } from "./project-memory-service.js";
 
 const space: ProjectSpace = {
-  schema: "mind-palace.project-space/v0.1",
+  schema: "spinal-plug.project-space/v0.1",
   spaceId: "spc_local_test",
   type: "project",
   displayName: "local-test"
 };
 
-function openTestDatabase(): { database: MindPalaceDatabase; service: ProjectMemoryService } {
-  const directory = mkdtempSync(join(tmpdir(), "mind-palace-local-"));
-  const database = new MindPalaceDatabase(join(directory, "local.db"));
+function openTestDatabase(): { database: SpinalPlugDatabase; service: ProjectMemoryService } {
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-local-"));
+  const database = new SpinalPlugDatabase(join(directory, "local.db"));
   database.init();
   return { database, service: new ProjectMemoryService(database) };
 }

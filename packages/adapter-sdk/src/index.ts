@@ -1,4 +1,4 @@
-import type { EventEnvelope, ProjectionKind, ProjectSpace } from "@mind-palace/protocol";
+import type { EventEnvelope, ProjectionKind, ProjectSpace } from "@spinal-plug/protocol";
 
 export type HookEventName =
   | "session.start"
@@ -61,7 +61,7 @@ export interface FutureRuntimeReservation {
   taskCheckpointId?: string | null;
 }
 
-export interface MindPalaceAdapter {
+export interface SpinalPlugAdapter {
   readonly name: string;
   detectCapabilities(): Promise<HostCapabilities>;
   resolveProjectSpace(payload: HostHookPayload): Promise<ProjectSpace | null>;

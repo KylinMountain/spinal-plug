@@ -1,5 +1,5 @@
 {
-  "name": "@mind-palace/mcp-server",
+  "name": "@spinal-plug/mcp-server",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@mind-palace/local-node": "workspace:*",
-    "@mind-palace/protocol": "workspace:*"
+    "@spinal-plug/local-node": "workspace:*",
+    "@spinal-plug/protocol": "workspace:*"
   }
 }
