@@ -1,0 +1,20 @@
+{
+  "name": "spinal-plug-local",
+  "interface": {
+    "displayName": "Spinal Plug Local"
+  },
+  "plugins": [
+    {
+      "name": "spinal-plug-codex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/spinal-plug-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

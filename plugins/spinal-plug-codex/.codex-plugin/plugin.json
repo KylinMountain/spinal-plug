@@ -1,0 +1,18 @@
+{
+  "name": "spinal-plug-codex",
+  "version": "0.2.0+codex.20260724154640",
+  "description": "Automatically lock, load, synchronize, and inspect Spinal Plug project memory from Codex.",
+  "author": {
+    "name": "KylinMountain"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Spinal Plug // Codex",
+    "shortDescription": "Lock, load, and synchronize project memory.",
+    "longDescription": "Spinal Plug connects Codex lifecycle hooks to project memory: lock the neural link at session start, recall before prompts, and stage reviewable candidates at turn end.",
+    "developerName": "KylinMountain",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use Spinal Plug to lock, boot, share, synchronize, or inspect project memory."
+  }
+}

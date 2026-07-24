@@ -1,0 +1,41 @@
+{
+  "description": "Lock Spinal Plug project memory at session and prompt boundaries.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/spinal-plug-hook.sh\"",
+            "statusMessage": "SPINAL-PLUG // neural link initialization",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/spinal-plug-hook.sh\"",
+            "statusMessage": "SPINAL-PLUG // synaptic recall channel",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/spinal-plug-hook.sh\"",
+            "statusMessage": "SPINAL-PLUG // memory uplink sequence",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

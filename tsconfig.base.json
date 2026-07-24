@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "incremental": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@spinal-plug/protocol": ["packages/protocol/src/index.ts"],
+      "@spinal-plug/local-node": ["packages/local-node/src/index.ts"],
+      "@spinal-plug/adapter-sdk": ["packages/adapter-sdk/src/index.ts"],
+      "@spinal-plug/adapter-claude-code": ["packages/adapter-claude-code/src/index.ts"],
+      "@spinal-plug/adapter-codex": ["packages/adapter-codex/src/index.ts"],
+      "@spinal-plug/mcp-server": ["packages/mcp-server/src/index.ts"],
+      "@spinal-plug/cli": ["packages/cli/src/index.ts"]
+    }
+  }
+}

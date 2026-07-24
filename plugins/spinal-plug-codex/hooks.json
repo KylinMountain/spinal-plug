@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "./hooks/spinal-plug-hook.sh SessionStart" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "./hooks/spinal-plug-hook.sh UserPromptSubmit" }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          { "type": "command", "command": "./hooks/spinal-plug-hook.sh PreCompact" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "./hooks/spinal-plug-hook.sh Stop" }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "./hooks/spinal-plug-hook.sh SessionEnd" }
+        ]
+      }
+    ]
+  }
+}

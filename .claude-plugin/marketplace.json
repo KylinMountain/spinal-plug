@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "spinal-plug-local",
+  "description": "Local development marketplace for Spinal Plug agent memory integrations.",
+  "owner": {
+    "name": "KylinMountain"
+  },
+  "plugins": [
+    {
+      "name": "spinal-plug",
+      "description": "Lock, load and manage Spinal Plug project memory from Claude Code.",
+      "version": "0.2.0",
+      "source": "./plugins/spinal-plug-claude",
+      "category": "productivity"
+    }
+  ]
+}
