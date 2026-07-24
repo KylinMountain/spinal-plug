@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 420" role="img" aria-labelledby="title desc">
+  <title id="title">SPINAL-PLUG</title>
+  <desc id="desc">A high-contrast neural memory link masthead.</desc>
+  <defs>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M36 0H0V36" fill="none" stroke="#181916" stroke-opacity=".09"/>
+    </pattern>
+    <linearGradient id="signal" x1="0" x2="1">
+      <stop stop-color="#e43c2b"/>
+      <stop offset=".5" stop-color="#e43c2b"/>
+      <stop offset=".5" stop-color="#1166cf"/>
+      <stop offset="1" stop-color="#1166cf"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="420" fill="#f6f1e7"/>
+  <rect width="1440" height="420" fill="url(#grid)"/>
+  <rect x="40" y="38" width="1360" height="344" fill="none" stroke="#181916" stroke-width="2"/>
+  <path d="M40 118H1400M40 306H1400" stroke="#181916" stroke-width="2"/>
+  <circle cx="89" cy="78" r="18" fill="none" stroke="#e43c2b" stroke-width="8"/>
+  <circle cx="111" cy="100" r="7" fill="#1166cf"/>
+  <text x="152" y="85" fill="#181916" font-family="monospace" font-size="17" letter-spacing="4">NEURAL MEMORY LINK / V0.1</text>
+  <text x="82" y="251" fill="#181916" font-family="Georgia,serif" font-size="112" font-weight="700" letter-spacing="-7">SPINAL-PLUG</text>
+  <rect x="84" y="329" width="708" height="13" fill="url(#signal)"/>
+  <text x="84" y="369" fill="#181916" font-family="monospace" font-size="15" letter-spacing="2">ONE MEMORY CORE / MANY CAPABLE HOSTS</text>
+  <g font-family="monospace" font-size="15" fill="#181916">
+    <text x="1000" y="160">[01] PROJECT SPACE</text>
+    <text x="1000" y="194">[02] INCARNATION LINK</text>
+    <text x="1000" y="228">[03] MEMORY FIDELITY</text>
+    <text x="1000" y="262">[04] SYNC UPLINK</text>
+  </g>
+  <g font-family="monospace" font-size="15" fill="#1166cf">
+    <text x="1308" y="160">READY</text>
+    <text x="1308" y="194">BOUND</text>
+    <text x="1308" y="228">LIVE</text>
+    <text x="1308" y="262">ARMED</text>
+  </g>
+  <rect x="950" y="132" width="3" height="145" fill="#e43c2b"/>
+</svg>
