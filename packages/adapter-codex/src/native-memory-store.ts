@@ -10,6 +10,12 @@ export interface CodexNativeMemoryWriteResult {
   memoryCount: number;
 }
 
+export interface CodexNativeMemoryStoreOptions {
+  /** Internal seam for compatibility tests; production discovers Codex's known locations. */
+  databasePaths?: () => string[];
+  now?: () => number;
+}
+
 function codexMemoryDatabasePaths(): string[] {
   const base = homedir();
   return [
@@ -50,15 +56,17 @@ function renderRolloutSummary(space: ProjectSpace, memories: ReadonlyArray<Memor
  * the database format is private and must be revalidated after Codex upgrades.
  */
 export class CodexNativeMemoryStore {
+  constructor(private readonly options: CodexNativeMemoryStoreOptions = {}) {}
+
   materialize(space: ProjectSpace, memories: ReadonlyArray<MemoryRecord>): CodexNativeMemoryWriteResult {
     const threadId = `mind-palace:${space.spaceId}`;
-    const sourceUpdatedAt = Date.now();
+    const sourceUpdatedAt = (this.options.now ?? Date.now)();
     const rawMemory = renderRawMemory(space, memories);
     const rolloutSummary = renderRolloutSummary(space, memories);
     const rolloutSlug = `mind-palace-${space.spaceId}`.slice(0, 80);
     const updatedDatabases: string[] = [];
 
-    for (const databasePath of codexMemoryDatabasePaths()) {
+    for (const databasePath of (this.options.databasePaths ?? codexMemoryDatabasePaths)()) {
       const database = new DatabaseSync(databasePath);
       try {
         database.exec("PRAGMA journal_mode = WAL;");
