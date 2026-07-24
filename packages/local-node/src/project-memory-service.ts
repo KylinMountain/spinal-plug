@@ -264,7 +264,28 @@ export class ProjectMemoryService {
 
   createBootProjection(space: ProjectSpace, limit = 10): ProjectMemoryProjection {
     const memories = this.list(space).slice(0, limit);
-    return this.createProjection("project_boot", space, memories);
+    const projection = this.createProjection("project_boot", space, memories);
+    const checkpoint = this.database.latestCheckpoint(space.spaceId);
+    if (!checkpoint) return projection;
+    const section = (name: string, values: string[]) => values.length
+      ? `\n${name}:\n${values.map(value => `- ${escapeXml(value)}`).join("\n")}`
+      : "";
+    const handoff = [
+      `<mind-palace_handoff checkpoint="${escapeXml(checkpoint.checkpointId)}">`,
+      `Title: ${escapeXml(checkpoint.title)}`,
+      checkpoint.summary ? `Summary: ${escapeXml(checkpoint.summary)}` : "",
+      section("Completed", checkpoint.completed),
+      section("Decisions", checkpoint.decisions),
+      section("Open tasks", checkpoint.openTasks),
+      section("Blockers", checkpoint.blockers),
+      checkpoint.nextAction ? `\nNext action: ${escapeXml(checkpoint.nextAction)}` : "",
+      section("Artifacts", checkpoint.artifactRefs),
+      "</mind-palace_handoff>"
+    ].filter(Boolean).join("\n");
+    return {
+      ...projection,
+      content: projection.content.replace("</mind-palace_project_context>", `${handoff}\n</mind-palace_project_context>`)
+    };
   }
 
   createRecallProjection(space: ProjectSpace, prompt: string, limit = 8): ProjectMemoryProjection {

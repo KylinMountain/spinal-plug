@@ -23,6 +23,7 @@ Candidates are not active memory. They remain reviewable until explicitly promot
 | `sync` / "同步记忆" / "下载记忆" | Pull central memory and write it into Codex's reserved native-memory record. |
 | `status` / "记忆状态" | Show linked Space, local memory, and pending synchronization. |
 | "查看候选记忆" / "确认候选" | 审查自动提取候选，只有用户明确同意时才晋升为 active memory。 |
+| "交接工作" / "保存进度" / "让另一个 Agent 继续" | 创建 Project Checkpoint，不把临时工作状态写成长期记忆。 |
 
 The local cache is an implementation detail. Never tell the user to upload a database file. Do not edit Codex SQLite files directly: `sync-codex` owns only the reserved `mind-palace:<space-id>` record and never overwrites normal Codex session memory.
 
@@ -109,6 +110,16 @@ Show concise statements and source provenance. Do not promote automatically. If 
 ```bash
 mind-palace promote "$MIND_PALACE_DB" . <memory-id>
 ```
+
+## Project handoff
+
+When the user asks to hand off ongoing work, create a checkpoint with completed work, decisions, open tasks, blockers, next action, and artifact references. Do not place temporary progress into durable memory.
+
+```bash
+mind-palace checkpoint "$MIND_PALACE_DB" . '<json object with title, completed, decisions, openTasks, blockers, nextAction, artifactRefs>'
+```
+
+Use concise project facts. Confirm what will be handed off. An approved checkpoint is published on the next Stop lifecycle boundary; another linked Agent receives the latest checkpoint in its next boot context after synchronization.
 
 ## Status
 

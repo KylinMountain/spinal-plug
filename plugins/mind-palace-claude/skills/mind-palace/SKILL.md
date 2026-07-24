@@ -21,6 +21,8 @@ Use `/mind-palace:share` to publish the current Claude Code project's native mem
 
 Use one of: `directive`, `decision`, `context`, or `reference`. Do not store secrets, full transcripts, temporary task state, or facts that must be revalidated from code.
 
+For “交接工作”“保存当前进度”或“让另一个 Agent 继续”，use `/mind-palace:handoff`. A Project Checkpoint is a separate work-state object: completed work, decisions, open tasks, blockers, next action and artifact references. It must not be copied into native Auto Memory or canonical long-term memory.
+
 ## Local sync demonstration
 
 The M2 development service is local-only and unauthenticated. Start it in a separate terminal:

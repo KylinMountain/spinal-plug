@@ -10,6 +10,7 @@ import {
   HttpSyncTransport,
   MindPalaceDatabase,
   MindPalaceSyncClient,
+  ProjectHandoffService,
   ProjectMemoryService,
   ProjectSpaceResolver
 } from "@mind-palace/local-node";
@@ -49,6 +50,9 @@ Commands:
   remember <db-path> <project-dir> <kind> <text>   Internal local staging command
   candidates <db-path> <project-dir>               List reviewable inferred memory candidates
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
+  checkpoint <db-path> <project-dir> <json>        Save a work-state checkpoint for Agent handoff
+  handoff <db-path> <project-dir>                  Show the newest work-state handoff
+  checkpoints <db-path> <project-dir>              List work-state checkpoints
   update <db-path> <project-dir> <memory-id> <text> Update active memory
   forget <db-path> <project-dir> <memory-id>       Tombstone active memory
   list <db-path> <project-dir> [--all]             List project memories
@@ -387,6 +391,18 @@ async function executeHook(
     });
     candidatesCreated = drainCodexCandidateJobs(database, service, space);
   }
+  if (host === "codex" && payload.event === "stop") {
+    try {
+      // Held candidate events are intentionally excluded; only confirmed
+      // memory and work-state events are eligible for automatic publication.
+      await new MindPalaceSyncClient(
+        database,
+        createSyncTransport(process.env.MIND_PALACE_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL)
+      ).publish(space.spaceId, process.env.MIND_PALACE_DEVICE_ID ?? "device-local");
+    } catch {
+      // The local WAL/outbox retries on a later lifecycle boundary.
+    }
+  }
   console.log(JSON.stringify({
     notices: [
       candidatesCreated > 0
@@ -631,6 +647,10 @@ async function main(): Promise<void> {
   const space = resolvedSpace.space;
   const { database } = openDatabase(rawDbPath);
   const service = createMemoryService(database);
+  const handoffs = new ProjectHandoffService(database, {
+    accountId: process.env.MIND_PALACE_ACCOUNT_ID ?? "local",
+    personaId: process.env.MIND_PALACE_PERSONA_ID ?? "persona_default"
+  });
   if (command === "share-claude") {
     const [url, deviceId] = rest;
     if (!url || !deviceId) {
@@ -689,6 +709,51 @@ async function main(): Promise<void> {
       }
     }
     console.log(JSON.stringify({ memory, published, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
+    return;
+  }
+  if (command === "checkpoint") {
+    const rawCheckpoint = rest.join(" ");
+    if (!rawCheckpoint) {
+      throw new Error("Usage: mind-palace checkpoint <db-path> <project-dir> <json>");
+    }
+    let input: Record<string, unknown>;
+    try {
+      input = JSON.parse(rawCheckpoint) as Record<string, unknown>;
+    } catch {
+      throw new Error("checkpoint input must be a JSON object.");
+    }
+    if (typeof input.title !== "string" || !input.title.trim()) {
+      throw new Error("checkpoint input requires a non-empty title.");
+    }
+    const strings = (key: string) => Array.isArray(input[key])
+      ? input[key].filter((value): value is string => typeof value === "string")
+      : undefined;
+    const checkpoint = handoffs.checkpoint({
+      space,
+      title: input.title,
+      summary: typeof input.summary === "string" ? input.summary : undefined,
+      completed: strings("completed"),
+      decisions: strings("decisions"),
+      openTasks: strings("openTasks"),
+      blockers: strings("blockers"),
+      nextAction: typeof input.nextAction === "string" ? input.nextAction : undefined,
+      artifactRefs: strings("artifactRefs"),
+      parentCheckpointId: typeof input.parentCheckpointId === "string" ? input.parentCheckpointId : undefined,
+      actor: { agentInstallationId: "mind-palace-cli-handoff", host: "mind-palace", sessionId: "handoff" },
+      runtimeContext: {
+        missionId: typeof input.missionId === "string" ? input.missionId : null,
+        branchId: typeof input.branchId === "string" ? input.branchId : null
+      }
+    });
+    console.log(JSON.stringify({ checkpoint, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
+    return;
+  }
+  if (command === "handoff") {
+    console.log(JSON.stringify(handoffs.latest(space), null, 2));
+    return;
+  }
+  if (command === "checkpoints") {
+    console.log(JSON.stringify(handoffs.list(space, true), null, 2));
     return;
   }
   if (command === "update") {
