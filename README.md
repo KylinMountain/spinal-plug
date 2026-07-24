@@ -5,7 +5,7 @@ Mind Palace 是一个面向 Agent 的跨设备项目记忆层。当前仓库实�
 - `protocol`: v0.1 协议对象与 schema
 - `local-node`: 本地 SQLite WAL / Outbox 基础层
 - `adapter-sdk`: 统一适配器接口
-- `adapter-claude-code`: Claude Code 占位适配器
+- `adapter-claude-code`: Claude Code 生命周期与受管原生记忆投影
 - `adapter-codex`: Codex 生命周期、候选提取与受限原生记忆投影
 - `mcp-server`: MCP Server 骨架
 - `cli`: 本地命令行入口
@@ -21,7 +21,7 @@ Claude Code 本地参考实现的同步、Hook 与后台记忆整理观察见 [d
 
 M2 已实现可替换的同步内核与两节点验证，当前边界见 [docs/phase-m2-sync-core.md](docs/phase-m2-sync-core.md)。
 
-本地开发可运行 `mind-palace serve ./data/mind-palace-central.db` 启动持久化同步服务，再用 `mind-palace sync` 连接项目节点。该服务尚未实现认证，默认仅监听本机。
+本地协议验证可运行 `mind-palace serve ./data/mind-palace-central.db` 启动无认证、仅回环监听的同步服务。认证控制面使用 `mind-palace serve-control-plane`，提供账户、设备、ACL、撤销、限流和同源控制台，见 [docs/control-plane-console.md](docs/control-plane-console.md)。
 
 Claude Code 本机插件已实现为可安装的 local marketplace 插件，安装和试运行边界见 [docs/integrations/claude-code-plugin.md](docs/integrations/claude-code-plugin.md)。
 
