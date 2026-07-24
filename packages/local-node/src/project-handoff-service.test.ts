@@ -3,21 +3,21 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { EventEnvelope, ProjectSpace } from "@mind-palace/protocol";
-import { MindPalaceDatabase } from "./index.js";
+import type { EventEnvelope, ProjectSpace } from "@spinal-plug/protocol";
+import { SpinalPlugDatabase } from "./index.js";
 import { ProjectHandoffService } from "./project-handoff-service.js";
 import { ProjectMemoryService } from "./project-memory-service.js";
 
 const space: ProjectSpace = {
-  schema: "mind-palace.project-space/v0.1",
+  schema: "spinal-plug.project-space/v0.1",
   spaceId: "spc_handoff",
   type: "project",
   displayName: "payments"
 };
 
-function openTestDatabase(): MindPalaceDatabase {
-  const directory = mkdtempSync(join(tmpdir(), "mind-palace-handoff-"));
-  const database = new MindPalaceDatabase(join(directory, "local.db"));
+function openTestDatabase(): SpinalPlugDatabase {
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-handoff-"));
+  const database = new SpinalPlugDatabase(join(directory, "local.db"));
   database.init();
   return database;
 }
@@ -40,7 +40,7 @@ test("checkpoint is durable work state and appears in the next boot projection",
   assert.equal(database.latestCheckpoint(space.spaceId)?.checkpointId, checkpoint.checkpointId);
   assert.equal(database.listPendingOutboxForSpace(space.spaceId)[0].eventType, "checkpoint.created");
   const boot = new ProjectMemoryService(database).createBootProjection(space);
-  assert.match(boot.content, /mind-palace_handoff/);
+  assert.match(boot.content, /spinal-plug_handoff/);
   assert.match(boot.content, /Update PaymentConsumer idempotency/);
 });
 

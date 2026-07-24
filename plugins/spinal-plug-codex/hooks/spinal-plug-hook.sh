@@ -4,11 +4,10 @@
 set -uo pipefail
 
 event_name="${1:?expected a hook event name}"
-db_path="${MIND_PALACE_DB:-$HOME/.mind-palace/mind-palace.db}"
-mind_palace_bin="${SPINAL_PLUG_BIN:-spinal-plug}"
-if ! command -v "$mind_palace_bin" >/dev/null 2>&1; then mind_palace_bin="${MIND_PALACE_BIN:-mind-palace}"; fi
+db_path="${SPINAL_PLUG_DB:-$HOME/.spinal-plug/spinal-plug.db}"
+spinal_plug_bin="${SPINAL_PLUG_BIN:-spinal-plug}"
 
-if ! command -v "$mind_palace_bin" >/dev/null 2>&1; then
+if ! command -v "$spinal_plug_bin" >/dev/null 2>&1; then
   printf '{}\n'
   exit 0
 fi
@@ -33,6 +32,6 @@ printf '%s' "$payload" | node -e '
       process.stdout.write(JSON.stringify({ hook_event_name: process.argv[1] }));
     }
   });
-' "$event_name" | "$mind_palace_bin" hook-stdin codex "$db_path" 2>/dev/null || printf '{}\n'
+' "$event_name" | "$spinal_plug_bin" hook-stdin codex "$db_path" 2>/dev/null || printf '{}\n'
 
 exit 0

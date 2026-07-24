@@ -17,7 +17,7 @@ import type {
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
-} from "@mind-palace/protocol";
+} from "@spinal-plug/protocol";
 import { PersistentSyncServer } from "./persistent-server.js";
 
 const controlPlaneSchema = `
@@ -138,7 +138,7 @@ export interface ProvisionAccountResult {
  * Account, device and Space authorization boundary around the event store.
  * Tokens are returned once; only their SHA-256 digest is persisted.
  */
-export class MindPalaceControlPlane {
+export class SpinalPlugControlPlane {
   private readonly database: DatabaseSync;
   private readonly sync: PersistentSyncServer;
 
@@ -297,7 +297,7 @@ export class MindPalaceControlPlane {
     input: Omit<ProjectSpace, "schema">
   ): ProjectSpace {
     const space: ProjectSpace = {
-      schema: "mind-palace.project-space/v0.1",
+      schema: "spinal-plug.project-space/v0.1",
       ...input
     };
     const createdAt = now();
@@ -332,7 +332,7 @@ export class MindPalaceControlPlane {
       ORDER BY s.display_name ASC
     `).all(principal.accountId, principal.userId) as Record<string, unknown>[];
     return rows.map(row => ({
-      schema: "mind-palace.project-space/v0.1",
+      schema: "spinal-plug.project-space/v0.1",
       spaceId: String(row.space_id),
       type: row.type as ProjectSpace["type"],
       displayName: String(row.display_name),

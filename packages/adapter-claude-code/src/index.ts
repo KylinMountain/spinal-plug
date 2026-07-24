@@ -4,12 +4,12 @@ import type {
   ContextProjection,
   HostCapabilities,
   HostHookPayload,
-  MindPalaceAdapter
-} from "@mind-palace/adapter-sdk";
-import type { ProjectSpace } from "@mind-palace/protocol";
-import { ProjectSpaceResolver } from "@mind-palace/local-node";
+  SpinalPlugAdapter
+} from "@spinal-plug/adapter-sdk";
+import type { ProjectSpace } from "@spinal-plug/protocol";
+import { ProjectSpaceResolver } from "@spinal-plug/local-node";
 
-export class ClaudeCodeAdapter implements MindPalaceAdapter {
+export class ClaudeCodeAdapter implements SpinalPlugAdapter {
   readonly name = "claude-code";
   private readonly spaceResolver = new ProjectSpaceResolver();
 

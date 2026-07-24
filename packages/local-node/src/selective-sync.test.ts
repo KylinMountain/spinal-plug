@@ -13,28 +13,28 @@ import type {
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
-} from "@mind-palace/protocol";
-import { MindPalaceDatabase } from "./index.js";
+} from "@spinal-plug/protocol";
+import { SpinalPlugDatabase } from "./index.js";
 import { ProjectMemoryService } from "./project-memory-service.js";
-import { MindPalaceSyncClient, type SyncTransport } from "./sync-client.js";
+import { SpinalPlugSyncClient, type SyncTransport } from "./sync-client.js";
 
 const space: ProjectSpace = {
-  schema: "mind-palace.project-space/v0.1",
+  schema: "spinal-plug.project-space/v0.1",
   spaceId: "spc_selective",
   type: "project",
   displayName: "selective"
 };
 
-function testDatabase(): MindPalaceDatabase {
-  const directory = mkdtempSync(join(tmpdir(), "mind-palace-selective-"));
-  const database = new MindPalaceDatabase(join(directory, "local.db"));
+function testDatabase(): SpinalPlugDatabase {
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-selective-"));
+  const database = new SpinalPlugDatabase(join(directory, "local.db"));
   database.init();
   return database;
 }
 
 function memory(memoryId: string, status: MemoryRecord["status"] = "active"): MemoryRecord {
   return {
-    schema: "mind-palace.memory-record/v0.1",
+    schema: "spinal-plug.memory-record/v0.1",
     memoryId,
     spaceId: space.spaceId,
     kind: "decision",
@@ -64,7 +64,7 @@ function update(record: MemoryRecord, required = false): CanonicalMemoryUpdate {
           ? "supersede"
           : "activate";
   return {
-    schema: "mind-palace.canonical-memory-update/v0.1",
+    schema: "spinal-plug.canonical-memory-update/v0.1",
     updateId: `upd_${record.memoryId}`,
     spaceId: space.spaceId,
     memoryId: record.memoryId,
@@ -98,7 +98,7 @@ class UpdateTransport implements SyncTransport {
 
 test("fetch and preview do not apply optional canonical updates", async () => {
   const database = testDatabase();
-  const client = new MindPalaceSyncClient(
+  const client = new SpinalPlugSyncClient(
     database,
     new UpdateTransport([update(memory("mem_a")), update(memory("mem_b"))])
   );
@@ -128,7 +128,7 @@ test("required tombstones apply during fetch and cannot remain pending", async (
     statement: "Old decision"
   });
   const deletion = memory("mem_delete", "deleted");
-  const client = new MindPalaceSyncClient(
+  const client = new SpinalPlugSyncClient(
     database,
     new UpdateTransport([update(deletion, true)])
   );
@@ -170,7 +170,7 @@ class CheckpointTransport implements SyncTransport {
         runtimeContext: { branchId: "claude-linux" },
         payload: {
           checkpoint: {
-            schema: "mind-palace.project-checkpoint/v0.1",
+            schema: "spinal-plug.project-checkpoint/v0.1",
             checkpointId: "chk_remote",
             spaceId: space.spaceId,
             title: "Remote handoff",
@@ -201,7 +201,7 @@ class CheckpointTransport implements SyncTransport {
 
 test("fetch materializes remote work-state checkpoints for the next Agent boot", async () => {
   const database = testDatabase();
-  const client = new MindPalaceSyncClient(database, new CheckpointTransport());
+  const client = new SpinalPlugSyncClient(database, new CheckpointTransport());
   const fetched = await client.fetch(space.spaceId, "device_local");
 
   assert.equal(fetched.checkpointsStored, 1);

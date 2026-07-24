@@ -3,13 +3,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { EventEnvelope } from "@mind-palace/protocol";
-import { MindPalaceControlPlane } from "./control-plane.js";
+import type { EventEnvelope } from "@spinal-plug/protocol";
+import { SpinalPlugControlPlane } from "./control-plane.js";
 import { createControlPlaneHttpServer } from "./control-plane-http-server.js";
 
-function testControlPlane(): MindPalaceControlPlane {
-  const directory = mkdtempSync(join(tmpdir(), "mind-palace-control-"));
-  return new MindPalaceControlPlane(join(directory, "control.db"));
+function testControlPlane(): SpinalPlugControlPlane {
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-control-"));
+  return new SpinalPlugControlPlane(join(directory, "control.db"));
 }
 
 function eventFor(
@@ -164,7 +164,7 @@ test("HTTP control plane rate-limits authenticated devices", async () => {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-mind-palace-bootstrap-token": "bootstrap-test"
+      "x-spinal-plug-bootstrap-token": "bootstrap-test"
     },
     body: JSON.stringify({
       accountName: "Acme",

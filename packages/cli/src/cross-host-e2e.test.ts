@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer } from "@mind-palace/adapter-claude-code";
-import { CodexNativeMemoryStore } from "@mind-palace/adapter-codex";
-import { MindPalaceDatabase, MindPalaceSyncClient, ProjectMemoryService, type SyncTransport } from "@mind-palace/local-node";
+import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer } from "@spinal-plug/adapter-claude-code";
+import { CodexNativeMemoryStore } from "@spinal-plug/adapter-codex";
+import { SpinalPlugDatabase, SpinalPlugSyncClient, ProjectMemoryService, type SyncTransport } from "@spinal-plug/local-node";
 import type {
   ProjectSpace,
   SyncFetchRequest,
@@ -15,19 +15,19 @@ import type {
   SyncPullResponse,
   SyncPushRequest,
   SyncPushResponse
-} from "@mind-palace/protocol";
-import { InMemorySyncServer } from "@mind-palace/sync-server";
+} from "@spinal-plug/protocol";
+import { InMemorySyncServer } from "@spinal-plug/sync-server";
 
 const space: ProjectSpace = {
-  schema: "mind-palace.project-space/v0.1",
+  schema: "spinal-plug.project-space/v0.1",
   spaceId: "spc_cross_host",
   type: "project",
   displayName: "payments-service"
 };
 
-function localDatabase(name: string): MindPalaceDatabase {
-  const directory = mkdtempSync(join(tmpdir(), `mind-palace-${name}-`));
-  const database = new MindPalaceDatabase(join(directory, "mind-palace.db"));
+function localDatabase(name: string): SpinalPlugDatabase {
+  const directory = mkdtempSync(join(tmpdir(), `spinal-plug-${name}-`));
+  const database = new SpinalPlugDatabase(join(directory, "spinal-plug.db"));
   database.init();
   return database;
 }
@@ -67,7 +67,7 @@ test("Claude memory reaches Codex native storage and tombstones cannot revive it
     host: "claude-code",
     sessionId: "claude-session"
   });
-  const claudeHome = mkdtempSync(join(tmpdir(), "mind-palace-claude-native-"));
+  const claudeHome = mkdtempSync(join(tmpdir(), "spinal-plug-claude-native-"));
   const claudeImporter = new ClaudeAutoMemoryImporter({ homeDirectory: claudeHome });
   const nativeDirectory = claudeImporter.memoryDirectory("/projects/payments-service");
   mkdirSync(nativeDirectory, { recursive: true });
@@ -92,7 +92,7 @@ test("Claude memory reaches Codex native storage and tombstones cannot revive it
   });
   const event = claudeDatabase.listPendingOutboxForSpace(space.spaceId)[0];
   const controlPlane = new InMemorySyncServer();
-  const claudeClient = new MindPalaceSyncClient(claudeDatabase, controlPlane);
+  const claudeClient = new SpinalPlugSyncClient(claudeDatabase, controlPlane);
   assert.equal((await claudeClient.publish(space.spaceId, "device_claude")).pushed, 1);
   assert.deepEqual(
     (await controlPlane.push({ spaceId: space.spaceId, deviceId: "device_claude", events: [event] })).duplicateEventIds,
@@ -100,13 +100,13 @@ test("Claude memory reaches Codex native storage and tombstones cannot revive it
   );
 
   const codexDatabase = localDatabase("codex");
-  const codexClient = new MindPalaceSyncClient(codexDatabase, controlPlane);
+  const codexClient = new SpinalPlugSyncClient(codexDatabase, controlPlane);
   const fetched = await codexClient.fetch(space.spaceId, "device_codex");
   assert.equal(fetched.pending, 1);
   assert.equal(codexClient.apply(space.spaceId).applied, 1);
   assert.equal(codexDatabase.getMemory(created.memoryId)?.statement, created.statement);
 
-  const codexDirectory = mkdtempSync(join(tmpdir(), "mind-palace-codex-native-"));
+  const codexDirectory = mkdtempSync(join(tmpdir(), "spinal-plug-codex-native-"));
   const codexNativeDatabase = join(codexDirectory, "memories_1.sqlite");
   createCodexMemoryDatabase(codexNativeDatabase);
   const nativeStore = new CodexNativeMemoryStore({
@@ -116,7 +116,7 @@ test("Claude memory reaches Codex native storage and tombstones cannot revive it
   nativeStore.materialize(space, codexDatabase.listActiveMemories(space.spaceId));
   const native = new DatabaseSync(codexNativeDatabase);
   try {
-    const managed = native.prepare("SELECT raw_memory FROM stage1_outputs WHERE thread_id = ?").get(`mind-palace:${space.spaceId}`) as { raw_memory: string };
+    const managed = native.prepare("SELECT raw_memory FROM stage1_outputs WHERE thread_id = ?").get(`spinal-plug:${space.spaceId}`) as { raw_memory: string };
     const userOwned = native.prepare("SELECT raw_memory FROM stage1_outputs WHERE thread_id = 'user-thread'").get() as { raw_memory: string };
     assert.match(managed.raw_memory, /seven days/);
     assert.equal(userOwned.raw_memory, "user-owned memory");
@@ -129,7 +129,7 @@ test("Claude memory reaches Codex native storage and tombstones cannot revive it
   assert.match(readFileSync(claudeProjection.filePath, "utf8"), /Seven day compatibility/);
   assert.match(
     readFileSync(join(claudeHome, ".claude", "projects", "-projects-payments-service", "memory", "MEMORY.md"), "utf8"),
-    /mind-palace:managed:start/
+    /spinal-plug:managed:start/
   );
 
   claudeService.forget(space, created.memoryId);
@@ -141,7 +141,7 @@ test("Claude memory reaches Codex native storage and tombstones cannot revive it
   nativeStore.materialize(space, codexDatabase.listActiveMemories(space.spaceId));
   const afterDelete = new DatabaseSync(codexNativeDatabase);
   try {
-    const managed = afterDelete.prepare("SELECT raw_memory FROM stage1_outputs WHERE thread_id = ?").get(`mind-palace:${space.spaceId}`) as { raw_memory: string };
+    const managed = afterDelete.prepare("SELECT raw_memory FROM stage1_outputs WHERE thread_id = ?").get(`spinal-plug:${space.spaceId}`) as { raw_memory: string };
     assert.doesNotMatch(managed.raw_memory, /seven days/);
   } finally {
     afterDelete.close();
@@ -178,7 +178,7 @@ test("offline publication remains in the WAL outbox until a retry succeeds", asy
     kind: "directive",
     statement: "Use a real database for integration tests."
   });
-  const client = new MindPalaceSyncClient(database, new FlakyTransport(new InMemorySyncServer()));
+  const client = new SpinalPlugSyncClient(database, new FlakyTransport(new InMemorySyncServer()));
 
   await assert.rejects(client.publish(space.spaceId, "device_offline"), /offline/);
   assert.equal(database.listPendingOutboxForSpace(space.spaceId).length, 1);

@@ -1,6 +1,6 @@
 # Codex 插件与自动候选记忆
 
-插件位于 `plugins/mind-palace-codex/`，通过 marketplace 安装后由 `hooks.json` 驱动。项目已连接 Space 时，不需要用户反复执行 boot 或 share。
+插件位于 `plugins/spinal-plug-codex/`，通过 marketplace 安装后由 `hooks.json` 驱动。项目已连接 Space 时，不需要用户反复执行 boot 或 share。
 
 | 生命周期 | 行为 |
 | --- | --- |
@@ -13,11 +13,11 @@
 
 自动提取只接受耐久的项目规则、已说明的决策、不可从代码轻易推导的背景与权威链接。临时任务进度、测试运行状态、密钥和完整对话都会被拒绝。候选始终标记为 `agent_inferred` 和 `candidate`；它不会自动进入启动上下文或覆写 Codex 的原生记忆。
 
-插件只把已应用的中心规范记忆投影到 Codex 私有 Stage-1 数据库中的 `mind-palace:<space-id>` 保留记录。这个记录与用户会话分离；适配器从不扫描、覆盖或同步其他 Codex 原生记忆。Codex 升级后必须运行兼容性测试，失败时改为 Context Projection。
+插件只把已应用的中心规范记忆投影到 Codex 私有 Stage-1 数据库中的 `spinal-plug:<space-id>` 保留记录。这个记录与用户会话分离；适配器从不扫描、覆盖或同步其他 Codex 原生记忆。Codex 升级后必须运行兼容性测试，失败时改为 Context Projection。
 
 ## 手动动作
 
-`/mind-palace` Skill 仍保留：
+`/spinal-plug` Skill 仍保留：
 
 - `status`：查看当前连接、候选和待同步事件。
 - `candidates` / `promote`：审查自动候选，并只在用户明确确认后晋升为 active。
@@ -31,7 +31,7 @@
 当用户要求“交接给 Claude Code”“保存当前进度”或“让另一个分身继续”时，Codex 应创建 Project Checkpoint，而不是保存成长期记忆：
 
 ```bash
-mind-palace checkpoint "$MIND_PALACE_DB" . '{
+spinal-plug checkpoint "$SPINAL_PLUG_DB" . '{
   "title": "Payment migration handoff",
   "completed": ["Created the dual-write schema migration"],
   "decisions": ["Keep old consumers compatible for seven days"],
@@ -42,4 +42,4 @@ mind-palace checkpoint "$MIND_PALACE_DB" . '{
 }'
 ```
 
-已确认的 checkpoint 会在 Codex `Stop` 阶段自动发布。另一设备执行同步后，下一次启动 Context 会出现最新 handoff 区块；也可通过 `mind-palace handoff "$MIND_PALACE_DB" .` 查看。
+已确认的 checkpoint 会在 Codex `Stop` 阶段自动发布。另一设备执行同步后，下一次启动 Context 会出现最新 handoff 区块；也可通过 `spinal-plug handoff "$SPINAL_PLUG_DB" .` 查看。

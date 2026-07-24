@@ -18,7 +18,7 @@ Codex 的原生记忆不能作为跨设备事实源，但手动执行“共享�
 - `SessionStart` 生成稳定的 Project Boot Context，并刷新 Codex 中受保留线程 ID 保护的原生记忆投影。
 - `UserPromptSubmit` 只注入有界 Recall Context。
 - `Stop` 仅在当前 Hook 输入包含最终助手文本时，使用本地保守规则提取最多三条 `directive`、`decision`、`context` 或 `reference` 候选。
-- 原始 prompt 和最终回答不写入 Mind Palace；本地 SQLite 只保存提炼后的候选、不可逆 source digest 与处理状态。
+- 原始 prompt 和最终回答不写入 Spinal Plug；本地 SQLite 只保存提炼后的候选、不可逆 source digest 与处理状态。
 - 每个候选都以 `agent_inferred` 来源和低于自动晋升阈值的置信度创建为 `candidate`，且不在 `Stop` 中上传。只有用户显式晋升或中心编译器依据后续证据处理后，相关事件才允许发布，并可能成为 active。
 - 候选作业使用 SQLite WAL、唯一 job key、事务领取和过期租约恢复，以防重试重复、进程崩溃丢失或并发 Hook 重入。候选事件在 Outbox 中处于 `held` 状态；晋升以同一事务释放候选事件并写入 `memory.promoted`，普通同步不会越过确认门槛。
 

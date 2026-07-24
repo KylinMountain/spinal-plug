@@ -10,11 +10,11 @@ Accepted
 
 ## 背景
 
-Mind Palace 首版要先跑通 Claude Code 与 Codex 的项目记忆同步。同步对象不能直接建立在宿主原生记忆文件、`CLAUDE.md`、`AGENTS.md` 或共享 Markdown 文件之上，因为这些介质缺少可靠的并发、来源、删除与幂等语义。
+Spinal Plug 首版要先跑通 Claude Code 与 Codex 的项目记忆同步。同步对象不能直接建立在宿主原生记忆文件、`CLAUDE.md`、`AGENTS.md` 或共享 Markdown 文件之上，因为这些介质缺少可靠的并发、来源、删除与幂等语义。
 
 ## 决策
 
-Mind Palace v0.1 采用事件源模型：
+Spinal Plug v0.1 采用事件源模型：
 
 - `EventEnvelope` 是跨设备同步的最小事实单位。
 - `MemoryRecord` 是事件派生后的本地或远端物化视图。

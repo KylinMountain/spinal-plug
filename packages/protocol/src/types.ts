@@ -49,7 +49,7 @@ export interface RepositoryRef {
 }
 
 export interface ProjectSpace {
-  schema: "mind-palace.project-space/v0.1";
+  schema: "spinal-plug.project-space/v0.1";
   spaceId: string;
   type: ProjectSpaceType;
   displayName: string;
@@ -63,7 +63,7 @@ export interface Account {
   createdAt: string;
 }
 
-export interface MindPalaceUser {
+export interface SpinalPlugUser {
   userId: string;
   accountId: string;
   email: string;
@@ -140,7 +140,7 @@ export interface MemoryPayload {
 export type CheckpointStatus = "active" | "superseded" | "archived";
 
 export interface ProjectCheckpoint {
-  schema: "mind-palace.project-checkpoint/v0.1";
+  schema: "spinal-plug.project-checkpoint/v0.1";
   checkpointId: string;
   spaceId: string;
   title: string;
@@ -185,7 +185,7 @@ export interface SyncProfile {
 }
 
 export interface MindCore {
-  schema: "mind-palace.mind-core/v0.1";
+  schema: "spinal-plug.mind-core/v0.1";
   mindId: string;
   spaceId: string;
   personaId: string;
@@ -198,7 +198,7 @@ export interface MindCore {
 }
 
 export interface RoleProfile {
-  schema: "mind-palace.role-profile/v0.1";
+  schema: "spinal-plug.role-profile/v0.1";
   roleProfileId: string;
   mindId: string;
   spaceId: string;
@@ -211,7 +211,7 @@ export interface RoleProfile {
 }
 
 export interface Mission {
-  schema: "mind-palace.mission/v0.1";
+  schema: "spinal-plug.mission/v0.1";
   missionId: string;
   mindId: string;
   spaceId: string;
@@ -234,7 +234,7 @@ export interface TaskNode {
 }
 
 export interface TaskGraph {
-  schema: "mind-palace.task-graph/v0.1";
+  schema: "spinal-plug.task-graph/v0.1";
   taskGraphId: string;
   missionId: string;
   mindId: string;
@@ -246,7 +246,7 @@ export interface TaskGraph {
 }
 
 export interface MindCapsule {
-  schema: "mind-palace.mind-capsule/v0.1";
+  schema: "spinal-plug.mind-capsule/v0.1";
   capsuleId: string;
   mindId: string;
   spaceId: string;
@@ -264,7 +264,7 @@ export interface MindCapsule {
 }
 
 export interface Incarnation {
-  schema: "mind-palace.incarnation/v0.1";
+  schema: "spinal-plug.incarnation/v0.1";
   incarnationId: string;
   mindId: string;
   capsuleId: string;
@@ -304,7 +304,7 @@ export interface EventEnvelope {
 }
 
 export interface MemoryRecord {
-  schema: "mind-palace.memory-record/v0.1";
+  schema: "spinal-plug.memory-record/v0.1";
   memoryId: string;
   spaceId: string;
   kind: MemoryKind;
@@ -327,7 +327,7 @@ export interface MemoryRecord {
 }
 
 export interface MemoryDispute {
-  schema: "mind-palace.memory-dispute/v0.1";
+  schema: "spinal-plug.memory-dispute/v0.1";
   disputeId: string;
   spaceId: string;
   semanticKey: string;
@@ -341,7 +341,7 @@ export interface MemoryDispute {
 }
 
 export interface SyncCursor {
-  schema: "mind-palace.sync-cursor/v0.1";
+  schema: "spinal-plug.sync-cursor/v0.1";
   cursorId: string;
   scope: "device" | "adapter";
   ownerId: string;
@@ -383,7 +383,7 @@ export type CanonicalUpdateKind =
   | "delete";
 
 export interface CanonicalMemoryUpdate {
-  schema: "mind-palace.canonical-memory-update/v0.1";
+  schema: "spinal-plug.canonical-memory-update/v0.1";
   updateId: string;
   spaceId: string;
   memoryId: string;
@@ -421,7 +421,7 @@ export interface SyncApplyResult {
 }
 
 export interface ProjectSnapshot {
-  schema: "mind-palace.project-snapshot/v0.1";
+  schema: "spinal-plug.project-snapshot/v0.1";
   spaceId: string;
   cursor: string;
   generatedAt: string;

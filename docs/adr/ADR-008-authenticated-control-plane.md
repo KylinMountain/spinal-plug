@@ -17,25 +17,25 @@ Accepted
 - 撤销设备后令牌立即失效。
 - 每个设备使用固定窗口限流；默认每分钟 120 次请求。
 - 无 TLS 的 Control Plane 只允许监听 `127.0.0.1`、`::1` 或 `localhost`。非回环部署必须提供 TLS key/certificate。
-- `mind-palace serve` 保留为无认证本地协议演示；正式服务使用 `mind-palace serve-control-plane`。
+- `spinal-plug serve` 保留为无认证本地协议演示；正式服务使用 `spinal-plug serve-control-plane`。
 
 ## 运行
 
 ```bash
-export MIND_PALACE_BOOTSTRAP_TOKEN="<operator-secret>"
-export MIND_PALACE_TLS_CERT="/path/to/fullchain.pem"
-export MIND_PALACE_TLS_KEY="/path/to/private-key.pem"
-export MIND_PALACE_LISTEN_HOST="0.0.0.0"
+export SPINAL_PLUG_BOOTSTRAP_TOKEN="<operator-secret>"
+export SPINAL_PLUG_TLS_CERT="/path/to/fullchain.pem"
+export SPINAL_PLUG_TLS_KEY="/path/to/private-key.pem"
+export SPINAL_PLUG_LISTEN_HOST="0.0.0.0"
 
-mind-palace serve-control-plane ./data/control-plane.db 8787
+spinal-plug serve-control-plane ./data/control-plane.db 8787
 ```
 
 本地客户端设置：
 
 ```bash
-export MIND_PALACE_ACCOUNT_ID="acc_..."
-export MIND_PALACE_DEVICE_ID="dev_..."
-export MIND_PALACE_DEVICE_TOKEN="mpd_..."
+export SPINAL_PLUG_ACCOUNT_ID="acc_..."
+export SPINAL_PLUG_DEVICE_ID="dev_..."
+export SPINAL_PLUG_DEVICE_TOKEN="mpd_..."
 ```
 
 ## 结果

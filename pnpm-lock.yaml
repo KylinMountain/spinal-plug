@@ -17,70 +17,70 @@ importers:
 
   packages/adapter-claude-code:
     dependencies:
-      '@mind-palace/adapter-sdk':
+      '@spinal-plug/adapter-sdk':
         specifier: workspace:*
         version: link:../adapter-sdk
-      '@mind-palace/local-node':
+      '@spinal-plug/local-node':
         specifier: workspace:*
         version: link:../local-node
-      '@mind-palace/protocol':
+      '@spinal-plug/protocol':
         specifier: workspace:*
         version: link:../protocol
 
   packages/adapter-codex:
     dependencies:
-      '@mind-palace/adapter-sdk':
+      '@spinal-plug/adapter-sdk':
         specifier: workspace:*
         version: link:../adapter-sdk
-      '@mind-palace/local-node':
+      '@spinal-plug/local-node':
         specifier: workspace:*
         version: link:../local-node
-      '@mind-palace/protocol':
+      '@spinal-plug/protocol':
         specifier: workspace:*
         version: link:../protocol
 
   packages/adapter-sdk:
     dependencies:
-      '@mind-palace/protocol':
+      '@spinal-plug/protocol':
         specifier: workspace:*
         version: link:../protocol
 
   packages/cli:
     dependencies:
-      '@mind-palace/adapter-claude-code':
+      '@spinal-plug/adapter-claude-code':
         specifier: workspace:*
         version: link:../adapter-claude-code
-      '@mind-palace/adapter-codex':
+      '@spinal-plug/adapter-codex':
         specifier: workspace:*
         version: link:../adapter-codex
-      '@mind-palace/adapter-sdk':
+      '@spinal-plug/adapter-sdk':
         specifier: workspace:*
         version: link:../adapter-sdk
-      '@mind-palace/local-node':
+      '@spinal-plug/local-node':
         specifier: workspace:*
         version: link:../local-node
-      '@mind-palace/protocol':
+      '@spinal-plug/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@mind-palace/sync-server':
+      '@spinal-plug/sync-server':
         specifier: workspace:*
         version: link:../sync-server
 
   packages/local-node:
     dependencies:
-      '@mind-palace/protocol':
+      '@spinal-plug/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@mind-palace/sync-server':
+      '@spinal-plug/sync-server':
         specifier: workspace:*
         version: link:../sync-server
 
   packages/mcp-server:
     dependencies:
-      '@mind-palace/local-node':
+      '@spinal-plug/local-node':
         specifier: workspace:*
         version: link:../local-node
-      '@mind-palace/protocol':
+      '@spinal-plug/protocol':
         specifier: workspace:*
         version: link:../protocol
 
@@ -88,7 +88,7 @@ importers:
 
   packages/sync-server:
     dependencies:
-      '@mind-palace/protocol':
+      '@spinal-plug/protocol':
         specifier: workspace:*
         version: link:../protocol
 

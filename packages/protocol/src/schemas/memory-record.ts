@@ -1,7 +1,7 @@
 import type { JsonSchema } from "./common.js";
 
 export const memoryRecordSchema: JsonSchema = {
-  $id: "mind-palace.memory-record/v0.1",
+  $id: "spinal-plug.memory-record/v0.1",
   type: "object",
   additionalProperties: false,
   required: [
@@ -19,7 +19,7 @@ export const memoryRecordSchema: JsonSchema = {
     "updatedAt"
   ],
   properties: {
-    schema: { type: "string", enum: ["mind-palace.memory-record/v0.1"] },
+    schema: { type: "string", enum: ["spinal-plug.memory-record/v0.1"] },
     memoryId: { type: "string" },
     spaceId: { type: "string" },
     kind: {

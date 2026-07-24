@@ -2,8 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer, type ServerOptions as TlsServerOptions } from "node:https";
 import type { AddressInfo } from "node:net";
-import type { ProjectSpace, SpaceRole } from "@mind-palace/protocol";
-import { ControlPlaneError, MindPalaceControlPlane } from "./control-plane.js";
+import type { ProjectSpace, SpaceRole } from "@spinal-plug/protocol";
+import { ControlPlaneError, SpinalPlugControlPlane } from "./control-plane.js";
 import { renderControlPlaneConsole } from "./console-html.js";
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -93,7 +93,7 @@ export interface ControlPlaneHttpServer {
  * loopback; a non-loopback deployment must provide TLS key/certificate options.
  */
 export function createControlPlaneHttpServer(
-  controlPlane: MindPalaceControlPlane,
+  controlPlane: SpinalPlugControlPlane,
   options: ControlPlaneHttpOptions
 ): ControlPlaneHttpServer {
   if (!options.bootstrapToken) {
@@ -127,7 +127,7 @@ export function createControlPlaneHttpServer(
       }
 
       if (request.method === "POST" && url.pathname === "/v1/admin/bootstrap") {
-        const supplied = request.headers["x-mind-palace-bootstrap-token"];
+        const supplied = request.headers["x-spinal-plug-bootstrap-token"];
         if (typeof supplied !== "string" || !secretsEqual(supplied, options.bootstrapToken)) {
           throw new ControlPlaneError("Invalid bootstrap credential.", 401, "invalid_bootstrap");
         }
@@ -205,7 +205,7 @@ export function createControlPlaneHttpServer(
       if (request.method === "POST" && url.pathname === "/v1/events:push") {
         sendJson(response, 200, await controlPlane.push(
           principal,
-          await readJson(request) as unknown as Parameters<MindPalaceControlPlane["push"]>[1]
+          await readJson(request) as unknown as Parameters<SpinalPlugControlPlane["push"]>[1]
         ));
         return;
       }

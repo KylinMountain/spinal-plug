@@ -1,5 +1,5 @@
 {
-  "name": "@mind-palace/adapter-codex",
+  "name": "@spinal-plug/adapter-codex",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -10,8 +10,8 @@
     "test": "node --test dist/*.test.js"
   },
   "dependencies": {
-    "@mind-palace/adapter-sdk": "workspace:*",
-    "@mind-palace/local-node": "workspace:*",
-    "@mind-palace/protocol": "workspace:*"
+    "@spinal-plug/adapter-sdk": "workspace:*",
+    "@spinal-plug/local-node": "workspace:*",
+    "@spinal-plug/protocol": "workspace:*"
   }
 }
