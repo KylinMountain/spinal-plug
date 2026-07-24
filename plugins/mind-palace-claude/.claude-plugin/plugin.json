@@ -1,7 +1,7 @@
 {
   "name": "mind-palace",
-  "version": "0.1.2",
-  "description": "Mind Palace project-memory context, explicit memory commands, and local sync guidance for Claude Code.",
+  "version": "0.1.3",
+  "description": "Mind Palace project-memory context, synchronization, candidate review, and project handoff for Claude Code.",
   "author": {
     "name": "KylinMountain"
   },

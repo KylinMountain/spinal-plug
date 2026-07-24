@@ -1,9 +1,11 @@
 import { DatabaseSync } from "node:sqlite";
 import type {
   CanonicalMemoryUpdate,
+  CheckpointPayload,
   EventEnvelope,
   MemoryPayload,
   MemoryRecord,
+  ProjectCheckpoint,
   SyncApplyResult,
   SyncCursor,
   SyncPreview
@@ -49,6 +51,15 @@ function parseCandidateExtractionJob(row: Record<string, unknown>): CandidateExt
     createdAt: String(row.created_at),
     completedAt: row.completed_at ? String(row.completed_at) : undefined
   };
+}
+
+function isCheckpointPayload(payload: EventEnvelope["payload"]): payload is CheckpointPayload {
+  const candidate = payload as Partial<CheckpointPayload>;
+  return Boolean(candidate.checkpoint?.checkpointId && candidate.checkpoint?.spaceId);
+}
+
+function parseCheckpoint(row: Record<string, unknown>): ProjectCheckpoint {
+  return JSON.parse(String(row.payload_json)) as ProjectCheckpoint;
 }
 
 function parseMemory(row: Record<string, unknown>): MemoryRecord {
@@ -188,6 +199,39 @@ export class MindPalaceDatabase {
     });
   }
 
+  upsertCheckpoint(checkpoint: ProjectCheckpoint): void {
+    this.db.prepare(`
+      INSERT INTO project_checkpoints (
+        checkpoint_id, space_id, status, branch_id, updated_at, payload_json
+      ) VALUES (
+        @checkpointId, @spaceId, @status, @branchId, @updatedAt, @payloadJson
+      ) ON CONFLICT(checkpoint_id) DO UPDATE SET
+        status = excluded.status,
+        branch_id = excluded.branch_id,
+        updated_at = excluded.updated_at,
+        payload_json = excluded.payload_json
+    `).run({
+      checkpointId: checkpoint.checkpointId,
+      spaceId: checkpoint.spaceId,
+      status: checkpoint.status,
+      branchId: checkpoint.branchId ?? null,
+      updatedAt: checkpoint.updatedAt,
+      payloadJson: JSON.stringify(checkpoint)
+    });
+  }
+
+  listCheckpoints(spaceId: string, includeInactive = false): ProjectCheckpoint[] {
+    return (this.db.prepare(`
+      SELECT payload_json FROM project_checkpoints
+      WHERE space_id = ? ${includeInactive ? "" : "AND status = 'active'"}
+      ORDER BY updated_at DESC, checkpoint_id ASC
+    `).all(spaceId) as Record<string, unknown>[]).map(parseCheckpoint);
+  }
+
+  latestCheckpoint(spaceId: string): ProjectCheckpoint | null {
+    return this.listCheckpoints(spaceId)[0] ?? null;
+  }
+
   recordMemoryMutation(event: EventEnvelope, memory: MemoryRecord): void {
     try {
       this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
@@ -206,6 +250,18 @@ export class MindPalaceDatabase {
       this.releaseHeldCandidateEventsWithoutTransaction(memory.memoryId);
       this.appendEventWithoutTransaction(event);
       this.upsertMemory(memory);
+      this.db.exec("COMMIT;");
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  recordCheckpointMutation(event: EventEnvelope, checkpoint: ProjectCheckpoint): void {
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      this.appendEventWithoutTransaction(event);
+      this.upsertCheckpoint(checkpoint);
       this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");
@@ -469,6 +525,29 @@ export class MindPalaceDatabase {
     }
   }
 
+  applyRemoteCheckpointEvents(events: EventEnvelope[]): number {
+    let applied = 0;
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      for (const event of events) {
+        if (!event.eventType.startsWith("checkpoint.") || this.hasEvent(event.eventId)) continue;
+        if (!isCheckpointPayload(event.payload)) continue;
+        const checkpoint = event.payload.checkpoint;
+        if (checkpoint.spaceId !== event.spaceId) {
+          throw new Error(`Checkpoint ${checkpoint.checkpointId} does not belong to event Space.`);
+        }
+        this.insertRemoteEventWithoutOutbox(event);
+        this.upsertCheckpoint(checkpoint);
+        applied += 1;
+      }
+      this.db.exec("COMMIT;");
+      return applied;
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
   enqueueCandidateExtraction(job: Omit<CandidateExtractionJob, "status" | "attempts" | "leaseExpiresAt" | "completedAt">): boolean {
     const result = this.db.prepare(`
       INSERT INTO candidate_extraction_jobs (
@@ -641,6 +720,7 @@ export class MindPalaceDatabase {
 
 export { ProjectSpaceResolver } from "./project-space.js";
 export { ProjectMemoryService } from "./project-memory-service.js";
+export { ProjectHandoffService } from "./project-handoff-service.js";
 export { MindPalaceSyncClient } from "./sync-client.js";
 export { HttpSyncTransport } from "./http-sync-transport.js";
 export type { ResolvedProjectSpace } from "./project-space.js";
@@ -649,6 +729,7 @@ export type {
   RememberMemoryInput,
   UpdateMemoryInput
 } from "./project-memory-service.js";
+export type { CreateCheckpointInput } from "./project-handoff-service.js";
 export type {
   FetchResult,
   PublishResult,

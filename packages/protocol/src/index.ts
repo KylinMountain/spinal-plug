@@ -3,5 +3,6 @@ export * from "./schemas/common.js";
 export * from "./schemas/project-space.js";
 export * from "./schemas/event-envelope.js";
 export * from "./schemas/memory-record.js";
+export * from "./schemas/project-checkpoint.js";
 export * from "./schemas/sync-cursor.js";
 export * from "./schemas/sync-api.js";

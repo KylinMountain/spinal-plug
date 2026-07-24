@@ -39,6 +39,7 @@ export interface SynchronizeResult {
 export interface FetchResult {
   fetched: number;
   stored: number;
+  checkpointsStored: number;
   requiredApplied: number;
   pending: number;
   cursor: string;
@@ -97,6 +98,7 @@ export class MindPalaceSyncClient {
       ?? this.database.getCursor("device", deviceId, spaceId)?.lastEventId;
     let fetched = 0;
     let stored = 0;
+    let checkpointsStored = 0;
     let requiredApplied = 0;
     let hasMore = true;
     while (hasMore) {
@@ -121,9 +123,33 @@ export class MindPalaceSyncClient {
       });
       hasMore = result.hasMore;
     }
+    const checkpointCursorOwner = `checkpoints:${deviceId}`;
+    let checkpointCursor = this.database.getCursor("adapter", checkpointCursorOwner, spaceId)?.lastEventId;
+    let checkpointHasMore = true;
+    while (checkpointHasMore) {
+      const result = await this.transport.pull({
+        spaceId,
+        deviceId,
+        cursor: checkpointCursor,
+        limit: batchSize
+      });
+      checkpointsStored += this.database.applyRemoteCheckpointEvents(result.events);
+      checkpointCursor = result.nextCursor;
+      this.database.upsertCursor({
+        schema: "mind-palace.sync-cursor/v0.1",
+        cursorId: `cur_${randomUUID()}`,
+        scope: "adapter",
+        ownerId: checkpointCursorOwner,
+        spaceId,
+        lastEventId: checkpointCursor,
+        updatedAt: new Date().toISOString()
+      });
+      checkpointHasMore = result.hasMore;
+    }
     return {
       fetched,
       stored,
+      checkpointsStored,
       requiredApplied,
       pending: this.preview(spaceId).pending.length,
       cursor: cursor ?? "cur:0"

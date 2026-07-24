@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS sync_inbox (
   applied_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS project_checkpoints (
+  checkpoint_id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  branch_id TEXT,
+  updated_at TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_checkpoints_space_updated
+  ON project_checkpoints(space_id, status, updated_at DESC);
+
 -- Stores only extracted candidate drafts and a one-way source digest. The raw
 -- prompt and model response never enter the Mind Palace database.
 CREATE TABLE IF NOT EXISTS candidate_extraction_jobs (

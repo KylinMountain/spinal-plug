@@ -206,3 +206,51 @@ test("fetch marks tombstones as required updates", async () => {
   assert.equal(fetched.updates[0].required, true);
   server.close();
 });
+
+test("snapshot exposes work-state checkpoints without mixing them into memory compilation", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "mind-palace-checkpoint-snapshot-"));
+  const server = new PersistentSyncServer(join(directory, "central.db"));
+  const checkpoint: EventEnvelope = {
+    schemaVersion: 1,
+    eventId: "evt_checkpoint",
+    eventType: "checkpoint.created",
+    eventVersion: 1,
+    accountId: "acc_test",
+    personaId: "persona_default",
+    spaceId,
+    actor: {
+      deviceId: "device_a",
+      agentInstallationId: "codex",
+      host: "codex",
+      sessionId: "session_a",
+      adapterVersion: "0.1.0"
+    },
+    causality: { parentEventIds: [] },
+    runtimeContext: { missionId: "payments-migration", branchId: "codex-mac" },
+    payload: {
+      checkpoint: {
+        schema: "mind-palace.project-checkpoint/v0.1",
+        checkpointId: "chk_payments",
+        spaceId,
+        title: "Payment migration handoff",
+        completed: ["Schema migration"],
+        decisions: ["Use dual writes"],
+        openTasks: ["Update consumer"],
+        blockers: [],
+        nextAction: "Open PaymentConsumer",
+        artifactRefs: ["migrations/payment.sql"],
+        status: "active",
+        sourceEventIds: ["evt_checkpoint"],
+        createdAt: "2026-07-24T12:00:00Z",
+        updatedAt: "2026-07-24T12:00:00Z"
+      }
+    },
+    createdAt: "2026-07-24T12:00:00Z",
+    idempotencyKey: "evt_checkpoint"
+  };
+  await server.push({ spaceId, deviceId: "device_a", events: [checkpoint] });
+  const snapshot = server.snapshot(spaceId);
+  assert.equal(snapshot.memories.length, 0);
+  assert.equal(snapshot.checkpoints?.[0]?.checkpointId, "chk_payments");
+  server.close();
+});

@@ -25,3 +25,21 @@
 - `share`：当用户希望立即补充一条明确项目记忆时使用。
 
 本地数据库只是设备缓存、WAL 与 Outbox；同步传输的是版本化事件和规范更新，绝不上传数据库文件。
+
+## 项目交接
+
+当用户要求“交接给 Claude Code”“保存当前进度”或“让另一个分身继续”时，Codex 应创建 Project Checkpoint，而不是保存成长期记忆：
+
+```bash
+mind-palace checkpoint "$MIND_PALACE_DB" . '{
+  "title": "Payment migration handoff",
+  "completed": ["Created the dual-write schema migration"],
+  "decisions": ["Keep old consumers compatible for seven days"],
+  "openTasks": ["Update PaymentConsumer idempotency"],
+  "blockers": ["Staging database permission is missing"],
+  "nextAction": "Inspect PaymentConsumer retry handling",
+  "artifactRefs": ["migrations/20260724_payment.sql"]
+}'
+```
+
+已确认的 checkpoint 会在 Codex `Stop` 阶段自动发布。另一设备执行同步后，下一次启动 Context 会出现最新 handoff 区块；也可通过 `mind-palace handoff "$MIND_PALACE_DB" .` 查看。
