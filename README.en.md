@@ -28,6 +28,16 @@ You make a migration decision in Codex, investigate a failure in Claude Code, th
 
 > **Hard boundary**: it shares governed project experience, not model weights, hidden state, full transcripts, or an unbounded context window.
 
+## Inspiration: Loading Is Not a Background Action
+
+Spinal Plug draws narrative energy from the visible ritual before entering a system in *Neon Genesis Evangelion*: **connect, calibrate, confirm, then act**. It borrows that product rhythm and control-room tension only; it does not use characters, machines, logos, quotes, or original footage.
+
+All images are original Spinal Plug assets. This project is not affiliated with, authorized by, or endorsed by *Neon Genesis Evangelion* or its rights holders.
+
+<p align="center">
+  <img src="./assets/memory-core-boot.jpg" alt="An abstract memory core entering a Spinal Plug dock" width="100%" />
+</p>
+
 ## Boot Sequence
 
 ```text
@@ -79,6 +89,10 @@ discover updates  ──► see the impact first ─► select this session ─�
 
 You can see what another incarnation learned without immediately changing the current context. Deletions and access revocations are safety-critical exceptions.
 
+<p align="center">
+  <img src="./assets/selective-sync.jpg" alt="An abstract selective-sync console for observe, review, and apply" width="100%" />
+</p>
+
 ## Host Links
 
 | Host | Link state | Embodiment |
@@ -88,6 +102,10 @@ You can see what another incarnation learned without immediately changing the cu
 | **Future Hosts** | `STANDBY` | Extend through the Adapter Contract and MCP Surface. |
 
 Spinal Plug does not replace host memory or overwrite user-owned content. It only maintains its own managed projection blocks.
+
+<p align="center">
+  <img src="./assets/incarnation-link.jpg" alt="Two independent hosts connected through one memory core" width="100%" />
+</p>
 
 ## Quick Arm
 
