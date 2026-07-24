@@ -8,6 +8,7 @@ import type {
 } from "@mind-palace/adapter-sdk";
 import type { ProjectSpace } from "@mind-palace/protocol";
 import { ProjectSpaceResolver } from "@mind-palace/local-node";
+import { extractCodexCandidates } from "./candidate-extractor.js";
 
 export class CodexAdapter implements MindPalaceAdapter {
   readonly name = "codex";
@@ -41,11 +42,10 @@ export class CodexAdapter implements MindPalaceAdapter {
   }
 
   async captureObservations(payload: HostHookPayload): Promise<AdapterObservation[]> {
-    // M1 only persists explicit memory commands. Automatic extraction belongs to M3.
-    void payload;
-    return [];
+    return extractCodexCandidates(payload);
   }
 }
 
 export { CodexNativeMemoryStore } from "./native-memory-store.js";
 export type { CodexNativeMemoryWriteResult } from "./native-memory-store.js";
+export { extractCodexCandidates } from "./candidate-extractor.js";

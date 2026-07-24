@@ -1,15 +1,15 @@
 {
   "name": "mind-palace-codex",
-  "version": "0.1.0+codex.20260723111743",
-  "description": "Load, share, synchronize, and inspect Mind Palace project memory from Codex.",
+  "version": "0.1.0+codex.20260724040358",
+  "description": "Automatically load, stage, synchronize, and inspect Mind Palace project memory from Codex.",
   "author": {
     "name": "KylinMountain"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Mind Palace Codex",
-    "shortDescription": "Connect, share, sync, and load project memory.",
-    "longDescription": "Mind Palace gives Codex the same project-memory lifecycle as Claude Code: boot, connect, share, synchronize, and inspect.",
+    "shortDescription": "Automatically load and synchronize project memory.",
+    "longDescription": "Mind Palace connects Codex lifecycle hooks to local project memory: load at session start, recall before prompts, and stage reviewable candidates at turn end.",
     "developerName": "KylinMountain",
     "category": "Productivity",
     "capabilities": [],
