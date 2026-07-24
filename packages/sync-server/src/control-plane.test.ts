@@ -114,6 +114,7 @@ test("accepts matching account and device events and rejects mismatches", async 
     events: [eventFor(principal.accountId, principal.deviceId, spaceId, "evt_01")]
   });
   assert.deepEqual(accepted.acceptedEventIds, ["evt_01"]);
+  assert.deepEqual(control.events(principal, spaceId).map(event => event.eventId), ["evt_01"]);
 
   await assert.rejects(
     control.push(principal, {

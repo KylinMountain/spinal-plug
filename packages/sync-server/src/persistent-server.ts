@@ -177,6 +177,7 @@ export class PersistentSyncServer {
       candidates: compilation.candidates,
       disputes: compilation.disputes,
       superseded: compilation.superseded,
+      deleted: compilation.deleted,
       checkpoints: this.checkpoints(spaceId)
     };
   }
@@ -222,6 +223,17 @@ export class PersistentSyncServer {
       checkpoints.push(checkpoint);
     }
     return checkpoints.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  }
+
+  events(spaceId: string, limit = 100): EventEnvelope[] {
+    const boundedLimit = Math.min(Math.max(limit, 1), 500);
+    const rows = this.database.prepare(`
+      SELECT sequence, payload_json FROM remote_events
+      WHERE space_id = ?
+      ORDER BY sequence DESC
+      LIMIT ?
+    `).all(spaceId, boundedLimit) as Record<string, unknown>[];
+    return rows.map(parseStoredEvent).map(item => item.event);
   }
 
   close(): void {
