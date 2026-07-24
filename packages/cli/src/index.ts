@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer, ClaudeCodeAdapter } from "@mind-palace/adapter-claude-code";
@@ -12,7 +13,7 @@ import {
   ProjectMemoryService,
   ProjectSpaceResolver
 } from "@mind-palace/local-node";
-import type { MemoryKind } from "@mind-palace/protocol";
+import type { MemoryKind, ProjectSpace } from "@mind-palace/protocol";
 import {
   createControlPlaneHttpServer,
   createSyncHttpServer,
@@ -46,6 +47,8 @@ Commands:
   share-claude <db-path> <project-dir> <url> <device-id>
                                                      Share current Claude Code project memory
   remember <db-path> <project-dir> <kind> <text>   Internal local staging command
+  candidates <db-path> <project-dir>               List reviewable inferred memory candidates
+  promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
   update <db-path> <project-dir> <memory-id> <text> Update active memory
   forget <db-path> <project-dir> <memory-id>       Tombstone active memory
   list <db-path> <project-dir> [--all]             List project memories
@@ -97,6 +100,10 @@ function createMemoryService(database: MindPalaceDatabase): ProjectMemoryService
 
 function createSyncTransport(url: string): HttpSyncTransport {
   return new HttpSyncTransport(url, process.env.MIND_PALACE_DEVICE_TOKEN);
+}
+
+function digest(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function requireMemoryKind(value: string): MemoryKind {
@@ -213,13 +220,56 @@ async function shareClaudeAutoMemory(
   };
 }
 
+/** Persist a bounded, reviewable candidate queue; no source transcript is retained. */
+function drainCodexCandidateJobs(
+  database: MindPalaceDatabase,
+  service: ProjectMemoryService,
+  space: ProjectSpace
+): number {
+  let created = 0;
+  for (let job = database.claimCandidateExtraction(space.spaceId); job; job = database.claimCandidateExtraction(space.spaceId)) {
+    try {
+      for (const [index, candidate] of job.candidates.entries()) {
+        const memoryId = `mem_candidate_${digest(`${job.jobId}:${index}`).slice(0, 24)}`;
+        if (database.getMemory(memoryId)) continue;
+        service.remember({
+          space,
+          memoryId,
+          kind: candidate.kind,
+          title: candidate.title,
+          statement: candidate.statement,
+          why: candidate.why,
+          howToApply: candidate.howToApply,
+          references: candidate.references,
+          semanticKey: candidate.semanticKey,
+          origin: "agent_inferred",
+          confidence: candidate.confidence,
+          asCandidate: true,
+          actor: {
+            agentInstallationId: "mind-palace-codex-hook",
+            host: "codex",
+            sessionId: job.sessionId
+          }
+        });
+        created += 1;
+      }
+      database.completeCandidateExtraction(job.jobId);
+    } catch (error) {
+      database.requeueCandidateExtraction(job.jobId);
+      throw error;
+    }
+  }
+  return created;
+}
+
 async function executeHook(
   host: string,
   rawEvent: string,
   rawDbPath: string,
   projectDir: string,
   prompt?: string,
-  sessionId = process.env.MIND_PALACE_SESSION_ID ?? "hook-session"
+  sessionId = process.env.MIND_PALACE_SESSION_ID ?? "hook-session",
+  output?: string
 ): Promise<void> {
   if (!HOOK_EVENTS.has(rawEvent)) {
     throw new Error(`Unsupported hook event: ${rawEvent}`);
@@ -230,7 +280,8 @@ async function executeHook(
     event: rawEvent as HookEventName,
     cwd: resolve(process.cwd(), projectDir),
     sessionId,
-    prompt
+    prompt,
+    output
   };
   const space = await adapter.resolveProjectSpace(payload);
   if (!space) {
@@ -265,6 +316,11 @@ async function executeHook(
       } catch {
         // An unavailable development Control Plane must not delay host startup.
       }
+    }
+    if (host === "codex") {
+      // Keep Codex's reserved native-memory projection current without
+      // overwriting any non-Mind-Palace rows in its private database.
+      new CodexNativeMemoryStore().materialize(space, service.list(space));
     }
     const output = await adapter.injectContext(service.createBootProjection(space), payload);
     console.log(JSON.stringify(toHostHookOutput(host, payload.event, output)));
@@ -304,8 +360,40 @@ async function executeHook(
       // The next session boundary retries idempotently from the local cache.
     }
   }
-  await adapter.captureObservations(payload);
-  console.log(JSON.stringify({ notices: ["Mind Palace hook completed."] }));
+  const observations = await adapter.captureObservations(payload);
+  let candidatesCreated = 0;
+  if (host === "codex" && payload.event === "stop" && observations.length > 0) {
+    const sourceDigest = digest(JSON.stringify({
+      prompt: payload.prompt ?? "",
+      output: payload.output ?? ""
+    }));
+    database.enqueueCandidateExtraction({
+      jobId: `extract_${digest(`${host}:${space.spaceId}:${payload.sessionId}:${sourceDigest}`).slice(0, 32)}`,
+      host,
+      spaceId: space.spaceId,
+      sessionId: payload.sessionId,
+      sourceDigest,
+      candidates: observations.map(observation => ({
+        kind: observation.kind,
+        title: observation.title,
+        statement: observation.statement,
+        why: observation.why,
+        howToApply: observation.howToApply,
+        references: observation.references,
+        semanticKey: observation.semanticKey,
+        confidence: observation.confidence
+      })),
+      createdAt: new Date().toISOString()
+    });
+    candidatesCreated = drainCodexCandidateJobs(database, service, space);
+  }
+  console.log(JSON.stringify({
+    notices: [
+      candidatesCreated > 0
+        ? `Mind Palace stored ${candidatesCreated} reviewable candidate memor${candidatesCreated === 1 ? "y" : "ies"}.`
+        : "Mind Palace hook completed."
+    ]
+  }));
 }
 
 async function runHook(args: string[]): Promise<void> {
@@ -354,7 +442,16 @@ async function runStdinHook(args: string[]): Promise<void> {
     : typeof input.user_prompt === "string"
       ? input.user_prompt
       : undefined;
-  await executeHook(host, event, rawDbPath, cwd, prompt, sessionId);
+  const output = typeof input.last_assistant_message === "string"
+    ? input.last_assistant_message
+    : typeof input.assistant_response === "string"
+      ? input.assistant_response
+      : typeof input.assistant_message === "string"
+        ? input.assistant_message
+        : typeof input.output === "string"
+          ? input.output
+          : undefined;
+  await executeHook(host, event, rawDbPath, cwd, prompt, sessionId, output);
 }
 
 async function main(): Promise<void> {
@@ -464,6 +561,8 @@ async function main(): Promise<void> {
     }
     const { database } = openDatabase(rawDbPath);
     const activeMemories = database.listActiveMemories(resolvedSpace.space.spaceId).length;
+    const candidateMemories = database.listMemories(resolvedSpace.space.spaceId, true)
+      .filter(memory => memory.status === "candidate").length;
     const pendingOutboxEvents = database.listPendingOutboxForSpace(resolvedSpace.space.spaceId).length;
     const pendingRemoteUpdates = database.previewCanonicalUpdates(
       resolvedSpace.space.spaceId
@@ -476,6 +575,7 @@ async function main(): Promise<void> {
         name: resolvedSpace.space.displayName
       },
       activeMemories,
+      candidateMemories,
       pendingOutboxEvents,
       pendingRemoteUpdates
     }, null, 2));
@@ -559,6 +659,36 @@ async function main(): Promise<void> {
     }
     const memory = service.remember({ space, kind: requireMemoryKind(kind), statement: statementParts.join(" ") });
     console.log(JSON.stringify(memory, null, 2));
+    return;
+  }
+  if (command === "candidates") {
+    console.log(JSON.stringify(
+      service.list(space, true).filter(memory => memory.status === "candidate"),
+      null,
+      2
+    ));
+    return;
+  }
+  if (command === "promote") {
+    const [memoryId] = rest;
+    if (!memoryId) throw new Error("Usage: mind-palace promote <db-path> <project-dir> <memory-id>");
+    const memory = service.promote(space, memoryId, {
+      agentInstallationId: "mind-palace-cli-review",
+      host: "mind-palace",
+      sessionId: "candidate-review"
+    });
+    let published: unknown = undefined;
+    if (process.env.MIND_PALACE_SYNC_URL) {
+      try {
+        published = await new MindPalaceSyncClient(
+          database,
+          createSyncTransport(process.env.MIND_PALACE_SYNC_URL)
+        ).publish(space.spaceId, process.env.MIND_PALACE_DEVICE_ID ?? "device-local");
+      } catch {
+        // The candidate and promotion events remain in the durable outbox.
+      }
+    }
+    console.log(JSON.stringify({ memory, published, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
     return;
   }
   if (command === "update") {

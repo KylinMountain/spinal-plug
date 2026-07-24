@@ -61,6 +61,22 @@ CREATE TABLE IF NOT EXISTS sync_inbox (
   applied_at TEXT
 );
 
+-- Stores only extracted candidate drafts and a one-way source digest. The raw
+-- prompt and model response never enter the Mind Palace database.
+CREATE TABLE IF NOT EXISTS candidate_extraction_jobs (
+  job_id TEXT PRIMARY KEY,
+  host TEXT NOT NULL,
+  space_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  source_digest TEXT NOT NULL,
+  candidates_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  lease_expires_at TEXT,
+  created_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_space_created_at
   ON events(space_id, created_at);
 
@@ -78,4 +94,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_cursors_unique_scope
 
 CREATE INDEX IF NOT EXISTS idx_sync_inbox_space_status
   ON sync_inbox(space_id, status, fetched_at);
+
+CREATE INDEX IF NOT EXISTS idx_candidate_extraction_jobs_ready
+  ON candidate_extraction_jobs(status, lease_expires_at, created_at);
 `;

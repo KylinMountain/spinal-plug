@@ -245,7 +245,7 @@ export class ProjectMemoryService {
     );
     memory.lastUpdatedFromEventId = event.eventId;
     memory.sourceEventIds = [...new Set([...(memory.sourceEventIds ?? []), event.eventId])];
-    this.database.recordMemoryMutation(event, memory);
+    this.database.recordMemoryPromotion(event, memory);
     return memory;
   }
 

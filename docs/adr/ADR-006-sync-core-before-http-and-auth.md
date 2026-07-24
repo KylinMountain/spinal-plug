@@ -2,7 +2,7 @@
 
 ## 状态
 
-Accepted
+Superseded by ADR-007 and ADR-008
 
 ## 日期
 
@@ -16,9 +16,9 @@ M2 需要解决跨设备的 Event Push、Cursor Pull、Snapshot 与 tombstone �
 
 - `SyncTransport` 是本地节点依赖的唯一同步接口，提供 `push` 与 `pull`。
 - `MindPalaceSyncClient` 负责 Outbox 推送、远端事件应用和 cursor 提交。
-- `InMemorySyncServer` 实现权威服务端语义，用于协议测试和本地开发；它按 Project Space 单调排列事件，并以全局 `eventId` 去重。
+- 最初由 `InMemorySyncServer` 实现权威服务端语义，用于协议测试和本地开发；它按 Project Space 单调排列事件，并以全局 `eventId` 去重。
 - `ProjectSnapshot` 是事件流的只读物化视图，仅包含 active MemoryRecord；删除仍由事件流中的 tombstone 保留。
-- HTTP、持久化服务器数据库、OAuth、设备注册、ACL 和实时通知放在后续 M2 子阶段实现。
+- 后续实现由持久化中心、账户/设备认证、Space ACL、TLS 约束和限流替代，详见 ADR-007、ADR-008。
 
 ## 结果
 
@@ -30,5 +30,4 @@ M2 需要解决跨设备的 Event Push、Cursor Pull、Snapshot 与 tombstone �
 
 代价：
 
-- 当前中心服务仅为进程内实现，重启后没有持久化。
-- 尚未实现远端并发决策的 `disputed` 状态；M2 只保证事件不静默丢失。
+- 此 ADR 保留为演进记录；当前中心已持久化事件与编译结果，并支持 `candidate`、`active`、`superseded` 与 `disputed`。

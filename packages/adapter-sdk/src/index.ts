@@ -42,9 +42,14 @@ export interface AdapterOutput {
 }
 
 export interface AdapterObservation {
+  kind: "directive" | "decision" | "context" | "reference";
   title: string;
   statement: string;
   why?: string;
+  howToApply?: string;
+  references?: string[];
+  semanticKey?: string;
+  confidence: number;
   source: HookEventName;
 }
 

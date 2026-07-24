@@ -5,15 +5,24 @@ description: Use Mind Palace to boot, connect, share, synchronize, or inspect du
 
 # Mind Palace For Codex
 
-Mind Palace provides the same project-memory lifecycle in Codex as in Claude Code:
+Mind Palace provides the same project-memory lifecycle in Codex as in Claude Code.
+After a Project Space is connected, its plugin Hooks run automatically:
+
+- `SessionStart`: load the local stable project projection and refresh Codex's reserved native-memory record.
+- `UserPromptSubmit`: inject a bounded, query-relevant recall projection.
+- `Stop`: conservatively extract at most three durable **candidate** memories and persist only those candidates with a source digest. They remain local until the user confirms promotion; it never stores or uploads the raw turn.
+- `PreCompact` / `SessionEnd`: retain local durability; the WAL/outbox makes later retry safe.
+
+Candidates are not active memory. They remain reviewable until explicitly promoted or accepted by a policy with sufficient evidence.
 
 | User intent | Mind Palace action |
 | --- | --- |
 | `boot` / "加载记忆" | Show the current project Memory Core Boot Sequence. |
 | `connect` / "连接项目" | Bind the current directory to a Project Space or archive. |
-| `share` / "共享记忆" / "上传记忆" | 筛选本次会话中值得长期保留的项目经验，上传后更新 Codex 原生记忆投影。 |
+| `share` / "共享记忆" / "上传记忆" | 手动补充或审核当前会话中值得长期保留的项目经验。正常会话会在结束时自动生成候选。 |
 | `sync` / "同步记忆" / "下载记忆" | Pull central memory and write it into Codex's reserved native-memory record. |
 | `status` / "记忆状态" | Show linked Space, local memory, and pending synchronization. |
+| "查看候选记忆" / "确认候选" | 审查自动提取候选，只有用户明确同意时才晋升为 active memory。 |
 
 The local cache is an implementation detail. Never tell the user to upload a database file. Do not edit Codex SQLite files directly: `sync-codex` owns only the reserved `mind-palace:<space-id>` record and never overwrites normal Codex session memory.
 
@@ -86,6 +95,20 @@ mind-palace apply-codex "$MIND_PALACE_DB" . <update-id>...
 ```
 
 Omit IDs only when the user explicitly chooses all updates. The next Codex session reads the refreshed native memory projection.
+
+## Review candidates
+
+For "查看候选记忆", run:
+
+```bash
+mind-palace candidates "$MIND_PALACE_DB" .
+```
+
+Show concise statements and source provenance. Do not promote automatically. If the user explicitly accepts a candidate, run:
+
+```bash
+mind-palace promote "$MIND_PALACE_DB" . <memory-id>
+```
 
 ## Status
 

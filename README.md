@@ -6,7 +6,7 @@ Mind Palace 是一个面向 Agent 的跨设备项目记忆层。当前仓库实�
 - `local-node`: 本地 SQLite WAL / Outbox 基础层
 - `adapter-sdk`: 统一适配器接口
 - `adapter-claude-code`: Claude Code 占位适配器
-- `adapter-codex`: Codex 占位适配器
+- `adapter-codex`: Codex 生命周期、候选提取与受限原生记忆投影
 - `mcp-server`: MCP Server 骨架
 - `cli`: 本地命令行入口
 - `sync-server`: M2 传输无关的权威同步内核
@@ -15,7 +15,7 @@ Mind Palace 是一个面向 Agent 的跨设备项目记忆层。当前仓库实�
 
 `mind-palace boot` 使用固定的 `Memory Core Boot Sequence` 表达加载过程：`Mind Palace Control Plane`、`Incarnation Link`、`Mind Capsule` 与 `Memory Fidelity` 都对应可验证的本地项目记忆状态；它不表示模型权重、隐藏状态或“意识”被复制。
 
-Claude Code 本地参考实现的同步、Hook 与后台记忆整理观察见 [docs/research/claude-code-reference-notes.md](docs/research/claude-code-reference-notes.md)。Mind Palace 不依赖或修改宿主私有记忆目录。
+Claude Code 本地参考实现的同步、Hook 与后台记忆整理观察见 [docs/research/claude-code-reference-notes.md](docs/research/claude-code-reference-notes.md)。Mind Palace 不把宿主原生记忆当作事实源；适配器只能维护各自受保留标识保护的投影，并在宿主升级后通过兼容测试重新验证。
 
 可运行的 M1 本地工作流、CLI 示例和 Hook 调用契约见 [docs/phase-m1-local-workflow.md](docs/phase-m1-local-workflow.md)。
 

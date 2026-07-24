@@ -27,7 +27,7 @@ mind-palace@mind-palace-local
 | `/mind-palace:sync` | 下载并合并中心记忆，并投影到 Claude Code 原生 Auto Memory。 |
 | `/mind-palace:boot` | 展示当前 Project Space 的 Mind Core 加载状态。 |
 
-插件不直接读写 Claude Code 原生 Auto Memory 目录，也不在 `Stop` 阶段自动提取整段对话。这样可以先验证上下文加载、显式记忆与中心同步，而不会将低质量会话内容自动进入中心事实源。
+插件不会把 Claude Code 原生 Auto Memory 目录作为事实源，也不在 `Stop` 阶段自动提取整段对话。选择性应用后，Claude Adapter 只维护受 Mind Palace 标识保护的 `mind-palace-synced.md` 投影和 `MEMORY.md` 索引块，不会改写用户自己的主题文件。
 
 首次进入未绑定的 Git 项目时，启动 Hook 自动创建 `.mind-palace/space.json` 和私有本地缓存。项目名称优先取 Git remote 的仓库名，其次取 Git 根目录名；有 remote 时，Space ID 从规范化 remote 稳定派生，使不同设备可识别为同一项目。
 
