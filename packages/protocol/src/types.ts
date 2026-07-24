@@ -23,6 +23,8 @@ export type EventType =
   | "memory.promoted"
   | "memory.dispute.resolved"
   | "memory.deleted"
+  | "checkpoint.created"
+  | "checkpoint.superseded"
   | "sync.cursor.advanced";
 
 export type ProjectionKind =
@@ -128,6 +130,33 @@ export interface MemoryPayload {
   resolvesMemoryIds?: string[];
 }
 
+export type CheckpointStatus = "active" | "superseded" | "archived";
+
+export interface ProjectCheckpoint {
+  schema: "mind-palace.project-checkpoint/v0.1";
+  checkpointId: string;
+  spaceId: string;
+  title: string;
+  summary?: string;
+  completed: string[];
+  decisions: string[];
+  openTasks: string[];
+  blockers: string[];
+  nextAction?: string;
+  artifactRefs: string[];
+  status: CheckpointStatus;
+  parentCheckpointId?: string;
+  missionId?: string | null;
+  branchId?: string | null;
+  sourceEventIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CheckpointPayload {
+  checkpoint: ProjectCheckpoint;
+}
+
 export interface EventEnvelope {
   schemaVersion: 1;
   eventId: string;
@@ -139,7 +168,7 @@ export interface EventEnvelope {
   actor: EventActor;
   causality: EventCausality;
   runtimeContext: EventRuntimeContext;
-  payload: MemoryPayload | Record<string, unknown>;
+  payload: MemoryPayload | CheckpointPayload | Record<string, unknown>;
   createdAt: string;
   idempotencyKey: string;
 }
@@ -270,6 +299,7 @@ export interface ProjectSnapshot {
   candidates?: MemoryRecord[];
   disputes?: MemoryDispute[];
   superseded?: MemoryRecord[];
+  checkpoints?: ProjectCheckpoint[];
 }
 
 export interface MemoryCompilation {

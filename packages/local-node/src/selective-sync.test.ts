@@ -139,3 +139,72 @@ test("required tombstones apply during fetch and cannot remain pending", async (
   assert.equal(database.getMemory("mem_delete")?.status, "deleted");
   assert.equal(client.preview(space.spaceId).requiredUpdateIds.length, 0);
 });
+
+class CheckpointTransport implements SyncTransport {
+  private delivered = false;
+
+  async push(_request: SyncPushRequest): Promise<SyncPushResponse> {
+    return { acceptedEventIds: [], duplicateEventIds: [], serverCursor: "cur:0" };
+  }
+
+  async pull(_request: SyncPullRequest): Promise<SyncPullResponse> {
+    if (this.delivered) return { events: [], nextCursor: "cur:1", hasMore: false };
+    this.delivered = true;
+    return {
+      events: [{
+        schemaVersion: 1,
+        eventId: "evt_checkpoint_remote",
+        eventType: "checkpoint.created",
+        eventVersion: 1,
+        accountId: "local",
+        personaId: "persona_default",
+        spaceId: space.spaceId,
+        actor: {
+          deviceId: "device_remote",
+          agentInstallationId: "claude-code",
+          host: "claude-code",
+          sessionId: "remote_session",
+          adapterVersion: "0.1.0"
+        },
+        causality: { parentEventIds: [] },
+        runtimeContext: { branchId: "claude-linux" },
+        payload: {
+          checkpoint: {
+            schema: "mind-palace.project-checkpoint/v0.1",
+            checkpointId: "chk_remote",
+            spaceId: space.spaceId,
+            title: "Remote handoff",
+            completed: ["Created schema"],
+            decisions: [],
+            openTasks: ["Update consumer"],
+            blockers: [],
+            nextAction: "Open PaymentConsumer",
+            artifactRefs: [],
+            status: "active",
+            sourceEventIds: ["evt_checkpoint_remote"],
+            createdAt: "2026-07-24T12:00:00Z",
+            updatedAt: "2026-07-24T12:00:00Z"
+          }
+        },
+        createdAt: "2026-07-24T12:00:00Z",
+        idempotencyKey: "evt_checkpoint_remote"
+      }],
+      nextCursor: "cur:1",
+      hasMore: false
+    };
+  }
+
+  async fetchUpdates(_request: SyncFetchRequest): Promise<SyncFetchResponse> {
+    return { updates: [], nextCursor: "cur:0", hasMore: false };
+  }
+}
+
+test("fetch materializes remote work-state checkpoints for the next Agent boot", async () => {
+  const database = testDatabase();
+  const client = new MindPalaceSyncClient(database, new CheckpointTransport());
+  const fetched = await client.fetch(space.spaceId, "device_local");
+
+  assert.equal(fetched.checkpointsStored, 1);
+  assert.equal(database.latestCheckpoint(space.spaceId)?.nextAction, "Open PaymentConsumer");
+  assert.equal(database.listPendingOutboxForSpace(space.spaceId).length, 0);
+});

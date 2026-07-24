@@ -4,6 +4,7 @@ import type {
   MemoryCompilation,
   MemoryDispute,
   MemoryRecord,
+  ProjectCheckpoint,
   ProjectSnapshot,
   SyncFetchRequest,
   SyncFetchResponse,
@@ -175,7 +176,8 @@ export class PersistentSyncServer {
       memories: compilation.active,
       candidates: compilation.candidates,
       disputes: compilation.disputes,
-      superseded: compilation.superseded
+      superseded: compilation.superseded,
+      checkpoints: this.checkpoints(spaceId)
     };
   }
 
@@ -200,6 +202,26 @@ export class PersistentSyncServer {
       deleted: memories.filter(memory => memory.status === "deleted"),
       disputes
     };
+  }
+
+  checkpoints(spaceId: string): ProjectCheckpoint[] {
+    const rows = this.database.prepare(`
+      SELECT payload_json FROM remote_events
+      WHERE space_id = ?
+      ORDER BY sequence DESC
+    `).all(spaceId) as Record<string, unknown>[];
+    const seen = new Set<string>();
+    const checkpoints: ProjectCheckpoint[] = [];
+    for (const row of rows) {
+      const event = JSON.parse(String(row.payload_json)) as EventEnvelope;
+      if (!event.eventType.startsWith("checkpoint.")) continue;
+      const payload = event.payload as { checkpoint?: ProjectCheckpoint };
+      const checkpoint = payload.checkpoint;
+      if (!checkpoint || checkpoint.spaceId !== spaceId || seen.has(checkpoint.checkpointId)) continue;
+      seen.add(checkpoint.checkpointId);
+      checkpoints.push(checkpoint);
+    }
+    return checkpoints.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
   close(): void {

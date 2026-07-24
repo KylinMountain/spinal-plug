@@ -31,6 +31,8 @@ export const eventEnvelopeSchema: JsonSchema = {
         "memory.promoted",
         "memory.dispute.resolved",
         "memory.deleted",
+        "checkpoint.created",
+        "checkpoint.superseded",
         "sync.cursor.advanced"
       ]
     },
