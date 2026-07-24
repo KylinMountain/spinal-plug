@@ -1,7 +1,7 @@
 {
-  "name": "mind-palace",
-  "version": "0.1.3",
-  "description": "Mind Palace project-memory context, synchronization, candidate review, and project handoff for Claude Code.",
+  "name": "spinal-plug",
+  "version": "0.2.0",
+  "description": "Spinal Plug neural-memory context, synchronization, candidate review, and project handoff for Claude Code.",
   "author": {
     "name": "KylinMountain"
   },
@@ -10,6 +10,6 @@
     "memory",
     "project-memory",
     "sync",
-    "mind-palace"
+    "spinal-plug"
   ]
 }

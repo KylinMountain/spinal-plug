@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
+    "spinal-plug": "dist/index.js",
     "mind-palace": "dist/index.js"
   },
   "scripts": {

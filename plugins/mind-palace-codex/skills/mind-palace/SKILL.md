@@ -1,11 +1,11 @@
 ---
-name: mind-palace
-description: Use Mind Palace to boot, connect, share, synchronize, or inspect durable project memory in Codex. Trigger when the user asks to upload shared memory, download/sync memory, inspect memory status, connect a project, or continue a project on another device.
+name: spinal-plug
+description: Use Spinal Plug to lock, boot, connect, share, synchronize, or inspect durable project memory in Codex. Trigger when the user asks to upload shared memory, download/sync memory, inspect memory status, connect a project, or continue a project on another device.
 ---
 
-# Mind Palace For Codex
+# SPINAL-PLUG // Codex Neural Memory
 
-Mind Palace provides the same project-memory lifecycle in Codex as in Claude Code.
+Spinal Plug provides the same project-memory lifecycle in Codex as in Claude Code. Its presentation is a fictional neural-link interface only; it does not claim biological control or model-state copying.
 After a Project Space is connected, its plugin Hooks run automatically:
 
 - `SessionStart`: load the local stable project projection and refresh Codex's reserved native-memory record.

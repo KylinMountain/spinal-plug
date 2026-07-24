@@ -1,11 +1,11 @@
 {
-  "name": "mind-palace-local",
+  "name": "spinal-plug-local",
   "interface": {
-    "displayName": "Mind Palace Local"
+    "displayName": "Spinal Plug Local"
   },
   "plugins": [
     {
-      "name": "mind-palace-codex",
+      "name": "spinal-plug-codex",
       "source": {
         "source": "local",
         "path": "./plugins/mind-palace-codex"

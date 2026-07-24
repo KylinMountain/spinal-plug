@@ -1,18 +1,18 @@
 {
-  "name": "mind-palace-codex",
-  "version": "0.1.0+codex.20260724041024",
-  "description": "Automatically load, stage, synchronize, and inspect Mind Palace project memory from Codex.",
+  "name": "spinal-plug-codex",
+  "version": "0.2.0+codex.20260724091940",
+  "description": "Automatically lock, load, synchronize, and inspect Spinal Plug project memory from Codex.",
   "author": {
     "name": "KylinMountain"
   },
   "skills": "./skills/",
   "interface": {
-    "displayName": "Mind Palace Codex",
-    "shortDescription": "Automatically load and synchronize project memory.",
-    "longDescription": "Mind Palace connects Codex lifecycle hooks to local project memory: load at session start, recall before prompts, and stage reviewable candidates at turn end.",
+    "displayName": "Spinal Plug // Codex",
+    "shortDescription": "Lock, load, and synchronize project memory.",
+    "longDescription": "Spinal Plug connects Codex lifecycle hooks to project memory: lock the neural link at session start, recall before prompts, and stage reviewable candidates at turn end.",
     "developerName": "KylinMountain",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "Use Mind Palace to boot, connect, share, synchronize, or inspect project memory."
+    "defaultPrompt": "Use Spinal Plug to lock, boot, share, synchronize, or inspect project memory."
   }
 }
