@@ -299,6 +299,7 @@ export interface ProjectSnapshot {
   candidates?: MemoryRecord[];
   disputes?: MemoryDispute[];
   superseded?: MemoryRecord[];
+  deleted?: MemoryRecord[];
   checkpoints?: ProjectCheckpoint[];
 }
 
