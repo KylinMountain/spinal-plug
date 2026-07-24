@@ -12,6 +12,11 @@ export interface ClaudeAutoMemoryCandidate {
   semanticKey: string;
 }
 
+export interface ClaudeAutoMemoryOptions {
+  /** Test-only override; production defaults to the current user's Claude home. */
+  homeDirectory?: string;
+}
+
 function sanitizePath(value: string): string {
   return value.replace(/[^a-zA-Z0-9]/g, "-");
 }
@@ -50,8 +55,10 @@ function scanMarkdown(directory: string, root = directory): string[] {
 
 /** Read-only importer for Claude Code's per-project Auto Memory topic files. */
 export class ClaudeAutoMemoryImporter {
+  constructor(private readonly options: ClaudeAutoMemoryOptions = {}) {}
+
   memoryDirectory(cwd: string): string {
-    return join(homedir(), ".claude", "projects", sanitizePath(resolve(cwd)), "memory");
+    return join(this.options.homeDirectory ?? homedir(), ".claude", "projects", sanitizePath(resolve(cwd)), "memory");
   }
 
   sourceUriPrefix(spaceId: string): string {
@@ -100,7 +107,11 @@ export interface ClaudeMemoryMaterializationResult {
 
 /** One-way local projection of Mind Palace memory into Claude Code's native memory directory. */
 export class ClaudeAutoMemoryMaterializer {
-  private readonly importer = new ClaudeAutoMemoryImporter();
+  private readonly importer: ClaudeAutoMemoryImporter;
+
+  constructor(options: ClaudeAutoMemoryOptions = {}) {
+    this.importer = new ClaudeAutoMemoryImporter(options);
+  }
 
   materialize(cwd: string, memories: ReadonlyArray<{ title: string; statement: string }>): ClaudeMemoryMaterializationResult {
     const directory = this.importer.memoryDirectory(cwd);

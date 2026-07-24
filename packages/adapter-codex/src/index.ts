@@ -47,5 +47,5 @@ export class CodexAdapter implements MindPalaceAdapter {
 }
 
 export { CodexNativeMemoryStore } from "./native-memory-store.js";
-export type { CodexNativeMemoryWriteResult } from "./native-memory-store.js";
+export type { CodexNativeMemoryStoreOptions, CodexNativeMemoryWriteResult } from "./native-memory-store.js";
 export { extractCodexCandidates } from "./candidate-extractor.js";

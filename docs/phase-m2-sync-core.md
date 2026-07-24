@@ -1,5 +1,7 @@
 # M2 同步内核
 
+> 本文记录 M2 同步核心的基础设计；当前实现已扩展到认证控制面、中心编译器、选择性同步、Project Checkpoint 和同源管理控制台。对应决策见 ADR-007 至 ADR-011，以及 [控制台说明](control-plane-console.md)。
+
 当前实现提供传输无关的跨节点同步闭环：
 
 ```text
@@ -38,10 +40,12 @@ Push 使用 `eventId` 幂等。重复事件会出现在 `duplicateEventIds`，�
 - 来源、置信度、语义键与事件 provenance
 - 因果替代、完全重复合并、并发冲突和显式解决
 
-尚未实现：
+仍保留给后续阶段的能力：
 
-- 自动语义键生成和基于模型的候选归一化
-- 实时通知、重试策略和 Secret Scanner
+- 基于模型的语义键生成与候选归一化；
+- 实时远端通知；
+- 完整的上传前 Secret Scanner；
+- 多分支任务语义合并。
 
 这些能力将接在 `SyncTransport` 后，而不会改变 Agent Adapter、Project Space 或 SQLite WAL 的写入模型。
 
