@@ -1,11 +1,11 @@
 ---
-name: mind-palace
-description: Use Mind Palace to share durable project memory or synchronize central memory into the current project. Use when the user asks to share a project decision, recover prior project context, sync memory, or inspect Mind Palace status.
+name: spinal-plug
+description: Use Spinal Plug to lock, upload, or synchronize durable project memory in the current project. Use when the user asks to share a project decision, recover prior project context, sync memory, or inspect Spinal Plug status.
 ---
 
-# Mind Palace Project Memory
+# SPINAL-PLUG // Project Neural Memory
 
-Mind Palace is an independent project-memory layer. Treat it as historical context, not a replacement for verifying current code, Git state, or external systems.
+Spinal Plug is an independent project-memory layer. Treat it as historical context, not a replacement for verifying current code, Git state, or external systems.
 
 The local database is an implementation detail: a private device cache and event outbox. It is never uploaded as a database file. A project must be explicitly linked before Mind Palace can load or share its memory.
 

@@ -1,6 +1,8 @@
-# Mind Palace
+# SPINAL-PLUG
 
-Mind Palace 是一个面向 Agent 的跨设备项目记忆层。当前仓库实现 M0/M1 启动骨架：
+Spinal Plug 是一个面向 Agent 的跨设备项目记忆层。它以“记忆脊椎栓、神经链路、联接率”作为原创运行时界面表达；这些只是系统状态的可视化，不表示生物控制或模型隐藏状态复制。
+
+系统术语、状态映射和可使用的高压文案见 [docs/spinal-plug-voice.md](docs/spinal-plug-voice.md)。
 
 - `protocol`: v0.1 协议对象与 schema
 - `local-node`: 本地 SQLite WAL / Outbox 基础层

@@ -1,15 +1,15 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "mind-palace-local",
-  "description": "Local development marketplace for Mind Palace agent memory integrations.",
+  "name": "spinal-plug-local",
+  "description": "Local development marketplace for Spinal Plug agent memory integrations.",
   "owner": {
     "name": "KylinMountain"
   },
   "plugins": [
     {
-      "name": "mind-palace",
-      "description": "Load and manage Mind Palace project memory from Claude Code.",
-      "version": "0.1.2",
+      "name": "spinal-plug",
+      "description": "Lock, load and manage Spinal Plug project memory from Claude Code.",
+      "version": "0.2.0",
       "source": "./plugins/mind-palace-claude",
       "category": "productivity"
     }
