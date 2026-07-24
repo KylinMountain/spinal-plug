@@ -6,6 +6,9 @@ import type {
   MemoryPayload,
   MemoryRecord,
   ProjectCheckpoint,
+  RuntimeEntity,
+  RuntimePayload,
+  RuntimeEntityType,
   SyncApplyResult,
   SyncCursor,
   SyncPreview
@@ -60,6 +63,41 @@ function isCheckpointPayload(payload: EventEnvelope["payload"]): payload is Chec
 
 function parseCheckpoint(row: Record<string, unknown>): ProjectCheckpoint {
   return JSON.parse(String(row.payload_json)) as ProjectCheckpoint;
+}
+
+function runtimeEntityId(entity: RuntimeEntity): string {
+  switch (entity.schema) {
+    case "mind-palace.mind-core/v0.1": return entity.mindId;
+    case "mind-palace.role-profile/v0.1": return entity.roleProfileId;
+    case "mind-palace.mission/v0.1": return entity.missionId;
+    case "mind-palace.task-graph/v0.1": return entity.taskGraphId;
+    case "mind-palace.mind-capsule/v0.1": return entity.capsuleId;
+    case "mind-palace.incarnation/v0.1": return entity.incarnationId;
+  }
+}
+
+function runtimeEntityType(entity: RuntimeEntity): RuntimeEntityType {
+  switch (entity.schema) {
+    case "mind-palace.mind-core/v0.1": return "mind_core";
+    case "mind-palace.role-profile/v0.1": return "role_profile";
+    case "mind-palace.mission/v0.1": return "mission";
+    case "mind-palace.task-graph/v0.1": return "task_graph";
+    case "mind-palace.mind-capsule/v0.1": return "mind_capsule";
+    case "mind-palace.incarnation/v0.1": return "incarnation";
+  }
+}
+
+function runtimeEntityStatus(entity: RuntimeEntity): string {
+  return "status" in entity ? entity.status : "active";
+}
+
+function parseRuntimeEntity(row: Record<string, unknown>): RuntimeEntity {
+  return JSON.parse(String(row.payload_json)) as RuntimeEntity;
+}
+
+function isRuntimePayload(payload: EventEnvelope["payload"]): payload is RuntimePayload {
+  const candidate = payload as Partial<RuntimePayload>;
+  return Boolean(candidate.entityType && candidate.entity && typeof candidate.entity === "object");
 }
 
 function parseMemory(row: Record<string, unknown>): MemoryRecord {
@@ -220,6 +258,41 @@ export class MindPalaceDatabase {
     });
   }
 
+  upsertRuntimeEntity(entity: RuntimeEntity): void {
+    this.db.prepare(`
+      INSERT INTO runtime_entities (entity_id, space_id, entity_type, status, updated_at, payload_json)
+      VALUES (@entityId, @spaceId, @entityType, @status, @updatedAt, @payloadJson)
+      ON CONFLICT(entity_id) DO UPDATE SET
+        space_id = excluded.space_id,
+        entity_type = excluded.entity_type,
+        status = excluded.status,
+        updated_at = excluded.updated_at,
+        payload_json = excluded.payload_json
+    `).run({
+      entityId: runtimeEntityId(entity),
+      spaceId: entity.spaceId,
+      entityType: runtimeEntityType(entity),
+      status: runtimeEntityStatus(entity),
+      updatedAt: entity.updatedAt,
+      payloadJson: JSON.stringify(entity)
+    });
+  }
+
+  getRuntimeEntity<T extends RuntimeEntity = RuntimeEntity>(entityId: string): T | null {
+    const row = this.db.prepare("SELECT payload_json FROM runtime_entities WHERE entity_id = ? LIMIT 1")
+      .get(entityId) as Record<string, unknown> | undefined;
+    return row ? parseRuntimeEntity(row) as T : null;
+  }
+
+  listRuntimeEntities(spaceId: string, entityType?: RuntimeEntityType): RuntimeEntity[] {
+    const rows = this.db.prepare(`
+      SELECT payload_json FROM runtime_entities
+      WHERE space_id = ? ${entityType ? "AND entity_type = ?" : ""}
+      ORDER BY updated_at DESC, entity_id ASC
+    `).all(...(entityType ? [spaceId, entityType] : [spaceId])) as Record<string, unknown>[];
+    return rows.map(parseRuntimeEntity);
+  }
+
   listCheckpoints(spaceId: string, includeInactive = false): ProjectCheckpoint[] {
     return (this.db.prepare(`
       SELECT payload_json FROM project_checkpoints
@@ -262,6 +335,18 @@ export class MindPalaceDatabase {
       this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
       this.appendEventWithoutTransaction(event);
       this.upsertCheckpoint(checkpoint);
+      this.db.exec("COMMIT;");
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  recordRuntimeMutation(event: EventEnvelope, entity: RuntimeEntity): void {
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      this.appendEventWithoutTransaction(event);
+      this.upsertRuntimeEntity(entity);
       this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");
@@ -548,6 +633,29 @@ export class MindPalaceDatabase {
     }
   }
 
+  applyRemoteRuntimeEvents(events: EventEnvelope[]): number {
+    let applied = 0;
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      for (const event of events) {
+        if (!event.eventType.startsWith("runtime.") || this.hasEvent(event.eventId)) continue;
+        if (!isRuntimePayload(event.payload)) continue;
+        const entity = event.payload.entity;
+        if (entity.spaceId !== event.spaceId) {
+          throw new Error(`Runtime entity ${runtimeEntityId(entity)} does not belong to event Space.`);
+        }
+        this.insertRemoteEventWithoutOutbox(event);
+        this.upsertRuntimeEntity(entity);
+        applied += 1;
+      }
+      this.db.exec("COMMIT;");
+      return applied;
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
   enqueueCandidateExtraction(job: Omit<CandidateExtractionJob, "status" | "attempts" | "leaseExpiresAt" | "completedAt">): boolean {
     const result = this.db.prepare(`
       INSERT INTO candidate_extraction_jobs (
@@ -721,6 +829,7 @@ export class MindPalaceDatabase {
 export { ProjectSpaceResolver } from "./project-space.js";
 export { ProjectMemoryService } from "./project-memory-service.js";
 export { ProjectHandoffService } from "./project-handoff-service.js";
+export { MindRuntimeService } from "./mind-runtime-service.js";
 export { MindPalaceSyncClient } from "./sync-client.js";
 export { HttpSyncTransport } from "./http-sync-transport.js";
 export type { ResolvedProjectSpace } from "./project-space.js";
@@ -730,6 +839,14 @@ export type {
   UpdateMemoryInput
 } from "./project-memory-service.js";
 export type { CreateCheckpointInput } from "./project-handoff-service.js";
+export type {
+  CompileCapsuleInput,
+  CreateMindCoreInput,
+  CreateMissionInput,
+  CreateRoleProfileInput,
+  SpawnIncarnationInput,
+  UpsertTaskGraphInput
+} from "./mind-runtime-service.js";
 export type {
   FetchResult,
   PublishResult,

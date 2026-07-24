@@ -40,6 +40,7 @@ export interface FetchResult {
   fetched: number;
   stored: number;
   checkpointsStored: number;
+  runtimeEntitiesStored: number;
   requiredApplied: number;
   pending: number;
   cursor: string;
@@ -99,6 +100,7 @@ export class MindPalaceSyncClient {
     let fetched = 0;
     let stored = 0;
     let checkpointsStored = 0;
+    let runtimeEntitiesStored = 0;
     let requiredApplied = 0;
     let hasMore = true;
     while (hasMore) {
@@ -123,33 +125,35 @@ export class MindPalaceSyncClient {
       });
       hasMore = result.hasMore;
     }
-    const checkpointCursorOwner = `checkpoints:${deviceId}`;
-    let checkpointCursor = this.database.getCursor("adapter", checkpointCursorOwner, spaceId)?.lastEventId;
-    let checkpointHasMore = true;
-    while (checkpointHasMore) {
+    const runtimeCursorOwner = `runtime:${deviceId}`;
+    let runtimeCursor = this.database.getCursor("adapter", runtimeCursorOwner, spaceId)?.lastEventId;
+    let runtimeHasMore = true;
+    while (runtimeHasMore) {
       const result = await this.transport.pull({
         spaceId,
         deviceId,
-        cursor: checkpointCursor,
+        cursor: runtimeCursor,
         limit: batchSize
       });
       checkpointsStored += this.database.applyRemoteCheckpointEvents(result.events);
-      checkpointCursor = result.nextCursor;
+      runtimeEntitiesStored += this.database.applyRemoteRuntimeEvents(result.events);
+      runtimeCursor = result.nextCursor;
       this.database.upsertCursor({
         schema: "mind-palace.sync-cursor/v0.1",
         cursorId: `cur_${randomUUID()}`,
         scope: "adapter",
-        ownerId: checkpointCursorOwner,
+        ownerId: runtimeCursorOwner,
         spaceId,
-        lastEventId: checkpointCursor,
+        lastEventId: runtimeCursor,
         updatedAt: new Date().toISOString()
       });
-      checkpointHasMore = result.hasMore;
+      runtimeHasMore = result.hasMore;
     }
     return {
       fetched,
       stored,
       checkpointsStored,
+      runtimeEntitiesStored,
       requiredApplied,
       pending: this.preview(spaceId).pending.length,
       cursor: cursor ?? "cur:0"
