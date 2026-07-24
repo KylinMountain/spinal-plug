@@ -5,6 +5,7 @@ import type {
   AuthenticatedPrincipal,
   DeviceCredential,
   MemoryCompilation,
+  EventEnvelope,
   ProjectSnapshot,
   ProjectSpace,
   RegisteredDevice,
@@ -405,6 +406,11 @@ export class MindPalaceControlPlane {
   compilation(principal: AuthenticatedPrincipal, spaceId: string): MemoryCompilation {
     this.authorizeSpace(principal, spaceId, "viewer");
     return this.sync.compilation(spaceId);
+  }
+
+  events(principal: AuthenticatedPrincipal, spaceId: string, limit?: number): EventEnvelope[] {
+    this.authorizeSpace(principal, spaceId, "viewer");
+    return this.sync.events(spaceId, limit);
   }
 
   close(): void {

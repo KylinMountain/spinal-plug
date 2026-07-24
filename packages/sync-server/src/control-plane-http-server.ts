@@ -4,6 +4,7 @@ import { createServer as createHttpsServer, type ServerOptions as TlsServerOptio
 import type { AddressInfo } from "node:net";
 import type { ProjectSpace, SpaceRole } from "@mind-palace/protocol";
 import { ControlPlaneError, MindPalaceControlPlane } from "./control-plane.js";
+import { renderControlPlaneConsole } from "./console-html.js";
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
   let body = "";
@@ -108,6 +109,20 @@ export function createControlPlaneHttpServer(
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
       if (request.method === "GET" && url.pathname === "/healthz") {
         sendJson(response, 200, { status: "ok", secure: Boolean(options.tls) });
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/favicon.ico") {
+        response.writeHead(204, { "cache-control": "public, max-age=86400" });
+        response.end();
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/console") {
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff"
+        });
+        response.end(renderControlPlaneConsole());
         return;
       }
 
@@ -230,6 +245,18 @@ export function createControlPlaneHttpServer(
           principal,
           decodeURIComponent(snapshotMatch[1])
         ));
+        return;
+      }
+      const eventsMatch = /^\/v1\/spaces\/([^/]+)\/events$/.exec(url.pathname);
+      if (request.method === "GET" && eventsMatch) {
+        const limit = url.searchParams.get("limit");
+        sendJson(response, 200, {
+          events: controlPlane.events(
+            principal,
+            decodeURIComponent(eventsMatch[1]),
+            limit ? Number(limit) : undefined
+          )
+        });
         return;
       }
       const compilationMatch = /^\/v1\/spaces\/([^/]+)\/compilation$/.exec(url.pathname);
