@@ -34,7 +34,9 @@ const HOOK_EVENTS: ReadonlySet<string> = new Set([
 ]);
 
 function printHelp(): void {
-  console.log(`mind-palace
+  console.log(`spinal-plug
+
+Spinal Plug is the current product command. The legacy mind-palace alias remains available for existing Hooks.
 
 Commands:
   connect <db-path> <project-dir>                  Create a project or archive binding for this directory
@@ -43,7 +45,7 @@ Commands:
   link <db-path> <project-dir> <space-id> [name]   Bind this directory to an existing archive
   init <db-path> [project-dir]                     Legacy alias for connect (development compatibility)
   status <db-path> [project-dir]                   Show user-facing status for the current Space
-  boot <db-path> <project-dir>                     Show the Mind Palace memory-core loading sequence
+  boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
   share <db-path> <project-dir> <kind> <text> <url> <device-id>
                                                      Share a durable memory with the Control Plane
   share-claude <db-path> <project-dir> <url> <device-id>
@@ -667,18 +669,18 @@ async function main(): Promise<void> {
   if (!resolvedSpace) {
     if (command === "boot") {
       console.log([
-        "MIND PALACE // MEMORY CORE BOOT SEQUENCE v0.1",
-        "[01/05] Project Space ............ UNLINKED",
+        "SPINAL-PLUG // NEURAL MEMORY INITIALIZATION v0.2",
+        "[01/05] Memory Spinal Plug ....... UNLOCKED",
         "[02/05] Incarnation Link ......... STANDBY",
-        "[03/05] Mind Capsule ............. NOT REQUESTED",
-        "[04/05] Memory Fidelity .......... NOT AVAILABLE",
-        "[05/05] Sync Uplink .............. IDLE",
-        "STATUS: AWAITING WORKSPACE SELECTION",
+        "[03/05] Mind Capsule ............. NOT ENGAGED",
+        "[04/05] Memory Fidelity .......... NO VERIFIED REFERENCES",
+        "[05/05] Neural Uplink ............ IDLE",
+        "CAUTION: PROJECT MEMORY CHAMBER IS UNLINKED.",
         "ACTION: Create an archive, use General, link an existing Space, or keep this directory unlinked."
       ].join("\n"));
       return;
     }
-    throw new Error("Project Space is not connected. Use mind-palace connect <db-path> <project-dir> after user confirmation.");
+    throw new Error("Project Space is not connected. Use spinal-plug connect <db-path> <project-dir> after user confirmation.");
   }
 
   const space = resolvedSpace.space;
@@ -893,13 +895,13 @@ async function main(): Promise<void> {
     const pending = database.listPendingOutboxForSpace(space.spaceId).length;
     const fidelity = memories.length === 0 ? "BASELINE ONLY" : `${memories.length} DURABLE MEMORY REFERENCES`;
     const lines = [
-      "MIND PALACE // MEMORY CORE BOOT SEQUENCE v0.1",
-      "[01/05] Mind Palace Control Plane . LOCAL LINK ESTABLISHED",
-      "[02/05] Incarnation Link ......... HOST CONTEXT BOUND",
-      "[03/05] Mind Capsule ............. PROJECT-SCOPE CONTEXT READY",
+      "SPINAL-PLUG // NEURAL MEMORY INITIALIZATION v0.2",
+      "[01/05] Memory Spinal Plug ....... LOCKED",
+      "[02/05] Incarnation Link ......... NEURAL CHANNEL BOUND",
+      "[03/05] Mind Capsule ............. PROJECT-SCOPE CONTEXT ENGAGED",
       `[04/05] Memory Fidelity ........ ${fidelity}`,
-      `[05/05] Sync Uplink ............ ${pending === 0 ? "STANDBY" : `${pending} EVENT${pending === 1 ? "" : "S"} PENDING`}`,
-      "STATUS: MEMORY CORE LOADED"
+      `[05/05] Neural Uplink .......... ${pending === 0 ? "STANDBY" : `${pending} SIGNAL${pending === 1 ? "" : "S"} PENDING`}`,
+      "STATUS: SPINAL PLUG LOCKED // MEMORY CHANNEL ONLINE"
     ];
     console.log(lines.join("\n"));
     return;
