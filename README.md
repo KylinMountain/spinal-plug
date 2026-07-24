@@ -1,85 +1,97 @@
-# SPINAL-PLUG
+<p align="center">
+  <img src="./assets/spinal-plug-masthead.svg" alt="SPINAL-PLUG — Neural Memory Link" width="100%" />
+</p>
 
-> **一个记忆核心，多个可工作的分身。**
+<p align="center">
+  <strong>让不同设备、不同 Agent，带着同一段项目连续性继续工作。</strong><br />
+  <sub>不是复制意识。不是塞满历史对话。是让值得保留的经历安全回归，并在下一次启动时被重新装载。</sub>
+</p>
 
-Spinal Plug 是面向 AI 编程智能体的跨设备项目记忆客户端。它让项目中真正值得保留的决策、协作习惯和关键背景，在 Claude Code、Codex 等兼容宿主之间流动；它不复制模型权重、隐藏状态或所谓“意识”。
+<p align="center">
+  <a href="#启动序列">启动序列</a> · <a href="#记忆的边界">记忆边界</a> · <a href="#接入宿主">宿主接入</a> · <a href="#快速接入">快速接入</a> · <a href="README.en.md">English</a>
+</p>
 
-```text
-CLAUDE CODE / CODEX                 SPINAL PLUG                    NEXT HOST
+---
 
-项目内完成工作          发布         持久记忆        项目内          加载有界的
-形成决策或纠正      ───────────►    同步端点     ─────────►        原生记忆投影
-```
+## 一个 Agent 不该从空白开始
 
-English version: [README.en.md](README.en.md)
+你在 Codex 做出迁移决策，在 Claude Code 接着排障，又在另一台设备继续开发。
 
-## 为什么
-
-在另一台设备打开同一项目的 Agent，不应该需要用户重新讲述每一项重要决定；但把所有历史聊天直接塞回上下文，又会带来噪声、过期信息和隐私风险。
-
-Spinal Plug 保持明确边界：
-
-- **加载**：以少量、相关的项目记忆作为启动上下文。
-- **工作**：每个宿主在自己的会话和环境中独立工作。
-- **回归**：只发布持久信号；其他宿主先预览，再选择是否应用。
-
-目标是项目连续性，而不是无限膨胀的全局 Prompt。
-
-## 使用体验
+**Spinal Plug** 把真正有长期价值的项目经验变成可追溯、可选择同步、可注入宿主原生记忆的信号。新的会话不必再从“这个项目是做什么的”开始。
 
 ```text
-MEMORY CORE BOOT SEQUENCE
+   做出判断                 选择发布                    继续工作
 
-[01/05] Project Space ............ LINKED
-[02/05] Incarnation Link ......... BOUND
-[03/05] Mind Capsule ............. READY
-[04/05] Memory Fidelity .......... AVAILABLE
-[05/05] Sync Uplink .............. ONLINE
+  Claude / Codex  ──►  SPINAL-PLUG  ──►  Claude / Codex
+  独立会话与环境       受管的记忆链路        有界原生记忆投影
 ```
 
-| 术语 | 含义 |
+> **核心原则**：共享的是经过治理的项目经验，不是模型权重、隐藏状态、完整对话或无限上下文。
+
+## 启动序列
+
+```text
+M E M O R Y   C O R E   B O O T   S E Q U E N C E
+
+[01/05]  PROJECT SPACE        LINKED      当前目录已识别为同一个项目空间
+[02/05]  INCARNATION LINK     BOUND       当前 Agent 会话已挂载项目身份
+[03/05]  MIND CAPSULE         READY       有界启动上下文准备完成
+[04/05]  MEMORY FIDELITY      LIVE        可用持久记忆已进入当前投影
+[05/05]  SYNC UPLINK          ARMED       可发现其他分身发布的更新
+```
+
+| 术语 | 它真正表示什么 |
 | --- | --- |
-| **记忆脊椎栓 / Spinal Plug** | 挂载到兼容 Agent 宿主上的项目记忆链路。 |
-| **记忆保真度 / Memory Fidelity** | 当前会话可用的持久记忆引用，不是虚构的同步百分比。 |
-| **心智胶囊 / Mind Capsule** | 有界的启动包；后续可扩展为角色与工作状态运行时。 |
-| **具身链路 / Incarnation Link** | 当前宿主会话和 Project Space 之间的绑定。 |
-| **同步上行链路 / Sync Uplink** | 到兼容同步端点的受控连接。 |
+| **Spinal Plug** | 连接兼容 Agent 宿主的项目记忆链路。 |
+| **Memory Fidelity** | 当前会话真正可用的持久记忆引用，不是虚构百分比。 |
+| **Mind Capsule** | 有 token 预算的启动包，未来可扩展为角色与工作状态。 |
+| **Incarnation Link** | 当前宿主会话与 Project Space 的绑定。 |
+| **Sync Uplink** | 到兼容同步端点的受控连接。 |
 
-## 它保存什么
+## 记忆的边界
 
-Spinal Plug 用于保存那些难以重新发现、并且能跨会话持续产生价值的信息：
-
-- 技术或产品决策及其原因。
-- 持续有效的项目规则或工作流纠正。
-- 无法直接从仓库推导的项目背景。
-- 指向权威外部资料的引用。
-
-它不适合保存密钥、完整对话、瞬时任务进度，或必须重新从代码验证的事实。当前工作进度应通过 checkpoint/handoff 处理，而不是污染长期记忆。
-
-## 选择性同步
-
-接收更新和实际使用更新是两个动作：
+### 应该回归
 
 ```text
-Fetch  →  Preview  →  Apply  →  Native projection
-获取      预览        选择应用     写入宿主可读投影
++ 技术/产品决策，以及为什么这样决定
++ 持续有效的项目规则和工作方式纠正
++ 无法直接从仓库推导出的关键项目背景
++ 权威外部资料、仪表盘、工单或规范的指针
 ```
 
-你可以先看见其他分身产生了什么，再决定是否把它带入当前会话。删除和权限撤销属于安全例外，应优先执行。
+### 不应回归
 
-## 已接入宿主
+```text
+- 密钥、Token、私有凭证
+- 整段对话、工具原始输出、思维链
+- “正在跑测试”一类短暂状态
+- 必须重新从代码、Git 或外部系统核实的事实
+```
 
-| 宿主 | 当前接入方式 |
-| --- | --- |
-| **Claude Code** | 生命周期 Hook 加载上下文，并维护受管 Auto Memory 投影。 |
-| **Codex** | 生命周期 Hook、有界候选提取和保留原生记忆投影。 |
-| **未来宿主** | 通过适配器契约与 MCP 接口扩展，无需改变本地记忆模型。 |
+当前工作的接力不应污染长期记忆。它应作为 **checkpoint / handoff** 独立保存：已完成什么、还缺什么、下一步是什么、有哪些阻塞。
 
-Spinal Plug 不取代宿主的原生记忆系统，只维护自身受管投影，不覆盖用户已有记忆。
+## 不是强制同步，是可控装载
 
-## 快速开始
+```text
+FETCH                 PREVIEW                 APPLY                 PROJECT
+发现远端更新     ──►  先看将发生什么     ──►  选择带入当前会话  ──►  写入宿主原生投影
+```
 
-### 1. 构建客户端
+你可以知道另一个分身学到了什么，而不必立刻让它改变当前工作上下文。删除和权限撤销属于安全例外，会优先执行。
+
+## 接入宿主
+
+| 宿主 | 链路状态 | 具身方式 |
+| --- | --- | --- |
+| **Claude Code** | `ONLINE` | 生命周期 Hook + 受管 Auto Memory 投影。 |
+| **Codex** | `ONLINE` | 生命周期 Hook + 有界候选提取 + 保留原生记忆投影。 |
+| **Future Hosts** | `STANDBY` | 通过 Adapter Contract 与 MCP Surface 扩展。 |
+
+Spinal Plug 不取代宿主记忆，也不覆盖用户自己写的内容。它只维护带受管标识的投影块。
+
+## 快速接入
+
+### 01 / 构建客户端
 
 ```bash
 pnpm install
@@ -87,27 +99,27 @@ pnpm build
 pnpm typecheck
 ```
 
-### 2. 连接项目
+### 02 / 锁定当前项目
 
 ```bash
 spinal-plug connect "$HOME/.spinal-plug/spinal-plug.db" .
 spinal-plug boot "$HOME/.spinal-plug/spinal-plug.db" .
 ```
 
-本地 SQLite 数据库是设备私有缓存和 Outbox；同步的是带来源与版本信息的事件，而不是上传整个数据库文件。
+本地 SQLite 只是设备缓存与 Outbox。不会上传数据库文件；跨设备传输的是带来源、版本与删除语义的事件。
 
-### 3. 配置同步端点
+### 03 / 接入同步端点
 
 ```bash
 export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
 export SPINAL_PLUG_DEVICE_ID="device-local"
 ```
 
-公开客户端刻意**不包含** Control Plane 服务；请单独部署或接入兼容端点。
+公开客户端**不包含** Control Plane 服务。请接入或部署兼容同步端点。
 
-### 4. 使用宿主插件
+### 04 / 在宿主中使用
 
-Codex 和 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可使用：
+Codex 与 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可使用：
 
 ```text
 /spinal-plug:connect
@@ -116,18 +128,9 @@ Codex 和 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可
 /spinal-plug:boot
 ```
 
-## 项目状态
-
-当前版本聚焦项目级持久记忆、宿主原生投影、本地优先存储和选择性同步。`Mind Core`、`Mind Capsule`、`Incarnation` 与更完整的工作交接已保留扩展方向，但不承诺不同模型会产生完全相同的行为。
-
-## 开发
-
-```bash
-pnpm test
-pnpm typecheck
-```
-
 ---
 
-**SPINAL-PLUG**
-*记忆保真度。项目连续性。多个可工作的宿主。*
+<p align="center">
+  <strong>SPINAL-PLUG</strong><br />
+  <sub>MEMORY FIDELITY · PROJECT CONTINUITY · MANY CAPABLE HOSTS</sub>
+</p>

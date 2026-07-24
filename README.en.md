@@ -1,85 +1,97 @@
-# SPINAL-PLUG
+<p align="center">
+  <img src="./assets/spinal-plug-masthead.svg" alt="SPINAL-PLUG — Neural Memory Link" width="100%" />
+</p>
 
-> **One memory core. Many capable hosts.**
+<p align="center">
+  <strong>Let different devices and different agents continue with the same project continuity.</strong><br />
+  <sub>Not a copied consciousness. Not a dump of old chats. A governed way to return durable experience and load it into the next session.</sub>
+</p>
 
-Spinal Plug is a cross-device project-memory client for AI coding agents. It lets a project's durable decisions, working conventions, and essential context travel between compatible hosts such as Claude Code and Codex. It does not claim to copy model weights, hidden state, or consciousness.
+<p align="center">
+  <a href="#boot-sequence">Boot Sequence</a> · <a href="#memory-boundary">Memory Boundary</a> · <a href="#host-links">Host Links</a> · <a href="#quick-arm">Quick Arm</a> · <a href="README.md">中文</a>
+</p>
 
-```text
-CLAUDE CODE / CODEX                 SPINAL PLUG                    NEXT HOST
+---
 
-work in a project       publish      durable memory      project     load a bounded
-make a decision      ───────────►    sync endpoint    ─────────►     native projection
-correct a workflow
-```
+## An Agent Should Not Start Blank
 
-中文版：[README.md](README.md)
+You make a migration decision in Codex, investigate a failure in Claude Code, then continue from another device.
 
-## Why
-
-An agent that opens a project on a second device should not need the user to restate every important decision. At the same time, injecting every old chat message creates noise, stale context, and privacy risk.
-
-Spinal Plug keeps the boundary deliberate:
-
-- **Load**: start with a small, relevant project memory projection.
-- **Work**: each host works independently in its own session and environment.
-- **Return**: publish only durable signals; other hosts preview and choose what to apply.
-
-The goal is project continuity, not an unbounded global prompt.
-
-## The Experience
+**Spinal Plug** turns the project experience worth keeping into traceable, selectively synchronized signals that can be projected into a host's native memory. The next session does not need to begin with “what is this project?”
 
 ```text
-MEMORY CORE BOOT SEQUENCE
+   make a decision             choose to publish              continue work
 
-[01/05] Project Space ............ LINKED
-[02/05] Incarnation Link ......... BOUND
-[03/05] Mind Capsule ............. READY
-[04/05] Memory Fidelity .......... AVAILABLE
-[05/05] Sync Uplink .............. ONLINE
+  Claude / Codex  ──►  SPINAL-PLUG  ──►  Claude / Codex
+  isolated sessions       governed memory link       bounded native projection
 ```
 
-| Term | Meaning |
+> **Hard boundary**: it shares governed project experience, not model weights, hidden state, full transcripts, or an unbounded context window.
+
+## Boot Sequence
+
+```text
+M E M O R Y   C O R E   B O O T   S E Q U E N C E
+
+[01/05]  PROJECT SPACE        LINKED      this directory resolves to a shared project space
+[02/05]  INCARNATION LINK     BOUND       the current host session is attached
+[03/05]  MIND CAPSULE         READY       a bounded boot context is available
+[04/05]  MEMORY FIDELITY      LIVE        durable references are in the current projection
+[05/05]  SYNC UPLINK          ARMED       updates from other hosts can be discovered
+```
+
+| Term | What it actually means |
 | --- | --- |
 | **Spinal Plug** | The project-memory link attached to a compatible agent host. |
-| **Memory Fidelity** | The durable references available to the current session, not a fabricated percentage. |
-| **Mind Capsule** | A bounded boot package that can later grow into a richer role and work-state runtime. |
+| **Memory Fidelity** | Durable references actually available to this session, not a fabricated percentage. |
+| **Mind Capsule** | A token-bounded boot package that can later grow into a role and work-state runtime. |
 | **Incarnation Link** | The binding between the current host session and a Project Space. |
-| **Sync Uplink** | The selected connection to a compatible sync endpoint. |
+| **Sync Uplink** | A controlled connection to a compatible sync endpoint. |
 
-## What It Preserves
+## Memory Boundary
 
-Spinal Plug is for information that is costly to rediscover and remains useful across sessions:
-
-- A technical or product decision and its rationale.
-- A durable project rule or workflow correction.
-- Context that is not obvious from the repository.
-- A pointer to an authoritative external reference.
-
-It is not for secrets, complete transcripts, transient task progress, or facts that must be revalidated from source code. Use checkpoints and handoffs for current work state rather than polluting long-term memory.
-
-## Selective Synchronization
-
-Receiving an update and using it are separate actions:
+### Return these signals
 
 ```text
-Fetch  →  Preview  →  Apply  →  Native projection
++ Technical or product decisions, with their rationale
++ Durable project rules and workflow corrections
++ Critical context that cannot be inferred from the repository
++ Pointers to authoritative dashboards, tickets, or specifications
 ```
 
-You can see what another agent learned before it changes the current session. Deletions and access revocations remain safety-critical exceptions.
+### Do not return these signals
 
-## Supported Hosts
+```text
+- Secrets, tokens, and credentials
+- Full transcripts, raw tool output, or chain-of-thought
+- Temporary status such as "tests are running"
+- Facts that must be verified from code, Git, or external systems
+```
 
-| Host | Current integration |
-| --- | --- |
-| **Claude Code** | Lifecycle-hook context loading and a managed Auto Memory projection. |
-| **Codex** | Lifecycle hooks, bounded candidate extraction, and a reserved native-memory projection. |
-| **Future hosts** | Extend through the adapter contract and MCP surface without changing the local memory model. |
+Current work should not pollute long-term memory. Keep it in a separate **checkpoint / handoff**: completed work, open work, next action, and blockers.
 
-Spinal Plug does not replace any host's native memory system. It maintains only its own managed projection and leaves user-owned memory untouched.
+## Not Forced Sync. Controlled Loading.
 
-## Quick Start
+```text
+FETCH                 PREVIEW                 APPLY                 PROJECT
+discover updates  ──► see the impact first ─► select this session ─► native host projection
+```
 
-### 1. Build the client
+You can see what another incarnation learned without immediately changing the current context. Deletions and access revocations are safety-critical exceptions.
+
+## Host Links
+
+| Host | Link state | Embodiment |
+| --- | --- | --- |
+| **Claude Code** | `ONLINE` | Lifecycle hooks plus a managed Auto Memory projection. |
+| **Codex** | `ONLINE` | Lifecycle hooks, bounded candidate extraction, and a reserved native-memory projection. |
+| **Future Hosts** | `STANDBY` | Extend through the Adapter Contract and MCP Surface. |
+
+Spinal Plug does not replace host memory or overwrite user-owned content. It only maintains its own managed projection blocks.
+
+## Quick Arm
+
+### 01 / Build the client
 
 ```bash
 pnpm install
@@ -87,27 +99,27 @@ pnpm build
 pnpm typecheck
 ```
 
-### 2. Connect a project
+### 02 / Lock the current project
 
 ```bash
 spinal-plug connect "$HOME/.spinal-plug/spinal-plug.db" .
 spinal-plug boot "$HOME/.spinal-plug/spinal-plug.db" .
 ```
 
-The local SQLite database is a private device cache and outbox. It is never uploaded as a database file; synchronization transfers versioned events with provenance.
+Local SQLite is a device cache and outbox. The database file is never uploaded; cross-device synchronization carries versioned events with provenance and deletion semantics.
 
-### 3. Connect a sync endpoint
+### 03 / Attach a sync endpoint
 
 ```bash
 export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
 export SPINAL_PLUG_DEVICE_ID="device-local"
 ```
 
-The public client intentionally does **not** include a Control Plane service. Deploy or connect a compatible endpoint separately.
+The public client does **not** include a Control Plane service. Connect or deploy a compatible endpoint separately.
 
-### 4. Use the host plugins
+### 04 / Use it in a host
 
-Marketplace manifests for Codex and Claude Code are in `plugins/`. Once installed, use:
+Marketplace manifests for Codex and Claude Code are under `plugins/`. After installation, use:
 
 ```text
 /spinal-plug:connect
@@ -116,18 +128,9 @@ Marketplace manifests for Codex and Claude Code are in `plugins/`. Once installe
 /spinal-plug:boot
 ```
 
-## Project Status
-
-The current release focuses on project-scoped durable memory, native host projections, local-first storage, and selective synchronization. `Mind Core`, `Mind Capsule`, `Incarnation`, and richer work-state handoff are modeled as extensible runtime concepts, not promises of identical behavior between models.
-
-## Development
-
-```bash
-pnpm test
-pnpm typecheck
-```
-
 ---
 
-**SPINAL-PLUG**
-*Memory fidelity. Project continuity. Many capable hosts.*
+<p align="center">
+  <strong>SPINAL-PLUG</strong><br />
+  <sub>MEMORY FIDELITY · PROJECT CONTINUITY · MANY CAPABLE HOSTS</sub>
+</p>
