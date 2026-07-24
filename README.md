@@ -28,6 +28,16 @@
 
 > **核心原则**：共享的是经过治理的项目经验，不是模型权重、隐藏状态、完整对话或无限上下文。
 
+## 灵感：载入不是后台动作
+
+Spinal Plug 的设计叙事受到《新世纪福音战士》中“进入系统前必须完成一段可见仪式”的张力启发：**连接、校准、确认、再行动**。这里借用的是这种产品节奏和控制室氛围，不使用任何角色、机体、标志、台词或原始画面。
+
+所有图像均为 Spinal Plug 的原创资产；本项目与《新世纪福音战士》及其权利方不存在隶属、授权或认可关系。
+
+<p align="center">
+  <img src="./assets/memory-core-boot.jpg" alt="抽象记忆核心正在接入 Spinal Plug 插槽" width="100%" />
+</p>
+
 ## 启动序列
 
 ```text
@@ -79,6 +89,10 @@ FETCH                 PREVIEW                 APPLY                 PROJECT
 
 你可以知道另一个分身学到了什么，而不必立刻让它改变当前工作上下文。删除和权限撤销属于安全例外，会优先执行。
 
+<p align="center">
+  <img src="./assets/selective-sync.jpg" alt="抽象选择性同步控制台：观察、审阅、应用" width="100%" />
+</p>
+
 ## 接入宿主
 
 | 宿主 | 链路状态 | 具身方式 |
@@ -88,6 +102,10 @@ FETCH                 PREVIEW                 APPLY                 PROJECT
 | **Future Hosts** | `STANDBY` | 通过 Adapter Contract 与 MCP Surface 扩展。 |
 
 Spinal Plug 不取代宿主记忆，也不覆盖用户自己写的内容。它只维护带受管标识的投影块。
+
+<p align="center">
+  <img src="./assets/incarnation-link.jpg" alt="两个独立宿主通过同一记忆核心保持连续性" width="100%" />
+</p>
 
 ## 快速接入
 
