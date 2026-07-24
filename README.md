@@ -1,35 +1,103 @@
 # SPINAL-PLUG
 
-Spinal Plug 是一个面向 Agent 的跨设备项目记忆层。它以“记忆脊椎栓、神经链路、联接率”作为原创运行时界面表达；这些只是系统状态的可视化，不表示生物控制或模型隐藏状态复制。
+> **One memory core. Many capable hosts.**
+> **一个记忆核心，多个可工作的分身。**
 
-系统术语、状态映射和可使用的高压文案见 [docs/spinal-plug-voice.md](docs/spinal-plug-voice.md)。
+Spinal Plug is a cross-device project-memory client for AI coding agents. It lets a project’s durable decisions, working conventions, and essential context travel between compatible hosts such as Claude Code and Codex, without pretending that models share weights, hidden state, or consciousness.
 
-- `protocol`: v0.1 协议对象与 schema
-- `local-node`: 本地 SQLite WAL / Outbox 基础层
-- `adapter-sdk`: 统一适配器接口
-- `adapter-claude-code`: Claude Code 生命周期与受管原生记忆投影
-- `adapter-codex`: Codex 生命周期、候选提取与受限原生记忆投影
-- `mcp-server`: MCP Server 骨架
-- `cli`: 本地命令行入口
-- `sync-server`: M2 传输无关的权威同步内核
+Spinal Plug 是面向 AI 编程智能体的跨设备项目记忆客户端。它让项目中真正值得保留的决策、协作习惯和关键背景，在 Claude Code、Codex 等兼容宿主之间流动；它不复制模型权重、隐藏状态或所谓“意识”。
 
-当前版本只覆盖项目记忆同步最小闭环，并为未来的 `Mind Core`、`Mind Capsule`、`Incarnation`、`Work State` 预留协议字段和模块边界。
+```text
+CLAUDE CODE / CODEX                 SPINAL PLUG                    NEXT HOST
 
-运行时最小垂直切片现已可用：可创建 `Mind Core`、角色、Mission、Task Graph、Mind Capsule 与 Incarnation，并与项目记忆和 Checkpoint 分离同步。使用方式见 [docs/mind-runtime.md](docs/mind-runtime.md)。
+work in a project       publish      durable memory      project     load a bounded
+make a decision      ───────────►    sync endpoint    ─────────►     native projection
+correct a workflow                   preview / apply                 continue work
+```
 
-`spinal-plug boot` 使用固定的 `Memory Core Boot Sequence` 表达加载过程：`Spinal Plug Control Plane`、`Incarnation Link`、`Mind Capsule` 与 `Memory Fidelity` 都对应可验证的本地项目记忆状态；它不表示模型权重、隐藏状态或“意识”被复制。
+## Why / 为什么
 
-Claude Code 本地参考实现的同步、Hook 与后台记忆整理观察见 [docs/research/claude-code-reference-notes.md](docs/research/claude-code-reference-notes.md)。Spinal Plug 不把宿主原生记忆当作事实源；适配器只能维护各自受保留标识保护的投影，并在宿主升级后通过兼容测试重新验证。
+An agent that opens a project on a second device should not need the user to restate every important decision. At the same time, blindly injecting every old chat message creates noise, stale context, and privacy risks.
 
-可运行的 M1 本地工作流、CLI 示例和 Hook 调用契约见 [docs/phase-m1-local-workflow.md](docs/phase-m1-local-workflow.md)。
+Spinal Plug keeps the boundary deliberate:
 
-M2 已实现可替换的同步内核与两节点验证，当前边界见 [docs/phase-m2-sync-core.md](docs/phase-m2-sync-core.md)。
+- **Load / 加载**: start with a small, relevant project memory projection.
+- **Work / 工作**: each host works independently in its own session and environment.
+- **Return / 回归**: publish only durable signals, then let other hosts preview and choose what to apply.
 
-本地协议验证可运行 `spinal-plug serve ./data/spinal-plug-central.db` 启动无认证、仅回环监听的同步服务。认证控制面使用 `spinal-plug serve-control-plane`，提供账户、设备、ACL、撤销、限流和同源控制台，见 [docs/control-plane-console.md](docs/control-plane-console.md)。
+The goal is project continuity, not an unbounded global prompt.
 
-Claude Code 本机插件已实现为可安装的 local marketplace 插件，安装和试运行边界见 [docs/integrations/claude-code-plugin.md](docs/integrations/claude-code-plugin.md)。
+目标是项目连续性，而不是无限膨胀的全局上下文。
 
-## 开发
+## The Experience / 使用体验
+
+```text
+MEMORY CORE BOOT SEQUENCE
+
+[01/05] Project Space ............ LINKED
+[02/05] Incarnation Link ......... BOUND
+[03/05] Mind Capsule ............. READY
+[04/05] Memory Fidelity .......... AVAILABLE
+[05/05] Sync Uplink .............. ONLINE
+```
+
+These are visible runtime states:
+
+| Term | Meaning |
+| --- | --- |
+| **Spinal Plug** | The project-memory link attached to a compatible agent host. |
+| **Memory Fidelity** | The durable references available to the current session, not a fabricated percentage. |
+| **Mind Capsule** | A bounded boot package. It will later grow into a richer role and work-state runtime. |
+| **Incarnation Link** | The binding between the current host session and a Project Space. |
+| **Sync Uplink** | The selected connection to a compatible sync endpoint. |
+
+| 术语 | 含义 |
+| --- | --- |
+| **记忆脊椎栓 / Spinal Plug** | 挂载到兼容 Agent 宿主上的项目记忆链路。 |
+| **记忆保真度 / Memory Fidelity** | 当前会话可用的持久记忆引用，不是虚构的同步百分比。 |
+| **心智胶囊 / Mind Capsule** | 有界的启动包；后续可扩展为角色与工作状态运行时。 |
+| **具身链路 / Incarnation Link** | 当前宿主会话和 Project Space 之间的绑定。 |
+| **同步上行链路 / Sync Uplink** | 到兼容同步端点的受控连接。 |
+
+## What It Preserves / 它保存什么
+
+Spinal Plug is for information that is costly to rediscover and remains useful across sessions:
+
+- A technical or product decision and its rationale.
+- A durable project rule or workflow correction.
+- Context that is not obvious from the repository.
+- A pointer to an authoritative external reference.
+
+Spinal Plug 不适合保存密钥、完整对话、瞬时任务进度，或必须重新从代码验证的事实。当前工作进度应通过 checkpoint/handoff 处理，而不是污染长期记忆。
+
+## Selective Synchronization / 选择性同步
+
+Receiving an update and using it are separate actions:
+
+```text
+Fetch  →  Preview  →  Apply  →  Native projection
+获取      预览        选择应用     写入宿主可读投影
+```
+
+You can see what another agent learned before it changes the current session. Deletions and access revocations remain safety-critical exceptions.
+
+你可以先看见其他分身产生了什么，再决定是否把它带入当前会话。删除和权限撤销属于安全例外，应优先执行。
+
+## Supported Hosts / 已接入宿主
+
+| Host | Current integration |
+| --- | --- |
+| **Claude Code** | Hook-driven context loading plus a managed Auto Memory projection. |
+| **Codex** | Lifecycle hooks, bounded candidate extraction, and a reserved native-memory projection. |
+| **Future hosts** | Extend through the adapter contract and MCP surface without changing the local memory model. |
+
+Spinal Plug does not replace any host’s native memory system. It maintains only its own managed projection and leaves user-owned memory untouched.
+
+Spinal Plug 不取代宿主原生记忆系统，只维护自身受管投影，不覆盖用户已有记忆。
+
+## Quick Start / 快速开始
+
+### 1. Build the client / 构建客户端
 
 ```bash
 pnpm install
@@ -37,16 +105,64 @@ pnpm build
 pnpm typecheck
 ```
 
-## 包结构
+### 2. Connect a project / 连接项目
+
+```bash
+spinal-plug connect "$HOME/.spinal-plug/spinal-plug.db" .
+spinal-plug boot "$HOME/.spinal-plug/spinal-plug.db" .
+```
+
+The local SQLite database is a private device cache and outbox. It is never uploaded as a database file.
+
+本地 SQLite 数据库是设备私有缓存和 Outbox；同步的是带来源与版本信息的事件，而不是上传整个数据库文件。
+
+### 3. Connect a sync endpoint / 配置同步端点
+
+```bash
+export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
+export SPINAL_PLUG_DEVICE_ID="device-local"
+```
+
+The public client intentionally does **not** include a Control Plane service. Deploy or connect a compatible endpoint separately.
+
+公开客户端刻意**不包含** Control Plane 服务；请单独部署或接入兼容端点。
+
+### 4. Use the host plugins / 使用宿主插件
+
+Marketplace manifests are included for Codex and Claude Code under `plugins/`. Once installed, use the host-facing commands such as:
 
 ```text
-packages/
-  protocol/
-  local-node/
-  adapter-sdk/
-  adapter-claude-code/
-  adapter-codex/
-  mcp-server/
-  cli/
-docs/adr/
+/spinal-plug:connect
+/spinal-plug:share
+/spinal-plug:sync
+/spinal-plug:boot
 ```
+
+## Project Status / 项目状态
+
+The current release focuses on project-scoped durable memory, native host projections, local-first storage, and selective synchronization. `Mind Core`, `Mind Capsule`, `Incarnation`, and richer work-state handoff are intentionally modeled as extensible runtime concepts rather than promises of identical agent behavior.
+
+当前版本聚焦项目级持久记忆、宿主原生投影、本地优先存储和选择性同步。`Mind Core`、`Mind Capsule`、`Incarnation` 与更完整的工作交接已保留扩展方向，但不承诺不同模型会产生完全相同的行为。
+
+## Documentation / 文档
+
+- [Spinal Plug 术语与文案语气](docs/spinal-plug-voice.md)
+- [Mind Runtime(Mind Core / Capsule / Incarnation)](docs/mind-runtime.md)
+- [M1 本地工作流与 CLI 契约](docs/phase-m1-local-workflow.md)
+- [M2 同步内核与边界](docs/phase-m2-sync-core.md)
+- [Control Plane 控制台](docs/control-plane-console.md)
+- [Claude Code 插件集成](docs/integrations/claude-code-plugin.md)
+- [Codex 插件集成](docs/integrations/codex-plugin.md)
+- [Claude Code 参考实现观察](docs/research/claude-code-reference-notes.md)
+
+## Development / 开发
+
+```bash
+pnpm test
+pnpm typecheck
+```
+
+---
+
+**SPINAL-PLUG**
+*Memory fidelity. Project continuity. Many capable hosts.*
