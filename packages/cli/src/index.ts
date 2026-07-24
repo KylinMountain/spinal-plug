@@ -10,11 +10,12 @@ import {
   HttpSyncTransport,
   MindPalaceDatabase,
   MindPalaceSyncClient,
+  MindRuntimeService,
   ProjectHandoffService,
   ProjectMemoryService,
   ProjectSpaceResolver
 } from "@mind-palace/local-node";
-import type { MemoryKind, ProjectSpace } from "@mind-palace/protocol";
+import type { MindCapsule, MemoryKind, ProjectSpace } from "@mind-palace/protocol";
 import {
   createControlPlaneHttpServer,
   createSyncHttpServer,
@@ -51,6 +52,13 @@ Commands:
   candidates <db-path> <project-dir>               List reviewable inferred memory candidates
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
   checkpoint <db-path> <project-dir> <json>        Save a work-state checkpoint for Agent handoff
+  mind-core <db-path> <project-dir> <json>         Create a Mind Core runtime entity
+  role <db-path> <project-dir> <json>              Create a Role Profile runtime entity
+  mission <db-path> <project-dir> <json>           Create a Mission runtime entity
+  task-graph <db-path> <project-dir> <json>        Create or update a Task Graph
+  capsule <db-path> <project-dir> <json>           Compile a Mind Capsule boot package
+  incarnate <db-path> <project-dir> <json>         Spawn an Incarnation from a Capsule
+  runtime <db-path> <project-dir>                  List runtime entities in this Space
   handoff <db-path> <project-dir>                  Show the newest work-state handoff
   checkpoints <db-path> <project-dir>              List work-state checkpoints
   update <db-path> <project-dir> <memory-id> <text> Update active memory
@@ -326,7 +334,36 @@ async function executeHook(
       // overwriting any non-Mind-Palace rows in its private database.
       new CodexNativeMemoryStore().materialize(space, service.list(space));
     }
-    const output = await adapter.injectContext(service.createBootProjection(space), payload);
+    const baseProjection = service.createBootProjection(space);
+    const requestedCapsuleId = process.env.MIND_PALACE_CAPSULE_ID;
+    const capsule = requestedCapsuleId
+      ? database.getRuntimeEntity<MindCapsule>(requestedCapsuleId)
+      : null;
+    if (capsule && (capsule.schema !== "mind-palace.mind-capsule/v0.1" || capsule.spaceId !== space.spaceId)) {
+      throw new Error(`Mind Capsule is unavailable for this Project Space: ${requestedCapsuleId}`);
+    }
+    const projection = capsule
+      ? {
+        ...baseProjection,
+        kind: "mind_capsule" as const,
+        content: `${capsule.bootContext}\n\n${baseProjection.content}`,
+        relatedMemoryIds: [...new Set([...capsule.memoryIds, ...baseProjection.relatedMemoryIds])]
+      }
+      : baseProjection;
+    if (capsule) {
+      new MindRuntimeService(database, {
+        accountId: process.env.MIND_PALACE_ACCOUNT_ID ?? "local",
+        personaId: process.env.MIND_PALACE_PERSONA_ID ?? "persona_default"
+      }).spawn({
+        space,
+        capsuleId: capsule.capsuleId,
+        host,
+        deviceId: process.env.MIND_PALACE_DEVICE_ID ?? `device-${host}`,
+        sessionId: payload.sessionId,
+        compatibilityWarnings: []
+      });
+    }
+    const output = await adapter.injectContext(projection, payload);
     console.log(JSON.stringify(toHostHookOutput(host, payload.event, output)));
     return;
   }
@@ -651,6 +688,78 @@ async function main(): Promise<void> {
     accountId: process.env.MIND_PALACE_ACCOUNT_ID ?? "local",
     personaId: process.env.MIND_PALACE_PERSONA_ID ?? "persona_default"
   });
+  const runtime = new MindRuntimeService(database, {
+    accountId: process.env.MIND_PALACE_ACCOUNT_ID ?? "local",
+    personaId: process.env.MIND_PALACE_PERSONA_ID ?? "persona_default"
+  });
+  if (["mind-core", "role", "mission", "task-graph", "capsule", "incarnate"].includes(command)) {
+    const rawInput = rest.join(" ");
+    if (!rawInput) throw new Error(`Usage: mind-palace ${command} <db-path> <project-dir> <json>`);
+    let input: Record<string, unknown>;
+    try {
+      input = JSON.parse(rawInput) as Record<string, unknown>;
+    } catch {
+      throw new Error(`${command} input must be valid JSON.`);
+    }
+    const result = command === "mind-core"
+      ? runtime.createMindCore({
+        space,
+        displayName: String(input.displayName ?? ""),
+        personaId: typeof input.personaId === "string" ? input.personaId : undefined,
+        syncProfile: typeof input.syncProfile === "object" && input.syncProfile
+          ? input.syncProfile as never
+          : undefined
+      })
+      : command === "role"
+        ? runtime.createRoleProfile({
+          space,
+          mindId: String(input.mindId ?? ""),
+          displayName: String(input.displayName ?? ""),
+          directives: Array.isArray(input.directives) ? input.directives.map(String) : [],
+          requiredCapabilities: Array.isArray(input.requiredCapabilities) ? input.requiredCapabilities.map(String) : []
+        })
+        : command === "mission"
+          ? runtime.createMission({
+            space,
+            mindId: String(input.mindId ?? ""),
+            title: String(input.title ?? ""),
+            objective: String(input.objective ?? ""),
+            successCriteria: Array.isArray(input.successCriteria) ? input.successCriteria.map(String) : []
+          })
+          : command === "task-graph"
+            ? runtime.upsertTaskGraph({
+              space,
+              mindId: String(input.mindId ?? ""),
+              missionId: String(input.missionId ?? ""),
+              taskGraphId: typeof input.taskGraphId === "string" ? input.taskGraphId : undefined,
+              tasks: Array.isArray(input.tasks) ? input.tasks as never : []
+            })
+            : command === "capsule"
+              ? runtime.compileCapsule({
+                space,
+                mindId: String(input.mindId ?? ""),
+                roleProfileId: String(input.roleProfileId ?? ""),
+                missionId: String(input.missionId ?? ""),
+                taskGraphId: typeof input.taskGraphId === "string" ? input.taskGraphId : undefined,
+                baseSnapshotId: typeof input.baseSnapshotId === "string" ? input.baseSnapshotId : undefined
+              })
+              : runtime.spawn({
+                space,
+                capsuleId: String(input.capsuleId ?? ""),
+                host: String(input.host ?? ""),
+                deviceId: String(input.deviceId ?? process.env.MIND_PALACE_DEVICE_ID ?? "device-local"),
+                sessionId: String(input.sessionId ?? "runtime-session"),
+                compatibilityWarnings: Array.isArray(input.compatibilityWarnings)
+                  ? input.compatibilityWarnings.map(String)
+                  : []
+              });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "runtime") {
+    console.log(JSON.stringify(database.listRuntimeEntities(space.spaceId), null, 2));
+    return;
+  }
   if (command === "share-claude") {
     const [url, deviceId] = rest;
     if (!url || !deviceId) {
