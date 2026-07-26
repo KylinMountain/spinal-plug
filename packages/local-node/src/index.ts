@@ -560,6 +560,52 @@ export class SpinalPlugDatabase {
     statement.run(eventId);
   }
 
+  /**
+   * Re-queues events already delivered to a previous server. Delivery is not
+   * tracked per-server, so pointing this device at a new Control Plane (or a
+   * server that lost its database) requires this explicit re-bootstrap. The
+   * receiving server deduplicates by event_id, so re-publishing is safe.
+   */
+  requeueDeliveredOutboxForSpace(spaceId: string): number {
+    const result = this.db.prepare(`
+      UPDATE outbox
+      SET status = 'pending'
+      WHERE space_id = ? AND status = 'delivered'
+    `).run(spaceId);
+    return Number(result.changes);
+  }
+
+  /**
+   * Rewrites the account/device identity on this Space's local event history.
+   * Events minted by the unauthenticated local runtime carry accountId "local"
+   * and an arbitrary device id; an authenticated Control Plane rejects those.
+   * Adopting the credential's identity is the migration path onto such a
+   * server. Returns the number of rewritten events.
+   */
+  adoptIdentityForSpace(spaceId: string, identity: { accountId: string; deviceId: string }): number {
+    const rows = this.db.prepare(`
+      SELECT event_id, payload_json FROM events WHERE space_id = ?
+    `).all(spaceId) as Record<string, unknown>[];
+    const update = this.db.prepare("UPDATE events SET payload_json = ? WHERE event_id = ?");
+    let rewritten = 0;
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      for (const row of rows) {
+        const event = JSON.parse(String(row.payload_json)) as EventEnvelope;
+        if (event.accountId === identity.accountId && event.actor.deviceId === identity.deviceId) continue;
+        event.accountId = identity.accountId;
+        event.actor = { ...event.actor, deviceId: identity.deviceId };
+        update.run(JSON.stringify(event), String(row.event_id));
+        rewritten += 1;
+      }
+      this.db.exec("COMMIT;");
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+    return rewritten;
+  }
+
   applyRemoteMemoryEvents(events: EventEnvelope[]): number {
     let applied = 0;
     try {

@@ -1,4 +1,6 @@
 import type {
+  AuthenticatedPrincipal,
+  ProjectSpace,
   SyncFetchRequest,
   SyncFetchResponse,
   SyncPullRequest,
@@ -20,6 +22,20 @@ export class HttpSyncTransport implements SyncTransport {
       headers: this.headers({ "content-type": "application/json" }),
       body: JSON.stringify(request)
     });
+  }
+
+  /** Authenticated Control Planes require an explicit Space registration before events flow. */
+  async registerSpace(space: ProjectSpace): Promise<ProjectSpace> {
+    return this.request("/v1/spaces", {
+      method: "POST",
+      headers: this.headers({ "content-type": "application/json" }),
+      body: JSON.stringify(space)
+    });
+  }
+
+  /** Returns the credential's identity on an authenticated Control Plane; unauthenticated servers 404. */
+  async whoami(): Promise<AuthenticatedPrincipal> {
+    return this.request("/v1/me");
   }
 
   async pull(request: SyncPullRequest): Promise<SyncPullResponse> {

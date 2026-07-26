@@ -144,6 +144,11 @@ export function createControlPlaneHttpServer(
       const principal = controlPlane.authenticate(bearerToken(request));
       limiter.check(principal.deviceId);
 
+      if (request.method === "GET" && url.pathname === "/v1/me") {
+        sendJson(response, 200, principal);
+        return;
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/users") {
         const body = await readJson(request);
         const userId = controlPlane.createUser(principal, {
