@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer, ClaudeCodeAdapter } from "@spinal-plug/adapter-claude-code";
 import { CodexAdapter, CodexNativeMemoryStore } from "@spinal-plug/adapter-codex";
@@ -32,6 +33,33 @@ const HOOK_EVENTS: ReadonlySet<string> = new Set([
   "stop",
   "session.end"
 ]);
+
+/**
+ * Host hooks spawn this CLI without the user's shell profile, so credentials
+ * exported there never reach the sync path. Loading the device's env file as
+ * a fallback lets hooks publish to an authenticated Control Plane. Explicit
+ * environment variables always win.
+ */
+function loadDeviceEnvFile(): void {
+  const path = process.env.SPINAL_PLUG_ENV_FILE
+    ?? resolve(homedir(), ".spinal-plug", "device.env");
+  if (!existsSync(path)) return;
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const match = /^\s*(?:export\s+)?(SPINAL_PLUG_[A-Z_]+)\s*=\s*(.*)\s*$/.exec(line);
+    if (!match) continue;
+    const key = match[1];
+    if (process.env[key] !== undefined) continue;
+    let value = match[2];
+    if (
+      (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+loadDeviceEnvFile();
 
 function printHelp(): void {
   console.log(`spinal-plug
@@ -67,6 +95,9 @@ Commands:
   list <db-path> <project-dir> [--all]             List project memories
   recall <db-path> <project-dir> <prompt>          Print relevant active memories
   sync <db-path> <project-dir> <url> <device-id>   Download and merge central memory updates
+  republish <db-path> <project-dir> <url> <device-id>
+                                                     Re-send delivered events after switching servers
+  space-register <db-path> <project-dir> <url>     Register this Space on an authenticated Control Plane
   fetch <db-path> <project-dir> <url> <device-id>  Fetch updates without applying optional changes
   preview <db-path> <project-dir>                  Preview fetched canonical updates
   apply <db-path> <project-dir> [update-id...]     Apply selected updates; no IDs applies all
@@ -910,6 +941,39 @@ async function main(): Promise<void> {
     if (!url || !deviceId) throw new Error("Usage: spinal-plug sync <db-path> <project-dir> <url> <device-id>");
     const result = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
     console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "republish") {
+    const [url, deviceId] = rest;
+    if (!url || !deviceId) throw new Error("Usage: spinal-plug republish <db-path> <project-dir> <url> <device-id>");
+    const transport = createSyncTransport(url);
+    // Migrating onto an authenticated Control Plane: local events were minted
+    // with the unauthenticated runtime's identity and would be rejected, so
+    // adopt the credential's account/device identity before re-sending.
+    let identity: { accountId: string; deviceId: string } | null = null;
+    if (process.env.SPINAL_PLUG_DEVICE_TOKEN) {
+      try {
+        const principal = await transport.whoami();
+        identity = { accountId: principal.accountId, deviceId: principal.deviceId };
+        if (principal.deviceId !== deviceId) {
+          throw new Error(`Device ${deviceId} does not match the credential's device ${principal.deviceId}.`);
+        }
+      } catch (error) {
+        if (identity) throw error;
+        // Unauthenticated development servers have no /v1/me; nothing to adopt.
+      }
+    }
+    const adopted = identity ? database.adoptIdentityForSpace(space.spaceId, identity) : 0;
+    const requeued = database.requeueDeliveredOutboxForSpace(space.spaceId);
+    const result = await new SpinalPlugSyncClient(database, transport).publish(space.spaceId, deviceId);
+    console.log(JSON.stringify({ adoptedIdentity: adopted, requeued, ...result }, null, 2));
+    return;
+  }
+  if (command === "space-register") {
+    const [url] = rest;
+    if (!url) throw new Error("Usage: spinal-plug space-register <db-path> <project-dir> <url>");
+    const registered = await createSyncTransport(url).registerSpace(space);
+    console.log(JSON.stringify(registered, null, 2));
     return;
   }
   if (command === "fetch") {
