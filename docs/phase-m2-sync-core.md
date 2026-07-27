@@ -57,10 +57,12 @@ Push 使用 `eventId` 幂等。重复事件会出现在 `duplicateEventIds`，�
 spinal-plug serve ./data/spinal-plug-central.db 8787
 ```
 
-客户端使用同一 Space 的本地数据库与设备标识同步：
+客户端使用同一 Space 的本地数据库与设备标识同步（选择性流程：先拉取，预览后应用）：
 
 ```bash
-spinal-plug sync ./.spinal-plug/spinal-plug.db . http://127.0.0.1:8787 device-macbook
+spinal-plug fetch ./.spinal-plug/spinal-plug.db . http://127.0.0.1:8787 device-macbook
+spinal-plug preview ./.spinal-plug/spinal-plug.db .
+spinal-plug apply ./.spinal-plug/spinal-plug.db .
 ```
 
 当前 HTTP API：
