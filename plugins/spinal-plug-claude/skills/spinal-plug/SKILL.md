@@ -29,7 +29,7 @@ When asked to share but `spinal-plug status` shows `activeMemories: 0` and `cand
 2. Write each as a native topic-memory file (or share directly with `spinal-plug share ... <kind> "<statement>"`).
 3. Report what was generated and why each fact is durable.
 
-A Stop-hook nudge (`<spinal-plug_memory_nudge>`) may also appear in an empty-chamber project. Follow its instructions: stage the generated facts as reviewable candidates with `spinal-plug remember ... --candidate` (never as active memory), then tell the user the candidates await review.
+A Stop-hook nudge (`<spinal-plug_memory_nudge>`) may also appear in an empty-chamber project. Follow its instructions: stage the generated facts as reviewable candidates with `spinal-plug remember ... <kind> --candidate "<statement>"` (never as active memory), then tell the user the candidates await review.
 
 For “交接工作”“保存当前进度”或“让另一个 Agent 继续”，use `/spinal-plug:handoff`. A Project Checkpoint is a separate work-state object: completed work, decisions, open tasks, blockers, next action and artifact references. It must not be copied into native Auto Memory or canonical long-term memory.
 
