@@ -91,7 +91,11 @@ async function runCli(args: string[], options: CliOptions): Promise<string> {
         encoding: "utf8",
         maxBuffer: 16 * 1024 * 1024,
         env: {
-          ...process.env,
+          // Scrub SPINAL_PLUG_* so a developer's or CI's exported endpoint
+          // never leaks into the subprocess; tests set their own explicitly.
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(([key]) => !key.startsWith("SPINAL_PLUG_"))
+          ),
           NODE_NO_WARNINGS: "1",
           HOME: options.home,
           ...(options.deviceId ? { SPINAL_PLUG_DEVICE_ID: options.deviceId } : {}),
@@ -676,10 +680,10 @@ test("share without an endpoint stays local-only and needs no server", async () 
   assert.equal(first.shared.pushed, 0);
   assert.equal(first.activeMemories, 1);
 
-  // An unset $SPINAL_PLUG_SYNC_URL expands to an empty positional argument in
-  // the plugin scripts; that must also select local-only, not a usage error.
+  // An unset $SPINAL_PLUG_SYNC_URL passed as --url "" in the plugin scripts
+  // must also select local-only, not a usage error.
   const second = await runCliJson<ShareResult>(
-    ["share", db, project, "context", "The API listens on 48081.", "", "device-a"],
+    ["share", db, project, "context", "--url", "", "--device-id", "device-a", "The API listens on 48081."],
     { home }
   );
   assert.equal(second.sync, "local-only");
@@ -687,6 +691,69 @@ test("share without an endpoint stays local-only and needs no server", async () 
 
   const memories = await runCliJson<Array<{ statement: string }>>(["list", db, project], { home });
   assert.equal(memories.length, 2);
+});
+
+test("share keeps statements verbatim and only publishes to --url", async () => {
+  const server = await startServer();
+  try {
+    const home = tempDir("spinal-plug-home-");
+    const project = initGitProject("https://github.com/spinal-plug-tests/verbatim.git");
+    const db = join(tempDir("spinal-plug-db-"), "local.db");
+    await bindViaSessionStart(db, project, { home });
+
+    // A statement ending in "URL + word" must not be reparsed as endpoint
+    // arguments: the text stays intact and nothing leaves the device.
+    const statement = "See the runbook https://example.com/runbook now";
+    const local = await runCliJson<{ memory: { statement: string }; sync: string }>(
+      ["share", db, project, "reference", "--url", "", statement],
+      { home }
+    );
+    assert.equal(local.memory.statement, statement);
+    assert.equal(local.sync, "local-only");
+
+    // --url alone (no --device-id) is a valid publish form.
+    const published = await runCliJson<{ memory: { statement: string }; sync: string; shared: { pushed: number } }>(
+      ["share", db, project, "decision", "--url", server.url, "Use pnpm as the only package manager."],
+      { home }
+    );
+    assert.equal(published.sync, "endpoint");
+    assert.equal(published.shared.pushed, 2);
+    // Publishing flushes the durable outbox: the earlier local-only memory
+    // travels with the new one — local-first, not local-forever.
+    const serverSnapshot = await snapshot(server, spaceIdOf(project));
+    assert.deepEqual(
+      serverSnapshot.memories.map(memory => memory.statement).sort(),
+      ["See the runbook https://example.com/runbook now", "Use pnpm as the only package manager."]
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("remember --candidate dedupes identical facts and preserves literal flag text", async () => {
+  const home = tempDir("spinal-plug-home-");
+  const project = initGitProject("https://github.com/spinal-plug-tests/candidate-flags.git");
+  const db = join(tempDir("spinal-plug-db-"), "local.db");
+  await bindViaSessionStart(db, project, { home });
+
+  // Re-staging the same candidate fact returns the existing record.
+  await runCli(["remember", db, project, "context", "--candidate", "Generated from the session."], { home });
+  const duplicate = await runCliJson<{ memoryId: string; duplicate?: boolean }>(
+    ["remember", db, project, "context", "--candidate", "Generated from the session."],
+    { home }
+  );
+  assert.equal(duplicate.duplicate, true);
+  const candidates = await runCliJson<Array<{ status: string }>>(["candidates", db, project], { home });
+  assert.equal(candidates.length, 1);
+
+  // A literal "--candidate" inside the text is just text: the memory stays
+  // active and its statement is untouched.
+  const literal = await runCliJson<{ status: string; statement: string }>(
+    ["remember", db, project, "context", "部署脚本接受 --candidate 参数表示灰度发布"],
+    { home }
+  );
+  assert.equal(literal.status, "active");
+  assert.equal(literal.statement, "部署脚本接受 --candidate 参数表示灰度发布");
 });
 
 test("empty-chamber Claude Stop nudges once per session and stops after generation", async () => {
@@ -720,7 +787,7 @@ test("empty-chamber Claude Stop nudges once per session and stops after generati
 
   // Following the nudge stages a reviewable candidate, which ends nudging for
   // good — even in a brand-new session.
-  await runCli(["remember", db, project, "context", "Generated from the session.", "--candidate"], { home });
+  await runCli(["remember", db, project, "context", "--candidate", "Generated from the session."], { home });
   const candidates = await runCliJson<Array<{ status: string; statement: string }>>(
     ["candidates", db, project],
     { home }

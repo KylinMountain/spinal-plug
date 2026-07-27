@@ -68,12 +68,12 @@ For `share`, "共享记忆", or "上传当前项目记忆", first inspect the cu
 
 Never retain raw transcripts, temporary task progress, secrets, access tokens, or code facts that must be re-verified.
 
-If `spinal-plug status "$SPINAL_PLUG_DB" .` shows `activeMemories: 0` and `candidateMemories: 0`, the memory chamber is empty: do not stop at "nothing to share" — generate the project's first memories from the current session using the same four kinds and quality bar, then share them. A Stop hook may also inject a `<spinal-plug_memory_nudge>` systemMessage in this state; follow it by staging generated facts with `spinal-plug remember ... --candidate` (reviewable candidates, never active memory), then tell the user they await review.
+If `spinal-plug status "$SPINAL_PLUG_DB" .` shows `activeMemories: 0` and `candidateMemories: 0`, the memory chamber is empty: do not stop at "nothing to share" — generate the project's first memories from the current session using the same four kinds and quality bar, then share them. A Stop hook may also inject a `<spinal-plug_memory_nudge>` systemMessage in this state; follow it by staging generated facts with `spinal-plug remember "$SPINAL_PLUG_DB" . <kind> --candidate "<statement>"` (reviewable candidates, never active memory), then tell the user they await review.
 
 If no durable learning exists even after review, say so and do not write memory. Otherwise publish each concise fact:
 
 ```bash
-spinal-plug share "$SPINAL_PLUG_DB" . <kind> "<durable statement>" "$SPINAL_PLUG_SYNC_URL" "$SPINAL_PLUG_DEVICE_ID"
+spinal-plug share "$SPINAL_PLUG_DB" . <kind> --url "$SPINAL_PLUG_SYNC_URL" --device-id "$SPINAL_PLUG_DEVICE_ID" "<durable statement>"
 ```
 
 With `SPINAL_PLUG_SYNC_URL` unset the share is recorded locally only — that is the default, not an error. Then update Codex's native memory projection:
@@ -86,7 +86,7 @@ Report what was shared and why it is durable. The selection step is internal beh
 
 ## Sync
 
-For `sync`, "同步记忆", or "下载记忆", fetch and preview first:
+For `sync`, "同步记忆", or "下载记忆", first check that a sync endpoint is configured. If `SPINAL_PLUG_SYNC_URL` is unset, stop and say so: synchronization is opt-in and the default is local-only — to enable it, start the development server (`spinal-plug serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787` in a separate terminal) and export `SPINAL_PLUG_SYNC_URL="http://127.0.0.1:8787"`. With an endpoint configured, fetch and preview first:
 
 ```bash
 spinal-plug fetch "$SPINAL_PLUG_DB" . "$SPINAL_PLUG_SYNC_URL" "$SPINAL_PLUG_DEVICE_ID"
