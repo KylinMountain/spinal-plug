@@ -31,8 +31,10 @@ Use these defaults unless the environment overrides them:
 
 ```bash
 export SPINAL_PLUG_DB="${SPINAL_PLUG_DB:-$HOME/.spinal-plug/spinal-plug.db}"
-export SPINAL_PLUG_SYNC_URL="${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}"
 export SPINAL_PLUG_DEVICE_ID="${SPINAL_PLUG_DEVICE_ID:-device-local}"
+# Optional. Unset means local-only operation: no endpoint, no authentication,
+# everything works and is testable offline.
+# export SPINAL_PLUG_SYNC_URL="http://127.0.0.1:8787"
 ```
 
 ## Boot
@@ -66,13 +68,15 @@ For `share`, "共享记忆", or "上传当前项目记忆", first inspect the cu
 
 Never retain raw transcripts, temporary task progress, secrets, access tokens, or code facts that must be re-verified.
 
-If no durable learning exists, say so and do not write memory. Otherwise publish each concise fact:
+If `spinal-plug status "$SPINAL_PLUG_DB" .` shows `activeMemories: 0` and `candidateMemories: 0`, the memory chamber is empty: do not stop at "nothing to share" — generate the project's first memories from the current session using the same four kinds and quality bar, then share them. A Stop hook may also inject a `<spinal-plug_memory_nudge>` systemMessage in this state; follow it by staging generated facts with `spinal-plug remember ... --candidate` (reviewable candidates, never active memory), then tell the user they await review.
+
+If no durable learning exists even after review, say so and do not write memory. Otherwise publish each concise fact:
 
 ```bash
 spinal-plug share "$SPINAL_PLUG_DB" . <kind> "<durable statement>" "$SPINAL_PLUG_SYNC_URL" "$SPINAL_PLUG_DEVICE_ID"
 ```
 
-Then update Codex's native memory projection:
+With `SPINAL_PLUG_SYNC_URL` unset the share is recorded locally only — that is the default, not an error. Then update Codex's native memory projection:
 
 ```bash
 spinal-plug sync-codex "$SPINAL_PLUG_DB" . "$SPINAL_PLUG_SYNC_URL" "$SPINAL_PLUG_DEVICE_ID"

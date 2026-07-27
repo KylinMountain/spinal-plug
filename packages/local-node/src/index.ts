@@ -373,6 +373,37 @@ export class SpinalPlugDatabase {
     return this.listMemories(spaceId);
   }
 
+  /**
+   * A Space "has memory" once anything reviewable exists — active memories or
+   * pending candidates — so empty-chamber nudges stop as soon as generation
+   * produces its first draft.
+   */
+  hasDurableMemory(spaceId: string): boolean {
+    const statement = this.db.prepare(`
+      SELECT 1 FROM memories
+      WHERE space_id = ? AND status IN ('active', 'candidate')
+      LIMIT 1
+    `);
+    return statement.get(spaceId) !== undefined;
+  }
+
+  hasMemoryNudge(spaceId: string, sessionId: string, host: string): boolean {
+    const statement = this.db.prepare(`
+      SELECT 1 FROM memory_nudges
+      WHERE space_id = ? AND session_id = ? AND host = ?
+      LIMIT 1
+    `);
+    return statement.get(spaceId, sessionId, host) !== undefined;
+  }
+
+  recordMemoryNudge(spaceId: string, sessionId: string, host: string, createdAt: string): void {
+    const statement = this.db.prepare(`
+      INSERT OR IGNORE INTO memory_nudges (space_id, session_id, host, created_at)
+      VALUES (?, ?, ?, ?)
+    `);
+    statement.run(spaceId, sessionId, host, createdAt);
+  }
+
   getCursor(scope: SyncCursor["scope"], ownerId: string, spaceId: string): SyncCursor | null {
     const statement = this.db.prepare(`
       SELECT * FROM sync_cursors

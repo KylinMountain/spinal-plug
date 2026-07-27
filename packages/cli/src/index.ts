@@ -73,11 +73,13 @@ Commands:
   link <db-path> <project-dir> <space-id> [name]   Bind this directory to an existing archive
   status <db-path> [project-dir]                   Show user-facing status for the current Space
   boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
-  share <db-path> <project-dir> <kind> <text> <url> <device-id>
-                                                     Share a durable memory with the Control Plane
+  share <db-path> <project-dir> <kind> <text> [url] [device-id]
+                                                     Share a durable memory; publishes when a URL or
+                                                     SPINAL_PLUG_SYNC_URL is set, local-only otherwise
   share-claude <db-path> <project-dir> <url> <device-id>
                                                      Share current Claude Code project memory
-  remember <db-path> <project-dir> <kind> <text>   Internal local staging command
+  remember <db-path> <project-dir> <kind> <text> [--candidate]
+                                                     Internal local staging command; --candidate stages for review
   candidates <db-path> <project-dir>               List reviewable inferred memory candidates
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
   checkpoint <db-path> <project-dir> <json>        Save a work-state checkpoint for Agent handoff
@@ -190,7 +192,15 @@ function createWorkspaceDiscoveryContext(projectDir: string): string {
   ].join("\n");
 }
 
-const DEFAULT_LOCAL_SYNC_URL = "http://127.0.0.1:8787";
+/**
+ * No endpoint configured means local-only operation: publish/fetch are
+ * skipped entirely instead of defaulting to a hardcoded URL. A local sync
+ * server is opt-in via SPINAL_PLUG_SYNC_URL, so a fresh install works — and
+ * is testable — with zero configuration and no authentication.
+ */
+function resolveSyncEndpoint(): string | null {
+  return process.env.SPINAL_PLUG_SYNC_URL?.trim() || null;
+}
 
 interface ClaudeAutoMemoryShareResult {
   source: "claude-code-auto-memory";
@@ -208,7 +218,7 @@ async function shareClaudeAutoMemory(
   service: ProjectMemoryService,
   space: import("@spinal-plug/protocol").ProjectSpace,
   projectPath: string,
-  url: string,
+  url: string | null,
   deviceId: string
 ): Promise<ClaudeAutoMemoryShareResult> {
   const imported = new ClaudeAutoMemoryImporter().import(space, projectPath);
@@ -252,7 +262,11 @@ async function shareClaudeAutoMemory(
       unchanged += 1;
     }
   }
-  const shared = await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
+  // Without a configured endpoint the import still lands locally; publication
+  // is skipped rather than attempted against a hardcoded address.
+  const shared = url
+    ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId)
+    : { pushed: 0, duplicates: 0 };
   return {
     source: "claude-code-auto-memory",
     discovered: imported.candidates.length,
@@ -354,7 +368,7 @@ async function executeHook(
           service,
           space,
           payload.cwd,
-          process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
+          resolveSyncEndpoint(),
           process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
         );
       } catch {
@@ -407,7 +421,7 @@ async function executeHook(
           service,
           space,
           payload.cwd,
-          process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
+          resolveSyncEndpoint(),
           process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
         );
       } catch {
@@ -426,7 +440,7 @@ async function executeHook(
         service,
         space,
         payload.cwd,
-        process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
+        resolveSyncEndpoint(),
         process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
       );
     } catch {
@@ -461,16 +475,41 @@ async function executeHook(
     candidatesCreated = drainCodexCandidateJobs(database, service, space);
   }
   if (host === "codex" && payload.event === "stop") {
-    try {
-      // Held candidate events are intentionally excluded; only confirmed
-      // memory and work-state events are eligible for automatic publication.
-      await new SpinalPlugSyncClient(
-        database,
-        createSyncTransport(process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL)
-      ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
-    } catch {
-      // The local WAL/outbox retries on a later lifecycle boundary.
+    const endpoint = resolveSyncEndpoint();
+    if (endpoint) {
+      try {
+        // Held candidate events are intentionally excluded; only confirmed
+        // memory and work-state events are eligible for automatic publication.
+        await new SpinalPlugSyncClient(
+          database,
+          createSyncTransport(endpoint)
+        ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
+      } catch {
+        // The local WAL/outbox retries on a later lifecycle boundary.
+      }
     }
+  }
+  // Empty-chamber nudge: a project with neither active memories nor pending
+  // candidates asks the host to generate its first durable memories from the
+  // current session. Stop is the only actionable boundary — session.end
+  // output can no longer be acted on — and each session is nudged at most
+  // once, recorded before printing so a crash cannot re-nudge.
+  if (
+    payload.event === "stop"
+    && !database.hasDurableMemory(space.spaceId)
+    && !database.hasMemoryNudge(space.spaceId, payload.sessionId, host)
+  ) {
+    database.recordMemoryNudge(space.spaceId, payload.sessionId, host, new Date().toISOString());
+    const nudge = buildMemoryNudge(rawDbPath, payload.cwd);
+    if (host === "claude-code") {
+      // A blocked Stop hands the reason back to the agent as its next
+      // instruction, so generation actually happens instead of passing by as
+      // a notice.
+      console.log(JSON.stringify({ decision: "block", reason: nudge }));
+    } else {
+      console.log(JSON.stringify({ systemMessage: nudge }));
+    }
+    return;
   }
   console.log(JSON.stringify({
     notices: [
@@ -479,6 +518,22 @@ async function executeHook(
         : "Spinal Plug hook completed."
     ]
   }));
+}
+
+/** Instruction handed to the host agent when its project memory chamber is empty. */
+function buildMemoryNudge(dbPath: string, projectDir: string): string {
+  return [
+    '<spinal-plug_memory_nudge schema="v0.1">',
+    "This project has no durable Spinal Plug memory yet. Review this session and extract up to 3 facts that will still matter after it ends:",
+    "- directive: a persistent instruction about how work should be done",
+    "- decision: a technical or product choice and its reason",
+    "- context: background that cannot be cheaply re-read from the repository",
+    "- reference: a pointer to an authoritative external source",
+    "Never retain secrets, raw transcripts, or temporary task state. Stage each fact as a reviewable candidate:",
+    `  spinal-plug remember "${dbPath}" "${projectDir}" <kind> "<concise statement>" --candidate`,
+    "Then tell the user the candidates are ready for review (spinal-plug candidates / promote).",
+    "</spinal-plug_memory_nudge>"
+  ].join("\n");
 }
 
 async function runHook(args: string[]): Promise<void> {
@@ -794,31 +849,61 @@ async function main(): Promise<void> {
   }
   if (command === "share-claude") {
     const [url, deviceId] = rest;
-    if (!url || !deviceId) {
-      throw new Error("Usage: spinal-plug share-claude <db-path> <project-dir> <url> <device-id>");
+    if (url === undefined) {
+      throw new Error("Usage: spinal-plug share-claude <db-path> <project-dir> <url> [device-id]  (empty url = local-only)");
     }
-    console.log(JSON.stringify(await shareClaudeAutoMemory(database, service, space, projectPath, url, deviceId), null, 2));
+    console.log(JSON.stringify(
+      await shareClaudeAutoMemory(database, service, space, projectPath, url || null, deviceId || "device-local"),
+      null,
+      2
+    ));
     return;
   }
   if (command === "share") {
     const [kind, ...shareArgs] = rest;
-    const deviceId = shareArgs.pop();
-    const url = shareArgs.pop();
+    let url = resolveSyncEndpoint();
+    let deviceId = process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local";
+    // Optional trailing <url> <device-id>; an empty url (e.g. an unset
+    // $SPINAL_PLUG_SYNC_URL expanding to "") selects local-only sharing.
+    if (shareArgs.length >= 2) {
+      const maybeUrl = shareArgs[shareArgs.length - 2];
+      const maybeDeviceId = shareArgs[shareArgs.length - 1];
+      if (maybeUrl === "" || /^https?:\/\//.test(maybeUrl)) {
+        shareArgs.length -= 2;
+        url = maybeUrl || null;
+        deviceId = maybeDeviceId || deviceId;
+      }
+    }
     const statement = shareArgs.join(" ");
-    if (!kind || !statement || !url || !deviceId) {
-      throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> <text> <url> <device-id>");
+    if (!kind || !statement) {
+      throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> <text> [url] [device-id]");
     }
     const memory = service.remember({ space, kind: requireMemoryKind(kind), statement });
-    const publish = await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
-    console.log(JSON.stringify({ memory, shared: publish }, null, 2));
+    const publish = url
+      ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId)
+      : { pushed: 0, duplicates: 0 };
+    console.log(JSON.stringify({
+      memory,
+      shared: publish,
+      sync: url ? "endpoint" : "local-only",
+      activeMemories: database.listActiveMemories(space.spaceId).length
+    }, null, 2));
     return;
   }
   if (command === "remember") {
     const [kind, ...statementParts] = rest;
-    if (!kind || statementParts.length === 0) {
-      throw new Error("Usage: spinal-plug remember <db-path> <project-dir> <kind> <text>");
+    const asCandidate = statementParts.includes("--candidate");
+    const parts = statementParts.filter(part => part !== "--candidate");
+    if (!kind || parts.length === 0) {
+      throw new Error("Usage: spinal-plug remember <db-path> <project-dir> <kind> <text> [--candidate]");
     }
-    const memory = service.remember({ space, kind: requireMemoryKind(kind), statement: statementParts.join(" ") });
+    const memory = service.remember({
+      space,
+      kind: requireMemoryKind(kind),
+      statement: parts.join(" "),
+      asCandidate,
+      ...(asCandidate ? { origin: "agent_inferred" } : {})
+    });
     console.log(JSON.stringify(memory, null, 2));
     return;
   }
@@ -1033,8 +1118,12 @@ async function main(): Promise<void> {
   }
   if (command === "sync-claude") {
     const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: spinal-plug sync-claude <db-path> <project-dir> <url> <device-id>");
-    const synchronized = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
+    if (url === undefined) {
+      throw new Error("Usage: spinal-plug sync-claude <db-path> <project-dir> <url> [device-id]  (empty url = local refresh only)");
+    }
+    const synchronized = url
+      ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId || "device-local")
+      : null;
     const importer = new ClaudeAutoMemoryImporter();
     const localNativeMemoryIds = new Set(
       importer.import(space, projectPath).candidates.map(candidate => candidate.memoryId)
@@ -1051,8 +1140,12 @@ async function main(): Promise<void> {
   }
   if (command === "sync-codex") {
     const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: spinal-plug sync-codex <db-path> <project-dir> <url> <device-id>");
-    const synchronized = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
+    if (url === undefined) {
+      throw new Error("Usage: spinal-plug sync-codex <db-path> <project-dir> <url> [device-id]  (empty url = local refresh only)");
+    }
+    const synchronized = url
+      ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId || "device-local")
+      : null;
     const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
     console.log(JSON.stringify({ synchronized, materialized }, null, 2));
     return;
