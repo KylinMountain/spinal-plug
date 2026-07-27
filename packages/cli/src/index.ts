@@ -73,12 +73,12 @@ Commands:
   link <db-path> <project-dir> <space-id> [name]   Bind this directory to an existing archive
   status <db-path> [project-dir]                   Show user-facing status for the current Space
   boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
-  share <db-path> <project-dir> <kind> <text> [url] [device-id]
-                                                     Share a durable memory; publishes when a URL or
+  share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] <text>
+                                                     Share a durable memory; publishes when --url or
                                                      SPINAL_PLUG_SYNC_URL is set, local-only otherwise
   share-claude <db-path> <project-dir> <url> <device-id>
                                                      Share current Claude Code project memory
-  remember <db-path> <project-dir> <kind> <text> [--candidate]
+  remember <db-path> <project-dir> <kind> [--candidate] <text>
                                                      Internal local staging command; --candidate stages for review
   candidates <db-path> <project-dir>               List reviewable inferred memory candidates
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
@@ -159,6 +159,34 @@ function requireMemoryKind(value: string): MemoryKind {
   return value as MemoryKind;
 }
 
+/**
+ * Leading-flag parser: consumes known flags that appear before the free-text
+ * argument, so the text itself is kept verbatim — a statement ending in a URL
+ * or containing a literal flag token can never be misparsed as options.
+ */
+function takeLeadingFlags(
+  args: string[],
+  spec: Record<string, "value" | "boolean">
+): { flags: Record<string, string | boolean>; rest: string[] } {
+  const flags: Record<string, string | boolean> = {};
+  let index = 0;
+  while (index < args.length && args[index] in spec) {
+    const flag = args[index];
+    if (spec[flag] === "boolean") {
+      flags[flag] = true;
+      index += 1;
+    } else {
+      const value = args[index + 1];
+      if (value === undefined) {
+        throw new Error(`Flag ${flag} requires a value.`);
+      }
+      flags[flag] = value;
+      index += 2;
+    }
+  }
+  return { flags, rest: args.slice(index) };
+}
+
 function resolveAdapter(host: string): SpinalPlugAdapter {
   if (host === "claude-code") return new ClaudeCodeAdapter();
   if (host === "codex") return new CodexAdapter();
@@ -201,6 +229,15 @@ function createWorkspaceDiscoveryContext(projectDir: string): string {
 function resolveSyncEndpoint(): string | null {
   return process.env.SPINAL_PLUG_SYNC_URL?.trim() || null;
 }
+
+type PublishResult = Awaited<ReturnType<SpinalPlugSyncClient["publish"]>>;
+
+/**
+ * Placeholder reported when no endpoint is configured. Typed against
+ * publish()'s real return so a future field addition fails to compile here
+ * instead of drifting at each call site.
+ */
+const LOCAL_ONLY_PUBLISH_RESULT: PublishResult = { pushed: 0, duplicates: 0 };
 
 interface ClaudeAutoMemoryShareResult {
   source: "claude-code-auto-memory";
@@ -266,7 +303,7 @@ async function shareClaudeAutoMemory(
   // is skipped rather than attempted against a hardcoded address.
   const shared = url
     ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId)
-    : { pushed: 0, duplicates: 0 };
+    : LOCAL_ONLY_PUBLISH_RESULT;
   return {
     source: "claude-code-auto-memory",
     discovered: imported.candidates.length,
@@ -326,18 +363,22 @@ async function executeHook(
   rawDbPath: string,
   projectDir: string,
   prompt?: string,
-  sessionId = process.env.SPINAL_PLUG_SESSION_ID ?? "hook-session",
+  sessionId?: string,
   output?: string
 ): Promise<void> {
   if (!HOOK_EVENTS.has(rawEvent)) {
     throw new Error(`Unsupported hook event: ${rawEvent}`);
   }
 
+  // Without a real session id the nudge key would collapse every session into
+  // one ("hook-session"), permanently suppressing nudges after the first —
+  // so nudging requires an identified session.
+  const identifiedSessionId = sessionId ?? process.env.SPINAL_PLUG_SESSION_ID;
   const adapter = resolveAdapter(host);
   const payload = {
     event: rawEvent as HookEventName,
     cwd: resolve(process.cwd(), projectDir),
-    sessionId,
+    sessionId: identifiedSessionId ?? "hook-session",
     prompt,
     output
   };
@@ -496,6 +537,7 @@ async function executeHook(
   // once, recorded before printing so a crash cannot re-nudge.
   if (
     payload.event === "stop"
+    && identifiedSessionId !== undefined
     && !database.hasDurableMemory(space.spaceId)
     && !database.hasMemoryNudge(space.spaceId, payload.sessionId, host)
   ) {
@@ -530,7 +572,7 @@ function buildMemoryNudge(dbPath: string, projectDir: string): string {
     "- context: background that cannot be cheaply re-read from the repository",
     "- reference: a pointer to an authoritative external source",
     "Never retain secrets, raw transcripts, or temporary task state. Stage each fact as a reviewable candidate:",
-    `  spinal-plug remember "${dbPath}" "${projectDir}" <kind> "<concise statement>" --candidate`,
+    `  spinal-plug remember "${dbPath}" "${projectDir}" <kind> --candidate "<concise statement>"`,
     "Then tell the user the candidates are ready for review (spinal-plug candidates / promote).",
     "</spinal-plug_memory_nudge>"
   ].join("\n");
@@ -576,7 +618,7 @@ async function runStdinHook(args: string[]): Promise<void> {
     throw new Error(`Unsupported ${host} hook event: ${String(input.hook_event_name)}`);
   }
   const cwd = typeof input.cwd === "string" ? input.cwd : process.cwd();
-  const sessionId = typeof input.session_id === "string" ? input.session_id : "hook-session";
+  const sessionId = typeof input.session_id === "string" ? input.session_id : undefined;
   const prompt = typeof input.prompt === "string"
     ? input.prompt
     : typeof input.user_prompt === "string"
@@ -861,27 +903,26 @@ async function main(): Promise<void> {
   }
   if (command === "share") {
     const [kind, ...shareArgs] = rest;
-    let url = resolveSyncEndpoint();
-    let deviceId = process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local";
-    // Optional trailing <url> <device-id>; an empty url (e.g. an unset
-    // $SPINAL_PLUG_SYNC_URL expanding to "") selects local-only sharing.
-    if (shareArgs.length >= 2) {
-      const maybeUrl = shareArgs[shareArgs.length - 2];
-      const maybeDeviceId = shareArgs[shareArgs.length - 1];
-      if (maybeUrl === "" || /^https?:\/\//.test(maybeUrl)) {
-        shareArgs.length -= 2;
-        url = maybeUrl || null;
-        deviceId = maybeDeviceId || deviceId;
-      }
-    }
-    const statement = shareArgs.join(" ");
+    // Flags must precede the text: the statement is kept verbatim, so a
+    // trailing URL in the text can never be mistaken for a publish endpoint.
+    const { flags, rest: statementParts } = takeLeadingFlags(shareArgs, {
+      "--url": "value",
+      "--device-id": "value"
+    });
+    const url = flags["--url"] !== undefined
+      ? (flags["--url"] as string).trim() || null
+      : resolveSyncEndpoint();
+    const deviceId = typeof flags["--device-id"] === "string" && flags["--device-id"]
+      ? flags["--device-id"] as string
+      : process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local";
+    const statement = statementParts.join(" ");
     if (!kind || !statement) {
-      throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> <text> [url] [device-id]");
+      throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] <text>");
     }
     const memory = service.remember({ space, kind: requireMemoryKind(kind), statement });
     const publish = url
       ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId)
-      : { pushed: 0, duplicates: 0 };
+      : LOCAL_ONLY_PUBLISH_RESULT;
     console.log(JSON.stringify({
       memory,
       shared: publish,
@@ -891,16 +932,31 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "remember") {
-    const [kind, ...statementParts] = rest;
-    const asCandidate = statementParts.includes("--candidate");
-    const parts = statementParts.filter(part => part !== "--candidate");
-    if (!kind || parts.length === 0) {
-      throw new Error("Usage: spinal-plug remember <db-path> <project-dir> <kind> <text> [--candidate]");
+    const [kind, ...statementArgs] = rest;
+    const { flags, rest: parts } = takeLeadingFlags(statementArgs, { "--candidate": "boolean" });
+    const asCandidate = flags["--candidate"] === true;
+    const statement = parts.join(" ");
+    if (!kind || !statement) {
+      throw new Error("Usage: spinal-plug remember <db-path> <project-dir> <kind> [--candidate] <text>");
+    }
+    // Candidates get a deterministic identity: re-staging the same fact
+    // (a retried nudge, a rephrased duplicate) returns the existing record
+    // instead of piling up identical candidates.
+    const memoryId = asCandidate
+      ? `mem_candidate_${digest(`${space.spaceId}:${kind}:${statement}`).slice(0, 24)}`
+      : undefined;
+    if (memoryId) {
+      const existing = database.getMemory(memoryId);
+      if (existing) {
+        console.log(JSON.stringify({ ...existing, duplicate: true }, null, 2));
+        return;
+      }
     }
     const memory = service.remember({
       space,
       kind: requireMemoryKind(kind),
-      statement: parts.join(" "),
+      statement,
+      ...(memoryId ? { memoryId } : {}),
       asCandidate,
       ...(asCandidate ? { origin: "agent_inferred" } : {})
     });
