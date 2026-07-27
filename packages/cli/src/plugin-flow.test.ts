@@ -659,6 +659,116 @@ test("device.env file authenticates hook-context CLI runs without shell env", as
   }
 });
 
+test("share without an endpoint stays local-only and needs no server", async () => {
+  const home = tempDir("spinal-plug-home-");
+  const project = initGitProject("https://github.com/spinal-plug-tests/local-only.git");
+  const db = join(tempDir("spinal-plug-db-"), "local.db");
+  // No syncUrl anywhere: binding and sharing must work with zero configuration.
+  await bindViaSessionStart(db, project, { home });
+
+  interface ShareResult {
+    sync: string;
+    shared: { pushed: number; duplicates: number };
+    activeMemories: number;
+  }
+  const first = await runCliJson<ShareResult>(["share", db, project, "decision", "Use pnpm as the only package manager."], { home });
+  assert.equal(first.sync, "local-only");
+  assert.equal(first.shared.pushed, 0);
+  assert.equal(first.activeMemories, 1);
+
+  // An unset $SPINAL_PLUG_SYNC_URL expands to an empty positional argument in
+  // the plugin scripts; that must also select local-only, not a usage error.
+  const second = await runCliJson<ShareResult>(
+    ["share", db, project, "context", "The API listens on 48081.", "", "device-a"],
+    { home }
+  );
+  assert.equal(second.sync, "local-only");
+  assert.equal(second.activeMemories, 2);
+
+  const memories = await runCliJson<Array<{ statement: string }>>(["list", db, project], { home });
+  assert.equal(memories.length, 2);
+});
+
+test("empty-chamber Claude Stop nudges once per session and stops after generation", async () => {
+  const home = tempDir("spinal-plug-home-");
+  const project = initGitProject("https://github.com/spinal-plug-tests/nudge.git");
+  const db = join(tempDir("spinal-plug-db-"), "local.db");
+  await bindViaSessionStart(db, project, { home });
+
+  const stopPayload = (sessionId: string) => JSON.stringify({
+    hook_event_name: "Stop",
+    cwd: project,
+    session_id: sessionId,
+    last_assistant_message: "Done."
+  });
+
+  const first = await runCliJson<{ decision?: string; reason?: string }>(
+    ["hook-stdin", "claude-code", db],
+    { home, input: stopPayload("session-1") }
+  );
+  assert.equal(first.decision, "block");
+  assert.match(first.reason ?? "", /spinal-plug_memory_nudge/);
+  assert.match(first.reason ?? "", /--candidate/);
+
+  // The same session is never nudged twice, even while the chamber stays empty.
+  const second = await runCliJson<{ decision?: string; notices?: string[] }>(
+    ["hook-stdin", "claude-code", db],
+    { home, input: stopPayload("session-1") }
+  );
+  assert.equal(second.decision, undefined);
+  assert.ok(second.notices);
+
+  // Following the nudge stages a reviewable candidate, which ends nudging for
+  // good — even in a brand-new session.
+  await runCli(["remember", db, project, "context", "Generated from the session.", "--candidate"], { home });
+  const candidates = await runCliJson<Array<{ status: string; statement: string }>>(
+    ["candidates", db, project],
+    { home }
+  );
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].status, "candidate");
+
+  const third = await runCliJson<{ decision?: string; notices?: string[] }>(
+    ["hook-stdin", "claude-code", db],
+    { home, input: stopPayload("session-2") }
+  );
+  assert.equal(third.decision, undefined);
+  assert.ok(third.notices);
+});
+
+test("empty-chamber Codex Stop emits a systemMessage nudge instead of blocking", async () => {
+  const home = tempDir("spinal-plug-home-");
+  const project = initGitProject("https://github.com/spinal-plug-tests/nudge-codex.git");
+  const db = join(tempDir("spinal-plug-db-"), "local.db");
+  await runCli(["hook", "codex", "session.start", db, project], { home });
+
+  const payload = JSON.stringify({
+    hook_event_name: "Stop",
+    cwd: project,
+    session_id: "codex-session-1",
+    last_assistant_message: "已完成。"
+  });
+  const first = await runCliJson<{ systemMessage?: string }>(
+    ["hook-stdin", "codex", db],
+    { home, input: payload }
+  );
+  assert.match(first.systemMessage ?? "", /spinal-plug_memory_nudge/);
+
+  // A Codex Stop whose output yields a candidate never triggers the nudge.
+  const withOutput = JSON.stringify({
+    hook_event_name: "Stop",
+    cwd: project,
+    session_id: "codex-session-2",
+    last_assistant_message: "决定采用 pnpm 作为本仓库唯一的包管理器。其他改动已经完成。"
+  });
+  const second = await runCliJson<{ systemMessage?: string; notices?: string[] }>(
+    ["hook-stdin", "codex", db],
+    { home, input: withOutput }
+  );
+  assert.equal(second.systemMessage, undefined);
+  assert.match(second.notices?.[0] ?? "", /stored 1 reviewable candidate/);
+});
+
 test("apply-claude materializes a managed projection without touching user memory", async () => {
   const server = await startServer();
   try {
