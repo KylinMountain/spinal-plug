@@ -128,7 +128,7 @@ Local SQLite is a device cache and outbox. The database file is never uploaded; 
 
 ### 03 / Attach a sync endpoint
 
-With no endpoint configured, every Spinal Plug feature works fully on-device — local-first is the default, no authentication, testable out of the box. Configure an endpoint only when you need cross-device or cross-agent sync:
+With no endpoint configured, publication first tries the local development server at `127.0.0.1:8787` and silently stays in local mode when nothing answers — local-first is the default, no authentication, testable out of the box. Configure an endpoint only when you need cross-device or cross-agent sync:
 
 ```bash
 export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"

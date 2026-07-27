@@ -39,17 +39,16 @@ For “交接工作”“保存当前进度”或“让另一个 Agent 继续”
 
 ## Local-first sync
 
-With no `SPINAL_PLUG_SYNC_URL` configured, everything stays on this device: memory operations work fully, publication is skipped, and no authentication is involved. This is the default and requires zero setup.
+Endpoint resolution is three-tier: a configured `SPINAL_PLUG_SYNC_URL` wins; otherwise the local development server at `http://127.0.0.1:8787` is tried; if nothing answers (or it rejects), everything silently stays in local mode — memory operations work fully, the outbox retains events for a later retry, and no authentication is ever required. This is the default and needs zero setup.
 
-To sync between devices or agents, start the M2 development service in a separate terminal and point clients at it explicitly:
+To sync between devices or agents, start the M2 development service in a separate terminal (or export `SPINAL_PLUG_SYNC_URL` pointing at a compatible endpoint):
 
 ```bash
 spinal-plug serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787
-export SPINAL_PLUG_SYNC_URL="http://127.0.0.1:8787"
 ```
 
 Then use `/spinal-plug:share` to publish local memory, or `/spinal-plug:sync` to download central updates.
 
-Claude Code's native Auto Memory extraction is asynchronous. Spinal Plug's SessionStart, prompt, and Stop hooks opportunistically publish completed native topic files; a missing or unavailable sync endpoint never blocks Claude Code. Use `/spinal-plug:share` when an immediate upload is required.
+Claude Code's native Auto Memory extraction is asynchronous. Spinal Plug's SessionStart, prompt, PostToolUse and Stop hooks opportunistically publish completed native topic files; a missing or unavailable sync endpoint never blocks Claude Code. Use `/spinal-plug:share` when an immediate upload is required.
 
 Never expose this development service to a network. It has no authentication, ACL, or TLS yet.

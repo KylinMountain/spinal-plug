@@ -32,7 +32,8 @@ Use these defaults unless the environment overrides them:
 ```bash
 export SPINAL_PLUG_DB="${SPINAL_PLUG_DB:-$HOME/.spinal-plug/spinal-plug.db}"
 export SPINAL_PLUG_DEVICE_ID="${SPINAL_PLUG_DEVICE_ID:-device-local}"
-# Optional. Unset means local-only operation: no endpoint, no authentication,
+# Optional. Unset means: try the local sync server at 127.0.0.1:8787, and if
+# nothing answers there, silently stay in local mode — no authentication,
 # everything works and is testable offline.
 # export SPINAL_PLUG_SYNC_URL="http://127.0.0.1:8787"
 ```
@@ -88,10 +89,10 @@ Report what was shared and why it is durable. The selection step is internal beh
 
 ## Sync
 
-For `sync`, "同步记忆", or "下载记忆", first check that a sync endpoint is configured. If `SPINAL_PLUG_SYNC_URL` is unset, stop and say so: synchronization is opt-in and the default is local-only — to enable it, start the development server (`spinal-plug serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787` in a separate terminal) and export `SPINAL_PLUG_SYNC_URL="http://127.0.0.1:8787"`. With an endpoint configured, fetch and preview first:
+For `sync`, "同步记忆", or "下载记忆", fetch and preview first (with no endpoint configured this targets the local development server at 127.0.0.1:8787 — start it in a separate terminal with `spinal-plug serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787`; if it is not running, say so instead of retrying):
 
 ```bash
-spinal-plug fetch "$SPINAL_PLUG_DB" . "$SPINAL_PLUG_SYNC_URL" "$SPINAL_PLUG_DEVICE_ID"
+spinal-plug fetch "$SPINAL_PLUG_DB" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}" "$SPINAL_PLUG_DEVICE_ID"
 spinal-plug preview "$SPINAL_PLUG_DB" .
 ```
 

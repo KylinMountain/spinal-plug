@@ -65,8 +65,9 @@ function printHelp(): void {
   console.log(`spinal-plug
 
 Spinal Plug is the project command and lifecycle runtime.
-Local-first by default: with no SPINAL_PLUG_SYNC_URL configured, every
-memory operation works on-device only — no endpoint, no authentication.
+Endpoint resolution is three-tier: SPINAL_PLUG_SYNC_URL if set, otherwise
+the local sync server (127.0.0.1:8787), otherwise silent local mode —
+the outbox retains everything for a later retry, no authentication needed.
 
 Binding:
   connect <db-path> <project-dir>                  Create a project or archive binding for this directory
@@ -80,8 +81,9 @@ Memory:
   share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>
                                                      Share a durable memory; publishes when --url or
                                                      SPINAL_PLUG_SYNC_URL is set, local-only otherwise
-  share-claude <db-path> <project-dir> <url> [device-id]
-                                                     Share current Claude Code project memory (empty url = local-only)
+  share-claude <db-path> <project-dir> [url] [device-id]
+                                                     Share current Claude Code project memory
+                                                     (default: local sync server, local mode if unreachable)
   candidates <db-path> <project-dir>               List reviewable inferred memory candidates
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
   update <db-path> <project-dir> <memory-id> <text> Update active memory
@@ -250,24 +252,51 @@ function createWorkspaceDiscoveryContext(projectDir: string): string {
   ].join("\n");
 }
 
+const DEFAULT_LOCAL_SYNC_URL = "http://127.0.0.1:8787";
+
 /**
- * No endpoint configured means local-only operation: publish/fetch are
- * skipped entirely instead of defaulting to a hardcoded URL. A local sync
- * server is opt-in via SPINAL_PLUG_SYNC_URL, so a fresh install works — and
- * is testable — with zero configuration and no authentication.
+ * Three-tier endpoint resolution: an explicit SPINAL_PLUG_SYNC_URL wins;
+ * otherwise the local development server is tried; if nothing answers there
+ * either, publication degrades silently to local mode — the WAL/outbox
+ * retains every event for a later retry, and no authentication is ever
+ * required for purely local use. `explicit` marks user-chosen endpoints,
+ * whose failures are surfaced instead of silently degraded.
  */
-function resolveSyncEndpoint(): string | null {
-  return process.env.SPINAL_PLUG_SYNC_URL?.trim() || null;
+function resolveSyncEndpoint(): { url: string; explicit: boolean } {
+  const env = process.env.SPINAL_PLUG_SYNC_URL?.trim();
+  return env
+    ? { url: env, explicit: true }
+    : { url: DEFAULT_LOCAL_SYNC_URL, explicit: false };
 }
 
 type PublishResult = Awaited<ReturnType<SpinalPlugSyncClient["publish"]>>;
 
 /**
- * Placeholder reported when no endpoint is configured. Typed against
- * publish()'s real return so a future field addition fails to compile here
- * instead of drifting at each call site.
+ * Placeholder reported when publication falls back to local mode. Typed
+ * against publish()'s real return so a future field addition fails to
+ * compile here instead of drifting at each call site.
  */
 const LOCAL_ONLY_PUBLISH_RESULT: PublishResult = { pushed: 0, duplicates: 0 };
+
+/**
+ * Publish if the endpoint answers. Failures degrade to local mode — unless
+ * `strict` (an endpoint the user explicitly chose), where they surface.
+ */
+async function tryPublish(
+  database: SpinalPlugDatabase,
+  spaceId: string,
+  deviceId: string,
+  url: string,
+  strict = false
+): Promise<{ result: PublishResult; mode: "endpoint" | "local-fallback" }> {
+  try {
+    const result = await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(spaceId, deviceId);
+    return { result, mode: "endpoint" };
+  } catch (error) {
+    if (strict) throw error;
+    return { result: LOCAL_ONLY_PUBLISH_RESULT, mode: "local-fallback" };
+  }
+}
 
 interface ClaudeAutoMemoryShareResult {
   source: "claude-code-auto-memory";
@@ -277,6 +306,7 @@ interface ClaudeAutoMemoryShareResult {
   unchanged: number;
   skippedSecretFiles: number;
   shared: { pushed: number; duplicates: number };
+  sync: "endpoint" | "local-fallback";
 }
 
 /** Import native Claude topic files before publishing; the SQLite cache itself never leaves the device. */
@@ -285,8 +315,9 @@ async function shareClaudeAutoMemory(
   service: ProjectMemoryService,
   space: import("@spinal-plug/protocol").ProjectSpace,
   projectPath: string,
-  url: string | null,
-  deviceId: string
+  url: string,
+  deviceId: string,
+  strict = false
 ): Promise<ClaudeAutoMemoryShareResult> {
   const imported = new ClaudeAutoMemoryImporter().import(space, projectPath);
   let created = 0;
@@ -329,11 +360,9 @@ async function shareClaudeAutoMemory(
       unchanged += 1;
     }
   }
-  // Without a configured endpoint the import still lands locally; publication
-  // is skipped rather than attempted against a hardcoded address.
-  const shared = url
-    ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId)
-    : LOCAL_ONLY_PUBLISH_RESULT;
+  // Publication rides the three-tier endpoint resolution: an unreachable or
+  // refusing endpoint degrades to local mode, never an error.
+  const { result: shared, mode } = await tryPublish(database, space.spaceId, deviceId, url, strict);
   return {
     source: "claude-code-auto-memory",
     discovered: imported.candidates.length,
@@ -341,7 +370,8 @@ async function shareClaudeAutoMemory(
     updated,
     unchanged,
     skippedSecretFiles: imported.skippedSecretFiles,
-    shared
+    shared,
+    sync: mode
   };
 }
 
@@ -440,7 +470,7 @@ async function executeHook(
           service,
           space,
           payload.cwd,
-          resolveSyncEndpoint(),
+          resolveSyncEndpoint().url,
           process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
         );
       } catch {
@@ -493,7 +523,7 @@ async function executeHook(
           service,
           space,
           payload.cwd,
-          resolveSyncEndpoint(),
+          resolveSyncEndpoint().url,
           process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
         );
       } catch {
@@ -521,7 +551,7 @@ async function executeHook(
             service,
             space,
             payload.cwd,
-            resolveSyncEndpoint(),
+            resolveSyncEndpoint().url,
             process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
           );
         } catch {
@@ -540,7 +570,7 @@ async function executeHook(
         service,
         space,
         payload.cwd,
-        resolveSyncEndpoint(),
+        resolveSyncEndpoint().url,
         process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
       );
     } catch {
@@ -575,18 +605,15 @@ async function executeHook(
     candidatesCreated = drainCodexCandidateJobs(database, service, space);
   }
   if (host === "codex" && payload.event === "stop") {
-    const endpoint = resolveSyncEndpoint();
-    if (endpoint) {
-      try {
-        // Held candidate events are intentionally excluded; only confirmed
-        // memory and work-state events are eligible for automatic publication.
-        await new SpinalPlugSyncClient(
-          database,
-          createSyncTransport(endpoint)
-        ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
-      } catch {
-        // The local WAL/outbox retries on a later lifecycle boundary.
-      }
+    try {
+      // Held candidate events are intentionally excluded; only confirmed
+      // memory and work-state events are eligible for automatic publication.
+      await new SpinalPlugSyncClient(
+        database,
+        createSyncTransport(resolveSyncEndpoint().url)
+      ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
+    } catch {
+      // The local WAL/outbox retries on a later lifecycle boundary.
     }
   }
   // Empty-chamber nudge: a project with neither active memories nor pending
@@ -955,10 +982,19 @@ async function main(): Promise<void> {
   if (command === "share-claude") {
     const [url, deviceId] = rest;
     if (url === undefined) {
-      throw new Error("Usage: spinal-plug share-claude <db-path> <project-dir> <url> [device-id]  (empty url = local-only)");
+      throw new Error("Usage: spinal-plug share-claude <db-path> <project-dir> [url] [device-id]  (default: local sync server, local mode if unreachable)");
     }
+    const endpoint = url ? { url, explicit: true } : resolveSyncEndpoint();
     console.log(JSON.stringify(
-      await shareClaudeAutoMemory(database, service, space, projectPath, url || null, deviceId || "device-local"),
+      await shareClaudeAutoMemory(
+        database,
+        service,
+        space,
+        projectPath,
+        endpoint.url,
+        deviceId || "device-local",
+        endpoint.explicit
+      ),
       null,
       2
     ));
@@ -976,24 +1012,24 @@ async function main(): Promise<void> {
     const semanticKey = typeof flags["--key"] === "string"
       ? normalizeSemanticKey(flags["--key"])
       : undefined;
-    const url = flags["--url"] !== undefined
-      ? (flags["--url"] as string).trim() || null
+    // An empty --url (e.g. an unset $SPINAL_PLUG_SYNC_URL in plugin scripts)
+    // falls through to the same three-tier resolution as no flag at all.
+    const endpoint = typeof flags["--url"] === "string" && (flags["--url"] as string).trim()
+      ? { url: (flags["--url"] as string).trim(), explicit: true }
       : resolveSyncEndpoint();
     const deviceId = typeof flags["--device-id"] === "string" && flags["--device-id"]
       ? flags["--device-id"] as string
       : process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local";
     const statement = statementParts.join(" ");
     if (!kind || !statement) {
-      throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] <text>");
+      throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>");
     }
     const memory = service.remember({ space, kind: requireMemoryKind(kind), statement, ...(semanticKey ? { semanticKey } : {}) });
-    const publish = url
-      ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId)
-      : LOCAL_ONLY_PUBLISH_RESULT;
+    const { result: publish, mode } = await tryPublish(database, space.spaceId, deviceId, endpoint.url, endpoint.explicit);
     console.log(JSON.stringify({
       memory,
       shared: publish,
-      sync: url ? "endpoint" : "local-only",
+      sync: mode,
       activeMemories: database.listActiveMemories(space.spaceId).length
     }, null, 2));
     return;
@@ -1053,18 +1089,15 @@ async function main(): Promise<void> {
       host: "spinal-plug",
       sessionId: "candidate-review"
     });
-    let published: unknown = undefined;
-    if (process.env.SPINAL_PLUG_SYNC_URL) {
-      try {
-        published = await new SpinalPlugSyncClient(
-          database,
-          createSyncTransport(process.env.SPINAL_PLUG_SYNC_URL)
-        ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
-      } catch {
-        // The candidate and promotion events remain in the durable outbox.
-      }
-    }
-    console.log(JSON.stringify({ memory, published, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
+    const endpoint = resolveSyncEndpoint();
+    const { result: published, mode } = await tryPublish(
+      database,
+      space.spaceId,
+      process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local",
+      endpoint.url,
+      endpoint.explicit
+    );
+    console.log(JSON.stringify({ memory, published, sync: mode, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
     return;
   }
   if (command === "checkpoint") {

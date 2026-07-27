@@ -57,7 +57,7 @@ Hook 显示简短的加载状态，`/spinal-plug:boot` 则提供固定的 `Memor
 ~/.spinal-plug/spinal-plug.db
 ```
 
-默认**本地优先**:不配置 `SPINAL_PLUG_SYNC_URL` 时,所有记忆操作都在本机完成——不需要端点、没有认证,开箱即可测试。需要跨设备/跨 Agent 同步时才显式启动开发中心并指向它：
+默认**本地优先**：不配置 `SPINAL_PLUG_SYNC_URL` 时，发布会先尝试本机开发中心 `http://127.0.0.1:8787`，无人应答（或被拒绝）则静默留在本地模式——所有记忆操作照常可用，事件留在 Outbox 待后续补发，全程无需认证。需要跨设备/跨 Agent 同步时才显式启动开发中心或指向兼容端点：
 
 ```bash
 spinal-plug serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787

@@ -35,7 +35,7 @@ Spinal Plug 映射：
 
 ## 对 M0/M1 的具体约束
 
-1. Hook 内的一切写入都先落 `local-node` 的 SQLite WAL / Outbox；网络发布只允许以 best-effort 方式在同一进程内顺带尝试（失败静默、下一边界幂等重试），且绝不阻塞宿主。未配置 `SPINAL_PLUG_SYNC_URL` 时完全不触网。
+1. Hook 内的一切写入都先落 `local-node` 的 SQLite WAL / Outbox；网络发布只允许以 best-effort 方式在同一进程内顺带尝试（失败静默、下一边界幂等重试），且绝不阻塞宿主。未配置 `SPINAL_PLUG_SYNC_URL` 时探测本机开发中心 `127.0.0.1:8787`，无人应答即静默降级为本地模式。
 2. `SessionStart` 不等待网络；先加载本地稳定状态，远端更新进入后续 fetch / preview / apply 流程。
 3. 重试可恢复错误，但对认证、权限、配置等永久错误进行退避或抑制，并报告可操作的状态。
 4. 上传前预留 Secret Scanner 边界；M1 可以先实现接口与拒绝策略，M2 再接入完整扫描器。
