@@ -1105,7 +1105,10 @@ async function main(): Promise<void> {
   }
   if (command === "boot") {
     const memories = service.list(space);
-    const disputed = memories.filter(memory => memory.status === "disputed" || memory.disputeId).length;
+    // Disputed records carry status "disputed", which the active-only list
+    // excludes — count them from the full view instead.
+    const disputed = service.list(space, true)
+      .filter(memory => memory.status === "disputed").length;
     const pending = database.listPendingOutboxForSpace(space.spaceId).length;
     const fidelity = memories.length === 0 ? "BASELINE ONLY" : `${memories.length} DURABLE MEMORY REFERENCES`;
     const lines = [
