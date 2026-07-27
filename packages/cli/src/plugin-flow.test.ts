@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,6 +63,25 @@ function initGitProject(remote: string): string {
 
 function sanitizePath(value: string): string {
   return value.replace(/[^a-zA-Z0-9]/g, "-");
+}
+
+/**
+ * Tests that never start a server pin the endpoint to a guaranteed-closed
+ * port: the default local-server probe (127.0.0.1:8787) would otherwise hit
+ * whatever the developer machine actually runs there.
+ */
+const CLOSED_ENDPOINT = { SPINAL_PLUG_SYNC_URL: "http://127.0.0.1:1" };
+
+/** The default-chain tests below need the real 8787 free; skip when a developer machine has something there. */
+function portBusy(port: number): Promise<boolean> {
+  return new Promise(resolvePort => {
+    const socket = connect(port, "127.0.0.1");
+    socket.once("connect", () => {
+      socket.end();
+      resolvePort(true);
+    });
+    socket.once("error", () => resolvePort(false));
+  });
 }
 
 function claudeMemoryDir(home: string, projectDir: string): string {
@@ -663,11 +683,16 @@ test("device.env file authenticates hook-context CLI runs without shell env", as
   }
 });
 
-test("share without an endpoint stays local-only and needs no server", async () => {
+test("share falls back to local mode when the endpoint is unreachable", async t => {
+  if (await portBusy(8787)) {
+    t.skip("default local sync port 8787 is in use on this machine");
+    return;
+  }
   const home = tempDir("spinal-plug-home-");
   const project = initGitProject("https://github.com/spinal-plug-tests/local-only.git");
   const db = join(tempDir("spinal-plug-db-"), "local.db");
-  // No syncUrl anywhere: binding and sharing must work with zero configuration.
+  // No SPINAL_PLUG_SYNC_URL anywhere: the default chain probes the local
+  // sync server, finds nothing, and must degrade to local mode silently.
   await bindViaSessionStart(db, project, { home });
 
   interface ShareResult {
@@ -675,25 +700,65 @@ test("share without an endpoint stays local-only and needs no server", async () 
     shared: { pushed: number; duplicates: number };
     activeMemories: number;
   }
-  const first = await runCliJson<ShareResult>(["share", db, project, "decision", "Use pnpm as the only package manager."], { home });
-  assert.equal(first.sync, "local-only");
+  const first = await runCliJson<ShareResult>(
+    ["share", db, project, "decision", "Use pnpm as the only package manager."],
+    { home }
+  );
+  assert.equal(first.sync, "local-fallback");
   assert.equal(first.shared.pushed, 0);
   assert.equal(first.activeMemories, 1);
 
   // An unset $SPINAL_PLUG_SYNC_URL passed as --url "" in the plugin scripts
-  // must also select local-only, not a usage error.
+  // falls through to the same resolution.
   const second = await runCliJson<ShareResult>(
     ["share", db, project, "context", "--url", "", "--device-id", "device-a", "The API listens on 48081."],
     { home }
   );
-  assert.equal(second.sync, "local-only");
+  assert.equal(second.sync, "local-fallback");
   assert.equal(second.activeMemories, 2);
 
   const memories = await runCliJson<Array<{ statement: string }>>(["list", db, project], { home });
   assert.equal(memories.length, 2);
 });
 
-test("share keeps statements verbatim and only publishes to --url", async () => {
+test("an unset endpoint defaults to the local sync server when one is running", async t => {
+  if (await portBusy(8787)) {
+    t.skip("default local sync port 8787 is in use on this machine");
+    return;
+  }
+  const directory = tempDir("spinal-plug-server-");
+  const sync = new PersistentSyncServer(join(directory, "central.db"));
+  const http = createSyncHttpServer(sync);
+  await http.listen(8787, "127.0.0.1");
+  try {
+    const home = tempDir("spinal-plug-home-");
+    const project = initGitProject("https://github.com/spinal-plug-tests/default-local-server.git");
+    const db = join(tempDir("spinal-plug-db-"), "local.db");
+    await bindViaSessionStart(db, project, { home });
+
+    const shared = await runCliJson<{ sync: string; shared: { pushed: number } }>(
+      ["share", db, project, "decision", "Zero-config local sync works."],
+      { home }
+    );
+    assert.equal(shared.sync, "endpoint");
+    assert.equal(shared.shared.pushed, 1);
+    const response = await fetch(
+      `http://127.0.0.1:8787/v1/spaces/${encodeURIComponent(spaceIdOf(project))}/snapshot`
+    );
+    assert.ok(response.ok);
+    const serverSnapshot = await response.json() as { memories: Array<{ statement: string }> };
+    assert.deepEqual(serverSnapshot.memories.map(memory => memory.statement), ["Zero-config local sync works."]);
+  } finally {
+    await http.close();
+    sync.close();
+  }
+});
+
+test("share keeps statements verbatim and only publishes to --url", async t => {
+  if (await portBusy(8787)) {
+    t.skip("default local sync port 8787 is in use on this machine");
+    return;
+  }
   const server = await startServer();
   try {
     const home = tempDir("spinal-plug-home-");
@@ -702,14 +767,15 @@ test("share keeps statements verbatim and only publishes to --url", async () => 
     await bindViaSessionStart(db, project, { home });
 
     // A statement ending in "URL + word" must not be reparsed as endpoint
-    // arguments: the text stays intact and nothing leaves the device.
+    // arguments: the text stays intact, and the unanswered default local
+    // server degrades to local mode instead of receiving anything.
     const statement = "See the runbook https://example.com/runbook now";
     const local = await runCliJson<{ memory: { statement: string }; sync: string }>(
       ["share", db, project, "reference", "--url", "", statement],
       { home }
     );
     assert.equal(local.memory.statement, statement);
-    assert.equal(local.sync, "local-only");
+    assert.equal(local.sync, "local-fallback");
 
     // --url alone (no --device-id) is a valid publish form.
     const published = await runCliJson<{ memory: { statement: string }; sync: string; shared: { pushed: number } }>(
@@ -734,7 +800,7 @@ test("remember --candidate dedupes identical facts and preserves literal flag te
   const home = tempDir("spinal-plug-home-");
   const project = initGitProject("https://github.com/spinal-plug-tests/candidate-flags.git");
   const db = join(tempDir("spinal-plug-db-"), "local.db");
-  await bindViaSessionStart(db, project, { home });
+  await bindViaSessionStart(db, project, { home, extraEnv: CLOSED_ENDPOINT });
 
   // Re-staging the same candidate fact returns the existing record.
   await runCli(["remember", db, project, "context", "--candidate", "Generated from the session."], { home });
@@ -757,52 +823,57 @@ test("remember --candidate dedupes identical facts and preserves literal flag te
 });
 
 test("keys lists the registry and share/remember classify with --key", async () => {
-  const home = tempDir("spinal-plug-home-");
-  const project = initGitProject("https://github.com/spinal-plug-tests/semantic-keys.git");
-  const db = join(tempDir("spinal-plug-db-"), "local.db");
-  await bindViaSessionStart(db, project, { home });
+  const server = await startServer();
+  try {
+    const home = tempDir("spinal-plug-home-");
+    const project = initGitProject("https://github.com/spinal-plug-tests/semantic-keys.git");
+    const db = join(tempDir("spinal-plug-db-"), "local.db");
+    await bindViaSessionStart(db, project, { home, syncUrl: server.url });
 
-  // Keys are normalized mechanically: case, spaces, and underscores collapse.
-  const shared = await runCliJson<{ memory: { semanticKey?: string } }>(
-    ["share", db, project, "decision", "--key", "Package Manager", "Use pnpm."],
-    { home }
-  );
-  assert.equal(shared.memory.semanticKey, "package-manager");
-  await runCli(
-    ["share", db, project, "context", "--key", "package-manager", "Lockfile is pnpm-lock.yaml."],
-    { home }
-  );
+    // Keys are normalized mechanically: case, spaces, and underscores collapse.
+    const shared = await runCliJson<{ memory: { semanticKey?: string } }>(
+      ["share", db, project, "decision", "--key", "Package Manager", "Use pnpm."],
+      { home, syncUrl: server.url }
+    );
+    assert.equal(shared.memory.semanticKey, "package-manager");
+    await runCli(
+      ["share", db, project, "context", "--key", "package-manager", "Lockfile is pnpm-lock.yaml."],
+      { home, syncUrl: server.url }
+    );
 
-  // Candidates can carry keys too, including namespaced ones.
-  const candidate = await runCliJson<{ semanticKey?: string; status: string }>(
-    ["remember", db, project, "context", "--candidate", "--key", "deploy:runbook", "Deploy via pnpm start."],
-    { home }
-  );
-  assert.equal(candidate.semanticKey, "deploy:runbook");
-  assert.equal(candidate.status, "candidate");
+    // Candidates can carry keys too, including namespaced ones.
+    const candidate = await runCliJson<{ semanticKey?: string; status: string }>(
+      ["remember", db, project, "context", "--candidate", "--key", "deploy:runbook", "Deploy via pnpm start."],
+      { home }
+    );
+    assert.equal(candidate.semanticKey, "deploy:runbook");
+    assert.equal(candidate.status, "candidate");
 
-  // The registry lists active memories only, grouped by key.
-  const keys = await runCliJson<Array<{ semanticKey: string; memoryCount: number; sample: string }>>(
-    ["keys", db, project],
-    { home }
-  );
-  assert.equal(keys.length, 1);
-  assert.equal(keys[0].semanticKey, "package-manager");
-  assert.equal(keys[0].memoryCount, 2);
-  assert.ok(keys[0].sample.length > 0);
+    // The registry lists active memories only, grouped by key.
+    const keys = await runCliJson<Array<{ semanticKey: string; memoryCount: number; sample: string }>>(
+      ["keys", db, project],
+      { home }
+    );
+    assert.equal(keys.length, 1);
+    assert.equal(keys[0].semanticKey, "package-manager");
+    assert.equal(keys[0].memoryCount, 2);
+    assert.ok(keys[0].sample.length > 0);
 
-  // A key that normalizes to nothing is rejected, not silently mangled.
-  await assert.rejects(
-    runCli(["share", db, project, "context", "--key", "!!!", "No key survives."], { home }),
-    /Invalid semantic key/
-  );
+    // A key that normalizes to nothing is rejected, not silently mangled.
+    await assert.rejects(
+      runCli(["share", db, project, "context", "--key", "!!!", "No key survives."], { home, syncUrl: server.url }),
+      /Invalid semantic key/
+    );
+  } finally {
+    await server.close();
+  }
 });
 
 test("empty-chamber Claude Stop nudges once per session and stops after generation", async () => {
   const home = tempDir("spinal-plug-home-");
   const project = initGitProject("https://github.com/spinal-plug-tests/nudge.git");
   const db = join(tempDir("spinal-plug-db-"), "local.db");
-  await bindViaSessionStart(db, project, { home });
+  await bindViaSessionStart(db, project, { home, extraEnv: CLOSED_ENDPOINT });
 
   const stopPayload = (sessionId: string) => JSON.stringify({
     hook_event_name: "Stop",
@@ -849,7 +920,7 @@ test("empty-chamber Codex Stop emits a systemMessage nudge instead of blocking",
   const home = tempDir("spinal-plug-home-");
   const project = initGitProject("https://github.com/spinal-plug-tests/nudge-codex.git");
   const db = join(tempDir("spinal-plug-db-"), "local.db");
-  await runCli(["hook", "codex", "session.start", db, project], { home });
+  await runCli(["hook", "codex", "session.start", db, project], { home, extraEnv: CLOSED_ENDPOINT });
 
   const payload = JSON.stringify({
     hook_event_name: "Stop",
