@@ -24,7 +24,7 @@ spinal-plug capsule "$HOME/.spinal-plug/spinal-plug.db" . '{"mindId":"mind_...",
 spinal-plug incarnate "$HOME/.spinal-plug/spinal-plug.db" . '{"capsuleId":"capsule_...","host":"claude-code","deviceId":"dev_linux","sessionId":"session_..."}'
 ```
 
-使用 `spinal-plug runtime <db> <project-dir>` 查看当前 Space 的已物化运行时实体。正常 `sync`、`fetch` 与 `publish` 会同步它们；中心记忆编译器仍只编译 `memory.*` 事件。
+使用 `spinal-plug runtime <db> <project-dir>` 查看当前 Space 的已物化运行时实体。`share`、`promote` 与 `fetch` 会经 WAL/Outbox 同步它们；中心记忆编译器仍只编译 `memory.*` 事件。
 
 要在 Claude Code 或 Codex 的下次 `SessionStart` 自动加载某个 Capsule，并为该会话创建 Incarnation，设置：
 
@@ -39,3 +39,4 @@ export SPINAL_PLUG_CAPSULE_ID="capsule_..."
 - Mind Core 目前以一个 Project Space 为作用域；跨项目的个人 Mind Core 尚未启用。
 - Task Graph 保留完整事件历史，但并发任务分支不会自动做语义合并。
 - 当前 Capsule 选择通过显式 `SPINAL_PLUG_CAPSULE_ID` 环境变量完成；控制台中的可视化选择器和每个项目的持久默认 Capsule 尚未实现。
+- Incarnation 的 `hibernated` / `retired` 状态目前只有运行时服务 API(`setIncarnationStatus`)，尚未暴露 CLI 命令；SessionStart 创建的 Incarnation 始终保持 `active`。

@@ -140,7 +140,9 @@ test("explicit resolution closes an existing conflict", () => {
   ));
 
   assert.equal(compilation.active[0].memoryId, "mem_nats");
+  assert.equal(compilation.active[0].disputeId, undefined, "resolved winner must not keep a stale dispute marker");
   assert.equal(compilation.superseded[0].memoryId, "mem_kafka");
+  assert.equal(compilation.superseded[0].disputeId, undefined);
   assert.equal(compilation.disputes.length, 0);
 });
 
