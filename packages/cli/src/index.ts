@@ -1105,6 +1105,10 @@ async function main(): Promise<void> {
   }
   if (command === "boot") {
     const memories = service.list(space);
+    // Disputed records carry status "disputed", which the active-only list
+    // excludes — count them from the full view instead.
+    const disputed = service.list(space, true)
+      .filter(memory => memory.status === "disputed").length;
     const pending = database.listPendingOutboxForSpace(space.spaceId).length;
     const fidelity = memories.length === 0 ? "BASELINE ONLY" : `${memories.length} DURABLE MEMORY REFERENCES`;
     const lines = [
@@ -1114,6 +1118,9 @@ async function main(): Promise<void> {
       "[03/05] Mind Capsule ............. PROJECT-SCOPE CONTEXT ENGAGED",
       `[04/05] Memory Fidelity ........ ${fidelity}`,
       `[05/05] Neural Uplink .......... ${pending === 0 ? "STANDBY" : `${pending} SIGNAL${pending === 1 ? "" : "S"} PENDING`}`,
+      ...(disputed > 0
+        ? [`WARNING: MEMORY FIDELITY CONFLICT DETECTED — ${disputed} DISPUTED REFERENCE${disputed === 1 ? "" : "S"} AWAITING RESOLUTION`]
+        : []),
       "STATUS: SPINAL PLUG LOCKED // MEMORY CHANNEL ONLINE"
     ];
     console.log(lines.join("\n"));
