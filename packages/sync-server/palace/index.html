@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>SPINAL-PLUG // Memory Palace</title>
+  <style>
+    :root {
+      --ink:#0b0906; --panel:rgba(24,19,14,.88); --line:#4a3c2e;
+      --paper:#f0e2c8; --muted:#a89377; --gold:#ffd9a0; --amber:#ffb84d;
+      --red:#ff5544; --lime:#c6ef6a;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; height:100vh; overflow:hidden; color:var(--paper); background:var(--ink); font-family:"Noto Sans SC",system-ui,sans-serif; }
+    button,input,select { font:inherit; }
+    #view { position:fixed; inset:0; }
+    #view canvas { display:block; }
+
+    .hud { position:fixed; z-index:10; }
+    #status { top:16px; left:18px; display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--panel); border:1px solid var(--line); font:11px/1 ui-monospace,monospace; letter-spacing:.08em; color:var(--muted); }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--amber); box-shadow:0 0 0 4px rgba(255,184,77,.12); }
+    .dot.ok { background:var(--lime); box-shadow:0 0 0 4px rgba(198,239,106,.12); }
+    .dot.bad { background:var(--red); box-shadow:0 0 0 4px rgba(255,85,68,.14); }
+
+    #space-bar { top:16px; right:18px; display:flex; gap:8px; align-items:center; }
+    #space-select { padding:8px 10px; color:var(--paper); background:var(--panel); border:1px solid var(--line); outline:none; }
+    #console-link { padding:8px 10px; color:var(--muted); background:var(--panel); border:1px solid var(--line); text-decoration:none; font:11px/1 ui-monospace,monospace; }
+    #console-link:hover { color:var(--gold); border-color:var(--gold); }
+
+    #caption { left:50%; bottom:42px; transform:translateX(-50%) translateY(8px); max-width:min(640px,86vw); padding:10px 18px; text-align:center; background:var(--panel); border:1px solid var(--line); color:var(--gold); font-size:14px; letter-spacing:.04em; opacity:0; transition:opacity .6s ease, transform .6s ease; pointer-events:none; }
+    #caption.visible { opacity:1; transform:translateX(-50%) translateY(0); }
+
+    #resume-tour { right:18px; bottom:36px; padding:10px 16px; color:var(--ink); background:var(--gold); border:1px solid var(--gold); cursor:pointer; font:12px/1 ui-monospace,monospace; letter-spacing:.06em; }
+    #resume-tour:hover { box-shadow:3px 3px 0 rgba(255,217,160,.35); transform:translate(-1px,-1px); }
+
+    #detail { top:0; right:0; bottom:0; width:min(380px,92vw); padding:22px; overflow:auto; background:var(--panel); border-left:1px solid var(--line); transform:translateX(102%); transition:transform .45s cubic-bezier(.22,1,.36,1); }
+    #detail.open { transform:translateX(0); }
+    .detail-close { position:absolute; top:12px; right:14px; width:30px; height:30px; color:var(--muted); background:transparent; border:1px solid var(--line); cursor:pointer; font-size:15px; }
+    .detail-close:hover { color:var(--gold); border-color:var(--gold); }
+    .detail-tag { display:inline-block; margin-bottom:12px; padding:4px 8px; border:1px solid var(--gold); color:var(--gold); font:10px/1 ui-monospace,monospace; text-transform:uppercase; letter-spacing:.12em; }
+    .detail-tag.candidate { color:var(--amber); border-color:var(--amber); }
+    .detail-tag.disputed { color:var(--red); border-color:var(--red); }
+    .detail-tag.deleted, .detail-tag.superseded { color:var(--muted); border-color:var(--muted); }
+    #detail h3 { margin:0 34px 12px 0; font-size:20px; line-height:1.35; }
+    #detail h4 { margin:18px 0 6px; color:var(--muted); font:500 11px/1 ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; }
+    #detail p, #detail li { color:#d8cbb2; font-size:13px; line-height:1.75; }
+    #detail ul { margin:0; padding-left:18px; }
+    .detail-statement { border-left:3px solid var(--gold); padding-left:12px; }
+    .detail-meta { display:flex; gap:10px; margin-top:8px; color:var(--paper); font:11px/1.5 ui-monospace,monospace; }
+    .detail-meta span { min-width:74px; color:var(--muted); }
+
+    #fade { inset:0; background:#000; opacity:0; transition:opacity .5s ease; pointer-events:none; z-index:30; }
+    #fade.visible { opacity:1; pointer-events:auto; }
+
+    .overlay { position:fixed; inset:0; z-index:40; display:grid; place-items:center; background:rgba(8,6,4,.82); backdrop-filter:blur(3px); }
+    .card { width:min(460px,92vw); padding:26px; background:var(--panel); border:1px solid var(--line); }
+    .card h1 { margin:0 0 4px; font-size:22px; letter-spacing:-.02em; color:var(--gold); }
+    .card .sub { margin:0 0 18px; color:var(--muted); font:11px/1.5 ui-monospace,monospace; letter-spacing:.08em; }
+    .card label { display:block; color:var(--muted); font:11px/1.6 ui-monospace,monospace; }
+    .card input { width:100%; margin-top:6px; padding:11px 12px; color:var(--paper); background:#15100b; border:1px solid var(--line); outline:none; }
+    .card input:focus { border-color:var(--gold); }
+    .card button { margin-top:14px; width:100%; padding:12px; color:var(--ink); background:var(--gold); border:1px solid var(--gold); cursor:pointer; font:12px/1 ui-monospace,monospace; letter-spacing:.08em; }
+    .card a { color:var(--gold); }
+    #error { margin-top:14px; padding:10px 12px; color:#ffb1a4; border:1px solid #6e3a30; background:rgba(110,58,48,.25); font:11px/1.6 ui-monospace,monospace; }
+
+    .hidden { display:none !important; }
+  </style>
+  <script type="importmap">{ "imports": { "three": "/palace/vendor/three.module.js" } }</script>
+</head>
+<body>
+  <div id="view"></div>
+
+  <div id="status" class="hud"><i id="status-dot" class="dot"></i><span id="status-text">AWAITING SPINAL LINK</span></div>
+  <div id="space-bar" class="hud">
+    <select id="space-select" class="hidden" aria-label="Project Space"></select>
+    <a id="console-link" href="/console">CONSOLE</a>
+  </div>
+  <div id="caption" class="hud"></div>
+  <button id="resume-tour" type="button" class="hud hidden">继续巡展</button>
+  <aside id="detail" class="hud"></aside>
+  <div id="fade" class="hud"></div>
+
+  <div id="auth-overlay" class="overlay">
+    <form id="auth-form" class="card">
+      <h1>MEMORY PALACE</h1>
+      <p class="sub">SPINAL-PLUG // 3D MEMORY GALLERY</p>
+      <label>脊椎栓设备令牌<input id="token" type="password" autocomplete="off" placeholder="mpd_..." /></label>
+      <button type="submit">锁定神经链路</button>
+      <div id="error" class="hidden"></div>
+    </form>
+  </div>
+
+  <div id="webgl-fallback" class="overlay hidden">
+    <div class="card">
+      <h1>无法点亮展厅</h1>
+      <p class="sub">WEBGL UNAVAILABLE</p>
+      <p>当前浏览器或设备不支持 WebGL，3D 记忆宫殿无法渲染。请改用 <a href="/console">/console</a> 查看项目记忆。</p>
+    </div>
+  </div>
+
+  <script type="module" src="/palace/palace.js"></script>
+</body>
+</html>

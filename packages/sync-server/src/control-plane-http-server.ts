@@ -1,7 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
+import { createReadStream, realpathSync, statSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer, type ServerOptions as TlsServerOptions } from "node:https";
 import type { AddressInfo } from "node:net";
+import { dirname, extname, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ProjectSpace, SpaceRole } from "@spinal-plug/protocol";
 import { ControlPlaneError, SpinalPlugControlPlane } from "./control-plane.js";
 import { renderControlPlaneConsole } from "./console-html.js";
@@ -51,6 +54,120 @@ function secretsEqual(received: string, expected: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
+const PALACE_CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".woff2": "font/woff2",
+  ".ico": "image/x-icon",
+  ".map": "application/json; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8"
+};
+
+/**
+ * The 3D Memory Palace lives in plain static files next to this package's
+ * sources. The compiled server runs from dist/, so the palace directory is
+ * one level up from this module in both cases. It is resolved when the HTTP
+ * server is created (not at import time) and realpath'd so containment checks
+ * compare canonical paths; nothing is served when the directory is absent.
+ */
+function resolvePalaceDir(palaceDir?: string): string | null {
+  const candidate = palaceDir ?? resolve(dirname(fileURLToPath(import.meta.url)), "../palace");
+  try {
+    return realpathSync(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function servePalaceAsset(
+  response: ServerResponse,
+  pathname: string,
+  palaceDir: string | null,
+  headOnly: boolean
+): void {
+  if (!palaceDir) {
+    sendJson(response, 404, { error: "Not found.", code: "not_found" });
+    return;
+  }
+  const suffix = pathname === "/palace" || pathname === "/palace/"
+    ? "index.html"
+    : pathname.slice("/palace/".length);
+  let relative: string;
+  try {
+    relative = decodeURIComponent(suffix);
+  } catch {
+    sendJson(response, 404, { error: "Not found.", code: "not_found" });
+    return;
+  }
+  // Dotfile segments (.env, .git/...) are never served.
+  if (relative.split(/[\\/]/).some(segment => segment.startsWith("."))) {
+    sendJson(response, 404, { error: "Not found.", code: "not_found" });
+    return;
+  }
+  const filePath = resolve(palaceDir, relative);
+  if (filePath !== palaceDir && !filePath.startsWith(palaceDir + sep)) {
+    sendJson(response, 403, { error: "Forbidden.", code: "forbidden" });
+    return;
+  }
+  // Resolve symlinks and re-check containment so a link inside palace/ cannot
+  // escape the tree; a vanished file (TOCTOU) is a plain 404, never a 500.
+  let realPath: string;
+  let size: number;
+  try {
+    realPath = realpathSync(filePath);
+    const stats = statSync(realPath);
+    if (!stats.isFile()) {
+      throw new Error("not a file");
+    }
+    size = stats.size;
+  } catch {
+    sendJson(response, 404, { error: "Not found.", code: "not_found" });
+    return;
+  }
+  if (realPath !== palaceDir && !realPath.startsWith(palaceDir + sep)) {
+    sendJson(response, 403, { error: "Forbidden.", code: "forbidden" });
+    return;
+  }
+  // Only known asset types are served; test sources stay on disk.
+  const contentType = PALACE_CONTENT_TYPES[extname(realPath).toLowerCase()];
+  if (!contentType || realPath.endsWith(".test.js")) {
+    sendJson(response, 404, { error: "Not found.", code: "not_found" });
+    return;
+  }
+  const headers = {
+    "content-type": contentType,
+    "content-length": size,
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
+  };
+  if (headOnly) {
+    response.writeHead(200, headers);
+    response.end();
+    return;
+  }
+  // Wait for the stream to open before committing headers, and always handle
+  // stream errors: an unhandled 'error' event would crash the process.
+  const stream = createReadStream(realPath);
+  stream.once("open", () => {
+    response.writeHead(200, headers);
+    stream.pipe(response);
+  });
+  stream.once("error", () => {
+    if (response.headersSent) {
+      response.destroy();
+    } else {
+      sendJson(response, 500, { error: "Failed to read palace asset.", code: "internal_error" });
+    }
+  });
+}
+
 class FixedWindowRateLimiter {
   private readonly windows = new Map<string, { startsAt: number; count: number }>();
 
@@ -79,6 +196,8 @@ export interface ControlPlaneHttpOptions {
     requests: number;
     windowMs: number;
   };
+  /** Override for the palace asset directory; defaults to ../palace relative to this module. */
+  palaceDir?: string;
 }
 
 export interface ControlPlaneHttpServer {
@@ -103,6 +222,14 @@ export function createControlPlaneHttpServer(
     options.rateLimit?.requests ?? 120,
     options.rateLimit?.windowMs ?? 60_000
   );
+  const palaceDir = resolvePalaceDir(options.palaceDir);
+  if (!palaceDir) {
+    console.warn(
+      `[control-plane] palace directory not found at ${
+        options.palaceDir ?? resolve(dirname(fileURLToPath(import.meta.url)), "../palace")
+      }; /palace routes will return 404.`
+    );
+  }
 
   const handler = async (request: IncomingMessage, response: ServerResponse) => {
     try {
@@ -123,6 +250,19 @@ export function createControlPlaneHttpServer(
           "x-content-type-options": "nosniff"
         });
         response.end(renderControlPlaneConsole());
+        return;
+      }
+      // Palace assets are public like /console; all data still flows through
+      // the token-authenticated API below. They still get per-IP rate limiting
+      // since serving them costs disk I/O.
+      const isPalacePath = url.pathname === "/palace" || url.pathname.startsWith("/palace/");
+      if ((request.method === "GET" || request.method === "HEAD") && isPalacePath) {
+        limiter.check(request.socket.remoteAddress ?? "unknown");
+        servePalaceAsset(response, url.pathname, palaceDir, request.method === "HEAD");
+        return;
+      }
+      if (isPalacePath) {
+        sendJson(response, 405, { error: "Method not allowed.", code: "method_not_allowed" });
         return;
       }
 
