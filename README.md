@@ -128,6 +128,8 @@ spinal-plug boot "$HOME/.spinal-plug/spinal-plug.db" .
 
 ### 03 / 接入同步端点
 
+不配置端点时，Spinal Plug 全部功能在本机完整可用——本地优先是默认，不需要认证，开箱即可测试。需要跨设备或跨 Agent 同步时才配置：
+
 ```bash
 export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
 export SPINAL_PLUG_DEVICE_ID="device-local"

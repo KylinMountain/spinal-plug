@@ -48,6 +48,17 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/spinal-plug-hook.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
