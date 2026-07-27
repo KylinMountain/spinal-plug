@@ -756,6 +756,48 @@ test("remember --candidate dedupes identical facts and preserves literal flag te
   assert.equal(literal.statement, "部署脚本接受 --candidate 参数表示灰度发布");
 });
 
+test("keys lists the registry and share/remember classify with --key", async () => {
+  const home = tempDir("spinal-plug-home-");
+  const project = initGitProject("https://github.com/spinal-plug-tests/semantic-keys.git");
+  const db = join(tempDir("spinal-plug-db-"), "local.db");
+  await bindViaSessionStart(db, project, { home });
+
+  // Keys are normalized mechanically: case, spaces, and underscores collapse.
+  const shared = await runCliJson<{ memory: { semanticKey?: string } }>(
+    ["share", db, project, "decision", "--key", "Package Manager", "Use pnpm."],
+    { home }
+  );
+  assert.equal(shared.memory.semanticKey, "package-manager");
+  await runCli(
+    ["share", db, project, "context", "--key", "package-manager", "Lockfile is pnpm-lock.yaml."],
+    { home }
+  );
+
+  // Candidates can carry keys too, including namespaced ones.
+  const candidate = await runCliJson<{ semanticKey?: string; status: string }>(
+    ["remember", db, project, "context", "--candidate", "--key", "deploy:runbook", "Deploy via pnpm start."],
+    { home }
+  );
+  assert.equal(candidate.semanticKey, "deploy:runbook");
+  assert.equal(candidate.status, "candidate");
+
+  // The registry lists active memories only, grouped by key.
+  const keys = await runCliJson<Array<{ semanticKey: string; memoryCount: number; sample: string }>>(
+    ["keys", db, project],
+    { home }
+  );
+  assert.equal(keys.length, 1);
+  assert.equal(keys[0].semanticKey, "package-manager");
+  assert.equal(keys[0].memoryCount, 2);
+  assert.ok(keys[0].sample.length > 0);
+
+  // A key that normalizes to nothing is rejected, not silently mangled.
+  await assert.rejects(
+    runCli(["share", db, project, "context", "--key", "!!!", "No key survives."], { home }),
+    /Invalid semantic key/
+  );
+});
+
 test("empty-chamber Claude Stop nudges once per session and stops after generation", async () => {
   const home = tempDir("spinal-plug-home-");
   const project = initGitProject("https://github.com/spinal-plug-tests/nudge.git");

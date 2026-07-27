@@ -374,6 +374,27 @@ export class SpinalPlugDatabase {
   }
 
   /**
+   * The Space's semantic-key registry: one row per key with a representative
+   * statement, so a host can classify a new fact against existing keys
+   * instead of freely inventing a divergent one.
+   */
+  listSemanticKeys(spaceId: string): Array<{ semanticKey: string; memoryCount: number; sample: string }> {
+    const statement = this.db.prepare(`
+      SELECT semantic_key AS semanticKey, COUNT(*) AS memoryCount,
+             MAX(statement) AS sample
+      FROM memories
+      WHERE space_id = ? AND status = 'active' AND semantic_key IS NOT NULL
+      GROUP BY semantic_key
+      ORDER BY memoryCount DESC, semanticKey ASC
+    `);
+    return (statement.all(spaceId) as Array<Record<string, unknown>>).map(row => ({
+      semanticKey: String(row.semanticKey),
+      memoryCount: Number(row.memoryCount),
+      sample: String(row.sample)
+    }));
+  }
+
+  /**
    * A Space "has memory" once anything reviewable exists — active memories or
    * pending candidates — so empty-chamber nudges stop as soon as generation
    * produces its first draft.
