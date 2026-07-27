@@ -76,10 +76,10 @@ If no durable learning exists even after review, say so and do not write memory.
 spinal-plug share "$SPINAL_PLUG_DB" . <kind> --url "$SPINAL_PLUG_SYNC_URL" --device-id "$SPINAL_PLUG_DEVICE_ID" "<durable statement>"
 ```
 
-With `SPINAL_PLUG_SYNC_URL` unset the share is recorded locally only — that is the default, not an error. Then update Codex's native memory projection:
+With `SPINAL_PLUG_SYNC_URL` unset the share is recorded locally only — that is the default, not an error. Then update Codex's native memory projection (purely local, no network):
 
 ```bash
-spinal-plug sync-codex "$SPINAL_PLUG_DB" . "$SPINAL_PLUG_SYNC_URL" "$SPINAL_PLUG_DEVICE_ID"
+spinal-plug sync-codex "$SPINAL_PLUG_DB" .
 ```
 
 Report what was shared and why it is durable. The selection step is internal behavior of **共享记忆**, not a separate user-facing command.
