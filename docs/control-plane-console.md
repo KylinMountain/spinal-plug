@@ -26,3 +26,9 @@ spinal-plug serve-control-plane "$HOME/.spinal-plug/control-plane.db" 8787
 ```
 
 纯 HTTP 仅允许 loopback listener。需要非本机监听时，必须设置 `SPINAL_PLUG_TLS_CERT` 与 `SPINAL_PLUG_TLS_KEY`。
+
+## 3D Memory Palace(`/palace`)
+
+Control Plane 服务器还在 `/palace` 提供 3D Memory Palace:一个 Three.js 展厅,把当前 Space 的规范记忆渲染为可漫游的展品——每种 memory kind 对应不同几何体,记忆状态(active/candidate/disputed/tombstone)对应不同光照处理,展品尺寸随置信度变化。数据来自同源 `/v1/spaces/:id/snapshot` 与 compilation API(30s 轮询),访问控制与 `/console` 一致。
+
+静态资源由 `packages/sync-server/palace/` 提供,安全边界:仅服务扩展名白名单内的文件;拒绝点路径段与符号链接逃逸(realpath 双重校验);按客户端 IP 限流;`HEAD` 支持、其他方法 405。该目录已纳入版本控制,干净检出可直接通过测试。

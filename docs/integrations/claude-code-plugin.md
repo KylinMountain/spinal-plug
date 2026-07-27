@@ -18,14 +18,18 @@ spinal-plug@spinal-plug-local
 | --- | --- |
 | `SessionStart` | 从当前项目的 Spinal Plug 本地数据库生成 Project Boot Context。 |
 | `UserPromptSubmit` | 根据当前提示生成少量相关项目记忆。 |
-| `/spinal-plug:connect` | 在用户明确要求后，创建当前项目与 Spinal Plug Project Space 的绑定。 |
+| `PostToolUse` | 仅匹配写类工具(`Write/Edit/MultiEdit/NotebookEdit`);hook 脚本先对 payload 做路径预筛,只有落在项目原生记忆目录(`~/.claude/projects/<项目>/memory/`)内的写入才调用 CLI,触发原生主题的幂等导入与发布(有端点时)——Claude 自己的后台提取写完主题文件即同步,普通代码编辑零进程开销。 |
+| `Stop` | 幂等导入并发布已完成的原生主题文件;若项目既无 active 记忆也无待审候选(空记忆室),注入一次 `<spinal-plug_memory_nudge>`(`decision: "block"`),引导宿主从当前会话生成最多 3 条事实并以 `remember --candidate` 落为待审候选——每个会话最多提醒一次(需 payload 带 `session_id`),一旦有可审阅内容即永久停止。 |
+| `SessionEnd` | 会话结束时最后执行一次原生主题导入与发布。 |
+| `/spinal-plug:connect` | 在用户明确要求后,创建当前项目与 Spinal Plug Project Space 的绑定。 |
 | `/spinal-plug:archive` | 为非 Git 工作目录创建一个命名存档。 |
 | `/spinal-plug:general` | 将当前目录绑定到用户级 General Space。 |
 | `/spinal-plug:link` | 将当前目录绑定到已有 Space ID。 |
 | `/spinal-plug:status` | 查看本地记忆与 Outbox 状态。 |
-| `/spinal-plug:share` | 将当前 Claude Code 项目的原生 Auto Memory 主题文件导入并发布到 Spinal Plug Control Plane。 |
-| `/spinal-plug:sync` | 下载并合并中心记忆，并投影到 Claude Code 原生 Auto Memory。 |
+| `/spinal-plug:share` | 将当前 Claude Code 项目的原生 Auto Memory 主题文件导入并发布到 Spinal Plug Control Plane;空记忆室时从当前会话生成首批记忆(用户驱动,落 active)。 |
+| `/spinal-plug:sync` | 下载并合并中心记忆,并投影到 Claude Code 原生 Auto Memory。 |
 | `/spinal-plug:boot` | 展示当前 Project Space 的 Mind Core 加载状态。 |
+| `/spinal-plug:handoff` | 保存 Project Checkpoint(已完成、决策、待办、阻塞、下一步),供另一个 linked Agent 接力;不写入长期记忆。 |
 
 插件不会把 Claude Code 原生 Auto Memory 目录作为事实源，也不在 `Stop` 阶段自动提取整段对话。选择性应用后，Claude Adapter 只维护受 Spinal Plug 标识保护的 `spinal-plug-synced.md` 投影和 `MEMORY.md` 索引块，不会改写用户自己的主题文件。
 
@@ -53,16 +57,11 @@ Hook 显示简短的加载状态，`/spinal-plug:boot` 则提供固定的 `Memor
 ~/.spinal-plug/spinal-plug.db
 ```
 
-默认开发中心：
-
-```text
-http://127.0.0.1:8787
-```
-
-启动服务：
+默认**本地优先**:不配置 `SPINAL_PLUG_SYNC_URL` 时,所有记忆操作都在本机完成——不需要端点、没有认证,开箱即可测试。需要跨设备/跨 Agent 同步时才显式启动开发中心并指向它：
 
 ```bash
 spinal-plug serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787
+export SPINAL_PLUG_SYNC_URL="http://127.0.0.1:8787"
 ```
 
 本地服务没有认证、ACL 或 TLS，仅用于当前设备验证，不能暴露到公网。
@@ -73,4 +72,6 @@ spinal-plug serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787
 
 `/spinal-plug:share` 使用只读 Claude Auto Memory Importer：扫描当前项目的主题文件，为每个来源生成稳定 ID 后创建或更新 Spinal Plug 记忆并发布。不会读取完整会话 transcript，不会导入 `MEMORY.md` 索引；疑似 API Key 或私钥内容会被跳过。导入器会跳过 Spinal Plug 受控的 `spinal-plug-*` 文件，避免同步投影被再次上传。
 
-Claude 原生 Auto Memory 的后台提取不是 Hook 可控的同步调用。Spinal Plug 会在 `SessionStart`、`UserPromptSubmit` 和 `Stop` 边界扫描已完成的原生主题文件并幂等发布；中心服务暂时离线时，宿主不会被阻塞，下一边界会重试。需要立即上传当前项目记忆时，使用 `/spinal-plug:share`。
+Claude 原生 Auto Memory 的后台提取不是 Hook 可控的同步调用。Spinal Plug 在四个边界同步已完成的原生主题文件：`PostToolUse`(写入记忆目录即热同步)、`SessionStart`、`UserPromptSubmit`、`Stop`/`SessionEnd`。中心服务离线时宿主不会被阻塞，下一边界幂等重试。需要立即上传当前项目记忆时，使用 `/spinal-plug:share`。
+
+手动记忆命令采用命名参数(flag 在文本之前，记忆文本永远原文保存):`spinal-plug share <db> <dir> <kind> [--url <url>] [--device-id <id>] <text>`;`remember` 的 `--candidate` 把事实落为待审候选，同一事实重复 staging 会去重。
