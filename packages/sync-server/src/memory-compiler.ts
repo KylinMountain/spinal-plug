@@ -167,6 +167,10 @@ export class MemoryCompiler {
       const winner = records.get(resolution.winnerId);
       if (!winner || winner.status === "deleted") continue;
       winner.status = "active";
+      // Clear the dispute marker along with the status: a resolved winner is
+      // an ordinary active record, and a stale disputeId would read as an
+      // unresolved conflict downstream (boot warning, palace exhibit state).
+      winner.disputeId = undefined;
       winner.updatedAt = resolution.at;
       for (const resolvedId of resolution.resolvedIds) {
         if (resolvedId === winner.memoryId) continue;
