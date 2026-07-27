@@ -836,6 +836,56 @@ test("empty-chamber Codex Stop emits a systemMessage nudge instead of blocking",
   assert.match(second.notices?.[0] ?? "", /stored 1 reviewable candidate/);
 });
 
+test("Claude PostToolUse on a memory-dir write hot-syncs; other writes stay quiet", async () => {
+  const server = await startServer();
+  try {
+    const home = tempDir("spinal-plug-home-");
+    const project = initGitProject("https://github.com/spinal-plug-tests/hot-sync.git");
+    const db = join(tempDir("spinal-plug-db-"), "local.db");
+    await bindViaSessionStart(db, project, { home, syncUrl: server.url });
+
+    const memoryDir = claudeMemoryDir(home, project);
+    mkdirSync(memoryDir, { recursive: true });
+    writeFileSync(join(memoryDir, "fresh.md"), "# Fresh fact\n\nWritten by Claude's own extractor.\n");
+
+    const postToolUse = (filePath: string) => JSON.stringify({
+      hook_event_name: "PostToolUse",
+      cwd: project,
+      session_id: "session-1",
+      tool_name: "Edit",
+      tool_input: { file_path: filePath }
+    });
+
+    // A write to an ordinary source file must not import or publish anything.
+    const ignored = await runCli(
+      ["hook-stdin", "claude-code", db],
+      { home, syncUrl: server.url, input: postToolUse(join(project, "src", "index.ts")) }
+    );
+    assert.equal(ignored.trim(), "{}");
+    assert.equal((await snapshot(server, spaceIdOf(project))).memories.length, 0);
+
+    // A write inside the native memory directory syncs while the write is hot.
+    const hot = await runCli(
+      ["hook-stdin", "claude-code", db],
+      { home, syncUrl: server.url, input: postToolUse(join(memoryDir, "fresh.md")) }
+    );
+    assert.equal(hot.trim(), "{}");
+    const serverSnapshot = await snapshot(server, spaceIdOf(project));
+    assert.deepEqual(serverSnapshot.memories.map(memory => memory.title), ["Fresh fact"]);
+
+    // The managed projection file lives in the same directory: it triggers the
+    // hook but the importer skips it, so projection writes cannot self-retrigger.
+    writeFileSync(join(memoryDir, "spinal-plug-synced.md"), "managed projection\n");
+    await runCli(
+      ["hook-stdin", "claude-code", db],
+      { home, syncUrl: server.url, input: postToolUse(join(memoryDir, "spinal-plug-synced.md")) }
+    );
+    assert.equal((await snapshot(server, spaceIdOf(project))).memories.length, 1);
+  } finally {
+    await server.close();
+  }
+});
+
 test("apply-claude materializes a managed projection without touching user memory", async () => {
   const server = await startServer();
   try {

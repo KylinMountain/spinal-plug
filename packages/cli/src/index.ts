@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, resolve, sep } from "node:path";
 import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer, ClaudeCodeAdapter } from "@spinal-plug/adapter-claude-code";
 import { CodexAdapter, CodexNativeMemoryStore } from "@spinal-plug/adapter-codex";
 import type { HookEventName, SpinalPlugAdapter } from "@spinal-plug/adapter-sdk";
@@ -364,7 +364,8 @@ async function executeHook(
   projectDir: string,
   prompt?: string,
   sessionId?: string,
-  output?: string
+  output?: string,
+  toolFilePath?: string
 ): Promise<void> {
   if (!HOOK_EVENTS.has(rawEvent)) {
     throw new Error(`Unsupported hook event: ${rawEvent}`);
@@ -471,6 +472,34 @@ async function executeHook(
     }
     const output = await adapter.injectContext(service.createRecallProjection(space, payload.prompt), payload);
     console.log(JSON.stringify(toHostHookOutput(host, payload.event, output)));
+    return;
+  }
+
+  if (payload.event === "post.tool.use") {
+    // A write inside the project's native memory directory means Claude's own
+    // extractor (or the main agent) just persisted a topic file: import and
+    // publish while it is hot instead of waiting for a session boundary. The
+    // importer is idempotent and skips the managed projection file, so this
+    // cannot re-trigger itself.
+    if (host === "claude-code" && toolFilePath) {
+      const memoryDir = new ClaudeAutoMemoryImporter().memoryDirectory(payload.cwd);
+      const resolvedFile = resolve(toolFilePath);
+      if (resolvedFile.startsWith(memoryDir + sep)) {
+        try {
+          await shareClaudeAutoMemory(
+            database,
+            service,
+            space,
+            payload.cwd,
+            resolveSyncEndpoint(),
+            process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+          );
+        } catch {
+          // A failed hot-sync is retried at the next session boundary.
+        }
+      }
+    }
+    console.log("{}");
     return;
   }
 
@@ -633,7 +662,9 @@ async function runStdinHook(args: string[]): Promise<void> {
         : typeof input.output === "string"
           ? input.output
           : undefined;
-  await executeHook(host, event, rawDbPath, cwd, prompt, sessionId, output);
+  const toolInput = input.tool_input as Record<string, unknown> | undefined;
+  const toolFilePath = typeof toolInput?.file_path === "string" ? toolInput.file_path : undefined;
+  await executeHook(host, event, rawDbPath, cwd, prompt, sessionId, output, toolFilePath);
 }
 
 async function main(): Promise<void> {

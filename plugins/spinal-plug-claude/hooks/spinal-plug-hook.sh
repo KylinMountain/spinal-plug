@@ -8,4 +8,19 @@ if ! command -v "$spinal_plug_bin" >/dev/null 2>&1; then
   printf '{}\n'
   exit 0
 fi
-NODE_NO_WARNINGS=1 "$spinal_plug_bin" hook-stdin claude-code "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}"
+
+payload="$(cat || true)"
+if [ -z "$payload" ]; then
+  payload='{}'
+fi
+
+# PostToolUse fires for every write-class tool call. Only writes inside a
+# project's native memory directory are worth spawning the CLI for — every
+# other payload exits here so normal editing never pays the process cost.
+if printf '%s' "$payload" | grep -q 'PostToolUse' \
+  && ! printf '%s' "$payload" | grep -q '/\.claude/projects/.*/memory/'; then
+  printf '{}\n'
+  exit 0
+fi
+
+printf '%s' "$payload" | NODE_NO_WARNINGS=1 "$spinal_plug_bin" hook-stdin claude-code "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}"
