@@ -21,6 +21,10 @@ Use `/spinal-plug:share` to publish the current Claude Code project's native mem
 
 Use one of: `directive`, `decision`, `context`, or `reference`. Do not store secrets, full transcripts, temporary task state, or facts that must be revalidated from code.
 
+### Semantic keys: classify, don't invent
+
+Before sharing a fact, run `spinal-plug keys "$HOME/.spinal-plug/spinal-plug.db" .` to read the Space's semantic-key registry (key + sample statement). If an existing key covers the fact, reuse it via `spinal-plug share ... --key <semantic-key>` — the deterministic compiler merges, supersedes, or disputes by key. Only mint a new kebab-case key (optional `namespace:` prefix) when nothing fits. Different hosts naming keys freely would diverge; classifying against the registry is what keeps cross-device memory coherent.
+
 ### Empty memory chamber: generate from this session
 
 When asked to share but `spinal-plug status` shows `activeMemories: 0` and `candidateMemories: 0`, do not report "nothing to share". Generate the project's first memories from the current session instead — the way Claude Code's own extractor works, but in place:

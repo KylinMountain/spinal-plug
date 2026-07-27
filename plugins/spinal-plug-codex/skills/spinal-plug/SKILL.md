@@ -68,6 +68,8 @@ For `share`, "共享记忆", or "上传当前项目记忆", first inspect the cu
 
 Never retain raw transcripts, temporary task progress, secrets, access tokens, or code facts that must be re-verified.
 
+Before sharing, run `spinal-plug keys "$SPINAL_PLUG_DB" .` and classify each fact against the registry: reuse an existing key with `--key <semantic-key>` when one fits (the deterministic compiler merges and disputes by key), and only mint a new kebab-case key (optional `namespace:` prefix) when nothing does. Free-form key naming diverges across hosts; classification keeps cross-device memory coherent.
+
 If `spinal-plug status "$SPINAL_PLUG_DB" .` shows `activeMemories: 0` and `candidateMemories: 0`, the memory chamber is empty: do not stop at "nothing to share" — generate the project's first memories from the current session using the same four kinds and quality bar, then share them. A Stop hook may also inject a `<spinal-plug_memory_nudge>` systemMessage in this state; follow it by staging generated facts with `spinal-plug remember "$SPINAL_PLUG_DB" . <kind> --candidate "<statement>"` (reviewable candidates, never active memory), then tell the user they await review.
 
 If no durable learning exists even after review, say so and do not write memory. Otherwise publish each concise fact:

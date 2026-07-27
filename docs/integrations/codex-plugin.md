@@ -22,7 +22,7 @@
 - `status`：查看当前连接、候选和待同步事件。
 - `candidates` / `promote`：审查自动候选，并只在用户明确确认后晋升为 active。
 - `sync`：获取、预览并选择应用其他 Agent 的规范记忆（需先配置 `SPINAL_PLUG_SYNC_URL`)。
-- `share`：当用户希望立即补充一条明确项目记忆时使用；空记忆室时会从当前会话生成首批记忆。命名参数形式：`spinal-plug share <db> <dir> <kind> --url <url> --device-id <id> "<text>"`(flag 在文本之前，文本永远原文保存）。
+- `share`：当用户希望立即补充一条明确项目记忆时使用；空记忆室时会从当前会话生成首批记忆。命名参数形式：`spinal-plug share <db> <dir> <kind> --url <url> --device-id <id> "<text>"`(flag 在文本之前，文本永远原文保存）。分享前先运行 `spinal-plug keys <db> <dir>` 读取语义键注册表，已有键能覆盖时用 `--key` 复用（编译器按键合并与判冲突），都不合适才新建 kebab-case 键。
 
 本地数据库只是设备缓存、WAL 与 Outbox；同步传输的是版本化事件和规范更新，绝不上传数据库文件。
 

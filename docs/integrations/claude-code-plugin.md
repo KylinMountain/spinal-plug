@@ -74,4 +74,6 @@ export SPINAL_PLUG_SYNC_URL="http://127.0.0.1:8787"
 
 Claude 原生 Auto Memory 的后台提取不是 Hook 可控的同步调用。Spinal Plug 在四个边界同步已完成的原生主题文件：`PostToolUse`(写入记忆目录即热同步)、`SessionStart`、`UserPromptSubmit`、`Stop`/`SessionEnd`。中心服务离线时宿主不会被阻塞，下一边界幂等重试。需要立即上传当前项目记忆时，使用 `/spinal-plug:share`。
 
-手动记忆命令采用命名参数(flag 在文本之前，记忆文本永远原文保存):`spinal-plug share <db> <dir> <kind> [--url <url>] [--device-id <id>] <text>`;`remember` 的 `--candidate` 把事实落为待审候选，同一事实重复 staging 会去重。
+手动记忆命令采用命名参数(flag 在文本之前，记忆文本永远原文保存):`spinal-plug share <db> <dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>`;`remember` 的 `--candidate` 把事实落为待审候选，同一事实重复 staging 会去重。
+
+分享前先运行 `spinal-plug keys <db> <dir>` 读取本 Space 的语义键注册表（键 + 示例陈述）：已有键能覆盖时通过 `--key` 复用——确定性编译器按键合并、替代与判冲突；都不合适才新建 kebab-case 键（可带 `namespace:` 前缀）。自由命名会在不同宿主间发散，对注册表做分类是跨设备记忆一致的关键。

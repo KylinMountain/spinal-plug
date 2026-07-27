@@ -77,7 +77,7 @@ Binding:
   boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
 
 Memory:
-  share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] <text>
+  share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>
                                                      Share a durable memory; publishes when --url or
                                                      SPINAL_PLUG_SYNC_URL is set, local-only otherwise
   share-claude <db-path> <project-dir> <url> [device-id]
@@ -88,6 +88,7 @@ Memory:
   forget <db-path> <project-dir> <memory-id>       Tombstone active memory
   list <db-path> <project-dir> [--all]             List project memories
   recall <db-path> <project-dir> <prompt>          Print relevant active memories
+  keys <db-path> <project-dir>                     List this Space's semantic-key registry
 
 Selective sync (requires a configured endpoint):
   fetch <db-path> <project-dir> <url> <device-id>  Fetch updates without applying optional changes
@@ -123,7 +124,7 @@ Server administration:
                                                      Provision an account and first device
 
 Internal (used by plugins and hooks — not user-facing):
-  remember <db-path> <project-dir> <kind> [--candidate] <text>
+  remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
                                                      Local staging; --candidate stages for review
   hook <host> <event> <db-path> <project-dir> [prompt]
                                                      Emit Claude Code / Codex hook context as JSON
@@ -168,6 +169,24 @@ function requireMemoryKind(value: string): MemoryKind {
     throw new Error(`Unsupported memory kind: ${value}`);
   }
   return value as MemoryKind;
+}
+
+/**
+ * Normalize an LLM-chosen semantic key: kebab-case segments with an optional
+ * `namespace:` prefix (matching the importer's claude-topic: convention).
+ * Normalization is mechanical — classification (which key a fact belongs to)
+ * is the host model's job.
+ */
+function normalizeSemanticKey(raw: string): string {
+  const key = raw.trim().toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9:-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^[-:]+|[-:]+$/g, "");
+  if (!/^[a-z0-9][a-z0-9-]*(:[a-z0-9][a-z0-9-]*)*$/.test(key)) {
+    throw new Error(`Invalid semantic key "${raw}": use kebab-case, optionally with a namespace: prefix.`);
+  }
+  return key;
 }
 
 /**
@@ -611,8 +630,10 @@ function buildMemoryNudge(dbPath: string, projectDir: string): string {
     "- decision: a technical or product choice and its reason",
     "- context: background that cannot be cheaply re-read from the repository",
     "- reference: a pointer to an authoritative external source",
-    "Never retain secrets, raw transcripts, or temporary task state. Stage each fact as a reviewable candidate:",
-    `  spinal-plug remember "${dbPath}" "${projectDir}" <kind> --candidate "<concise statement>"`,
+    "Never retain secrets, raw transcripts, or temporary task state. Before staging, classify each fact against the existing semantic keys:",
+    `  spinal-plug keys "${dbPath}" "${projectDir}"`,
+    "Reuse a listed key when one fits (pass --key <semantic-key>); only mint a new kebab-case key when none does. Then stage each fact as a reviewable candidate:",
+    `  spinal-plug remember "${dbPath}" "${projectDir}" <kind> --candidate [--key <semantic-key>] "<concise statement>"`,
     "Then tell the user the candidates are ready for review (spinal-plug candidates / promote).",
     "</spinal-plug_memory_nudge>"
   ].join("\n");
@@ -949,8 +970,12 @@ async function main(): Promise<void> {
     // trailing URL in the text can never be mistaken for a publish endpoint.
     const { flags, rest: statementParts } = takeLeadingFlags(shareArgs, {
       "--url": "value",
-      "--device-id": "value"
+      "--device-id": "value",
+      "--key": "value"
     });
+    const semanticKey = typeof flags["--key"] === "string"
+      ? normalizeSemanticKey(flags["--key"])
+      : undefined;
     const url = flags["--url"] !== undefined
       ? (flags["--url"] as string).trim() || null
       : resolveSyncEndpoint();
@@ -961,7 +986,7 @@ async function main(): Promise<void> {
     if (!kind || !statement) {
       throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] <text>");
     }
-    const memory = service.remember({ space, kind: requireMemoryKind(kind), statement });
+    const memory = service.remember({ space, kind: requireMemoryKind(kind), statement, ...(semanticKey ? { semanticKey } : {}) });
     const publish = url
       ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId)
       : LOCAL_ONLY_PUBLISH_RESULT;
@@ -975,11 +1000,17 @@ async function main(): Promise<void> {
   }
   if (command === "remember") {
     const [kind, ...statementArgs] = rest;
-    const { flags, rest: parts } = takeLeadingFlags(statementArgs, { "--candidate": "boolean" });
+    const { flags, rest: parts } = takeLeadingFlags(statementArgs, {
+      "--candidate": "boolean",
+      "--key": "value"
+    });
     const asCandidate = flags["--candidate"] === true;
+    const semanticKey = typeof flags["--key"] === "string"
+      ? normalizeSemanticKey(flags["--key"])
+      : undefined;
     const statement = parts.join(" ");
     if (!kind || !statement) {
-      throw new Error("Usage: spinal-plug remember <db-path> <project-dir> <kind> [--candidate] <text>");
+      throw new Error("Usage: spinal-plug remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>");
     }
     // Candidates get a deterministic identity: re-staging the same fact
     // (a retried nudge, a rephrased duplicate) returns the existing record
@@ -999,6 +1030,7 @@ async function main(): Promise<void> {
       kind: requireMemoryKind(kind),
       statement,
       ...(memoryId ? { memoryId } : {}),
+      ...(semanticKey ? { semanticKey } : {}),
       asCandidate,
       ...(asCandidate ? { origin: "agent_inferred" } : {})
     });
@@ -1101,6 +1133,12 @@ async function main(): Promise<void> {
   if (command === "recall") {
     if (rest.length === 0) throw new Error("Usage: spinal-plug recall <db-path> <project-dir> <prompt>");
     console.log(JSON.stringify(service.recall(space, rest.join(" ")), null, 2));
+    return;
+  }
+  if (command === "keys") {
+    // The semantic-key registry a host classifies new facts against before
+    // sharing — classification beats free naming for cross-model consistency.
+    console.log(JSON.stringify(database.listSemanticKeys(space.spaceId), null, 2));
     return;
   }
   if (command === "boot") {
