@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { get as httpGet } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -187,4 +188,156 @@ test("HTTP control plane rate-limits authenticated devices", async () => {
 
   await server.close();
   control.close();
+});
+
+test("serves the memory palace shell and static assets", async t => {
+  const control = testControlPlane();
+  const server = createControlPlaneHttpServer(control, { bootstrapToken: "bootstrap-test" });
+  // Close via t.after so a failed assertion cannot leave a listening server
+  // keeping the test process alive.
+  t.after(async () => {
+    await server.close();
+    control.close();
+  });
+  await server.listen(0);
+  const port = server.address()?.port;
+  assert.ok(port);
+  const base = `http://127.0.0.1:${port}`;
+
+  const shell = await fetch(`${base}/palace`);
+  assert.equal(shell.status, 200);
+  assert.match(shell.headers.get("content-type") ?? "", /text\/html/);
+  assert.equal(shell.headers.get("cache-control"), "no-store");
+  assert.equal(shell.headers.get("x-content-type-options"), "nosniff");
+  assert.match(await shell.text(), /MEMORY PALACE/);
+
+  const script = await fetch(`${base}/palace/palace.js`);
+  assert.equal(script.status, 200);
+  assert.match(script.headers.get("content-type") ?? "", /text\/javascript/);
+
+  const data = await fetch(`${base}/palace/exhibits.js`);
+  assert.equal(data.status, 200);
+
+  const missing = await fetch(`${base}/palace/does-not-exist.js`);
+  assert.equal(missing.status, 404);
+});
+
+test("rejects palace path traversal attempts", async t => {
+  const control = testControlPlane();
+  const server = createControlPlaneHttpServer(control, { bootstrapToken: "bootstrap-test" });
+  t.after(async () => {
+    await server.close();
+    control.close();
+  });
+  await server.listen(0);
+  const port = server.address()?.port;
+  assert.ok(port);
+
+  // Encoded dot segments must be refused. node:http sends the path verbatim.
+  // The WHATWG URL parser collapses %2e%2e during parsing, so that variant
+  // never reaches the /palace route and is refused with 401; the encoded-slash
+  // variants reach servePalaceAsset, where the dot-segment rejection answers
+  // 404 before the path is ever resolved — exact statuses, so removing the
+  // guard cannot keep this test green.
+  const cases: Array<[string, number]> = [
+    ["/palace/%2e%2e/%2e%2e/package.json", 401],
+    ["/palace/..%2f..%2fpackage.json", 404],
+    ["/palace/vendor/..%2f..%2fsrc%2fcontrol-plane.ts", 404]
+  ];
+  for (const [path, expected] of cases) {
+    const status = await new Promise<number>((resolveStatus, rejectStatus) => {
+      const request = httpGet({ host: "127.0.0.1", port, path }, response => {
+        response.resume();
+        response.on("end", () => resolveStatus(response.statusCode ?? 0));
+      });
+      request.on("error", rejectStatus);
+    });
+    assert.equal(status, expected, `${path} -> ${status}`);
+  }
+});
+
+test("palace assets support HEAD and refuse other methods", async t => {
+  const control = testControlPlane();
+  const server = createControlPlaneHttpServer(control, { bootstrapToken: "bootstrap-test" });
+  t.after(async () => {
+    await server.close();
+    control.close();
+  });
+  await server.listen(0);
+  const port = server.address()?.port;
+  assert.ok(port);
+  const base = `http://127.0.0.1:${port}`;
+
+  const head = await fetch(`${base}/palace/palace.js`, { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.match(head.headers.get("content-type") ?? "", /text\/javascript/);
+  assert.ok(Number(head.headers.get("content-length")) > 0);
+  assert.equal(await head.text(), "");
+
+  const post = await fetch(`${base}/palace/palace.js`, { method: "POST" });
+  assert.equal(post.status, 405);
+});
+
+test("palace never serves dotfiles or test sources", async t => {
+  const control = testControlPlane();
+  const server = createControlPlaneHttpServer(control, { bootstrapToken: "bootstrap-test" });
+  t.after(async () => {
+    await server.close();
+    control.close();
+  });
+  await server.listen(0);
+  const port = server.address()?.port;
+  assert.ok(port);
+  const base = `http://127.0.0.1:${port}`;
+
+  for (const path of ["/palace/.env", "/palace/exhibits.test.js", "/palace/vendor/fetch-three.mjs"]) {
+    const response = await fetch(`${base}${path}`);
+    assert.equal(response.status, 404, `${path} -> ${response.status}`);
+  }
+});
+
+test("palace refuses symlinks escaping the asset directory", async t => {
+  const control = testControlPlane();
+  const palace = mkdtempSync(join(tmpdir(), "spinal-plug-palace-"));
+  const outside = join(tmpdir(), `spinal-plug-outside-${process.pid}-${Date.now()}.txt`);
+  writeFileSync(join(palace, "index.html"), "<h1>palace</h1>");
+  writeFileSync(outside, "secret");
+  symlinkSync(outside, join(palace, "escape.txt"));
+  t.after(() => {
+    rmSync(join(palace, "escape.txt"), { force: true });
+    rmSync(join(palace, "index.html"), { force: true });
+    rmSync(palace, { recursive: true, force: true });
+    rmSync(outside, { force: true });
+  });
+  const server = createControlPlaneHttpServer(control, { bootstrapToken: "bootstrap-test", palaceDir: palace });
+  t.after(async () => {
+    await server.close();
+    control.close();
+  });
+  await server.listen(0);
+  const port = server.address()?.port;
+  assert.ok(port);
+
+  const escape = await fetch(`http://127.0.0.1:${port}/palace/escape.txt`);
+  assert.equal(escape.status, 403);
+});
+
+test("palace asset requests are rate-limited per client", async t => {
+  const control = testControlPlane();
+  const server = createControlPlaneHttpServer(control, {
+    bootstrapToken: "bootstrap-test",
+    rateLimit: { requests: 2, windowMs: 60_000 }
+  });
+  t.after(async () => {
+    await server.close();
+    control.close();
+  });
+  await server.listen(0);
+  const port = server.address()?.port;
+  assert.ok(port);
+  const base = `http://127.0.0.1:${port}`;
+
+  assert.equal((await fetch(`${base}/palace/palace.js`)).status, 200);
+  assert.equal((await fetch(`${base}/palace/palace.js`)).status, 200);
+  assert.equal((await fetch(`${base}/palace/palace.js`)).status, 429);
 });
