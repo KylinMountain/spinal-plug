@@ -8,7 +8,7 @@ Share the current project's Claude Code Auto Memory topic files with Spinal Plug
 spinal-plug share-claude "$HOME/.spinal-plug/spinal-plug.db" . "${SPINAL_PLUG_SYNC_URL:-}" "${SPINAL_PLUG_DEVICE_ID:-device-local}"
 ```
 
-With no `SPINAL_PLUG_SYNC_URL` configured the import stays local-only — that is the default and needs no authentication. Set `SPINAL_PLUG_SYNC_URL` to publish to a sync endpoint.
+With no `SPINAL_PLUG_SYNC_URL` configured, publication tries the local development server at 127.0.0.1:8787 and silently stays local when nothing answers — no authentication either way. Set `SPINAL_PLUG_SYNC_URL` to publish to a different sync endpoint.
 
 If `spinal-plug status "$HOME/.spinal-plug/spinal-plug.db" .` shows `activeMemories: 0` and `candidateMemories: 0`, the project has no memory yet: generate up to 3 durable facts from the current session (directive / decision / context / reference; never secrets, transcripts, or temporary state) and share each with `spinal-plug share ... <kind> "<statement>"`, then report what was generated. Sharing here is user-driven, so the facts land as active memory. Exception: if the generation was triggered by a Stop-hook `<spinal-plug_memory_nudge>` (unattended), the same facts must instead be staged with `spinal-plug remember ... <kind> --candidate "<statement>"` so they stay reviewable.
 
