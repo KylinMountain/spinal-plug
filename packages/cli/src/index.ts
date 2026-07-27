@@ -65,41 +65,31 @@ function printHelp(): void {
   console.log(`spinal-plug
 
 Spinal Plug is the project command and lifecycle runtime.
+Local-first by default: with no SPINAL_PLUG_SYNC_URL configured, every
+memory operation works on-device only — no endpoint, no authentication.
 
-Commands:
+Binding:
   connect <db-path> <project-dir>                  Create a project or archive binding for this directory
   archive <db-path> <project-dir> [name]           Create a named non-Git workspace archive
   general <db-path> <project-dir>                  Bind this directory to General Space
   link <db-path> <project-dir> <space-id> [name]   Bind this directory to an existing archive
   status <db-path> [project-dir]                   Show user-facing status for the current Space
   boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
+
+Memory:
   share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] <text>
                                                      Share a durable memory; publishes when --url or
                                                      SPINAL_PLUG_SYNC_URL is set, local-only otherwise
-  share-claude <db-path> <project-dir> <url> <device-id>
-                                                     Share current Claude Code project memory
-  remember <db-path> <project-dir> <kind> [--candidate] <text>
-                                                     Internal local staging command; --candidate stages for review
+  share-claude <db-path> <project-dir> <url> [device-id]
+                                                     Share current Claude Code project memory (empty url = local-only)
   candidates <db-path> <project-dir>               List reviewable inferred memory candidates
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
-  checkpoint <db-path> <project-dir> <json>        Save a work-state checkpoint for Agent handoff
-  mind-core <db-path> <project-dir> <json>         Create a Mind Core runtime entity
-  role <db-path> <project-dir> <json>              Create a Role Profile runtime entity
-  mission <db-path> <project-dir> <json>           Create a Mission runtime entity
-  task-graph <db-path> <project-dir> <json>        Create or update a Task Graph
-  capsule <db-path> <project-dir> <json>           Compile a Mind Capsule boot package
-  incarnate <db-path> <project-dir> <json>         Spawn an Incarnation from a Capsule
-  runtime <db-path> <project-dir>                  List runtime entities in this Space
-  handoff <db-path> <project-dir>                  Show the newest work-state handoff
-  checkpoints <db-path> <project-dir>              List work-state checkpoints
   update <db-path> <project-dir> <memory-id> <text> Update active memory
   forget <db-path> <project-dir> <memory-id>       Tombstone active memory
   list <db-path> <project-dir> [--all]             List project memories
   recall <db-path> <project-dir> <prompt>          Print relevant active memories
-  sync <db-path> <project-dir> <url> <device-id>   Download and merge central memory updates
-  republish <db-path> <project-dir> <url> <device-id>
-                                                     Re-send delivered events after switching servers
-  space-register <db-path> <project-dir> <url>     Register this Space on an authenticated Control Plane
+
+Selective sync (requires a configured endpoint):
   fetch <db-path> <project-dir> <url> <device-id>  Fetch updates without applying optional changes
   preview <db-path> <project-dir>                  Preview fetched canonical updates
   apply <db-path> <project-dir> [update-id...]     Apply selected updates; no IDs applies all
@@ -107,17 +97,38 @@ Commands:
                                                      Apply selection and refresh Claude native memory
   apply-codex <db-path> <project-dir> [update-id...]
                                                      Apply selection and refresh Codex native memory
-  sync-claude <db-path> <project-dir> <url> <device-id>
-                                                     Sync and materialize into Claude Auto Memory
-  sync-codex <db-path> <project-dir> <url> <device-id>
-                                                     Sync and materialize into Codex native memory
+  sync-codex <db-path> <project-dir>               Refresh Codex native memory from local state (no network)
+  republish <db-path> <project-dir> <url> <device-id>
+                                                     Re-send delivered events after switching servers
+  space-register <db-path> <project-dir> <url>     Register this Space on an authenticated Control Plane
+
+Work handoff:
+  checkpoint <db-path> <project-dir> <json>        Save a work-state checkpoint for Agent handoff
+  handoff <db-path> <project-dir>                  Show the newest work-state handoff
+  checkpoints <db-path> <project-dir>              List work-state checkpoints
+
+Mind runtime:
+  mind-core <db-path> <project-dir> <json>         Create a Mind Core runtime entity
+  role <db-path> <project-dir> <json>              Create a Role Profile runtime entity
+  mission <db-path> <project-dir> <json>           Create a Mission runtime entity
+  task-graph <db-path> <project-dir> <json>        Create or update a Task Graph
+  capsule <db-path> <project-dir> <json>           Compile a Mind Capsule boot package
+  incarnate <db-path> <project-dir> <json>         Spawn an Incarnation from a Capsule
+  runtime <db-path> <project-dir>                  List runtime entities in this Space
+
+Server administration:
   serve <server-db-path> [port]                    Start a durable local sync HTTP server
   serve-control-plane <server-db-path> [port]      Start authenticated Control Plane
   control-provision <server-db-path> <account> <email> <owner> <device>
                                                      Provision an account and first device
+
+Internal (used by plugins and hooks — not user-facing):
+  remember <db-path> <project-dir> <kind> [--candidate] <text>
+                                                     Local staging; --candidate stages for review
   hook <host> <event> <db-path> <project-dir> [prompt]
                                                      Emit Claude Code / Codex hook context as JSON
-  hook-stdin <host> <db-path>                        Read a host Hook payload from stdin
+  hook-stdin <host> <db-path>                      Read a host Hook payload from stdin
+  init-db <db-path>                                Initialize the local cache database
 
 Hosts: claude-code, codex
 Kinds: directive, decision, context, reference
@@ -1108,13 +1119,6 @@ async function main(): Promise<void> {
     console.log(lines.join("\n"));
     return;
   }
-  if (command === "sync") {
-    const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: spinal-plug sync <db-path> <project-dir> <url> <device-id>");
-    const result = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
   if (command === "republish") {
     const [url, deviceId] = rest;
     if (!url || !deviceId) throw new Error("Usage: spinal-plug republish <db-path> <project-dir> <url> <device-id>");
@@ -1203,38 +1207,11 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ applied, materialized }, null, 2));
     return;
   }
-  if (command === "sync-claude") {
-    const [url, deviceId] = rest;
-    if (url === undefined) {
-      throw new Error("Usage: spinal-plug sync-claude <db-path> <project-dir> <url> [device-id]  (empty url = local refresh only)");
-    }
-    const synchronized = url
-      ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId || "device-local")
-      : null;
-    const importer = new ClaudeAutoMemoryImporter();
-    const localNativeMemoryIds = new Set(
-      importer.import(space, projectPath).candidates.map(candidate => candidate.memoryId)
-    );
-    const allMemories = service.list(space);
-    const projectedMemories = allMemories.filter(memory => !localNativeMemoryIds.has(memory.memoryId));
-    const materialized = new ClaudeAutoMemoryMaterializer().materialize(projectPath, projectedMemories);
-    console.log(JSON.stringify({
-      synchronized,
-      materialized,
-      excludedLocalClaudeMemories: allMemories.length - projectedMemories.length
-    }, null, 2));
-    return;
-  }
   if (command === "sync-codex") {
-    const [url, deviceId] = rest;
-    if (url === undefined) {
-      throw new Error("Usage: spinal-plug sync-codex <db-path> <project-dir> <url> [device-id]  (empty url = local refresh only)");
-    }
-    const synchronized = url
-      ? await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId || "device-local")
-      : null;
+    // Local projection refresh only: network sync goes through the selective
+    // fetch → preview → apply flow, never through this command.
     const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
-    console.log(JSON.stringify({ synchronized, materialized }, null, 2));
+    console.log(JSON.stringify({ materialized }, null, 2));
     return;
   }
 
