@@ -175,13 +175,14 @@ function requireMemoryKind(value: string): MemoryKind {
 
 /**
  * Normalize an LLM-chosen semantic key: kebab-case segments with an optional
- * `namespace:` prefix (matching the importer's claude-topic: convention).
+ * `namespace:` prefix. Imported Claude topic paths use this same conversion,
+ * so every value returned by the registry can be copied into --key unchanged.
  * Normalization is mechanical — classification (which key a fact belongs to)
  * is the host model's job.
  */
 function normalizeSemanticKey(raw: string): string {
   const key = raw.trim().toLowerCase()
-    .replace(/[\s_]+/g, "-")
+    .replace(/[\s_./\\]+/g, "-")
     .replace(/[^a-z0-9:-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^[-:]+|[-:]+$/g, "");
@@ -324,6 +325,7 @@ async function shareClaudeAutoMemory(
   let updated = 0;
   let unchanged = 0;
   for (const candidate of imported.candidates) {
+    const semanticKey = normalizeSemanticKey(candidate.semanticKey);
     const existing = database.getMemory(candidate.memoryId);
     if (!existing) {
       service.remember({
@@ -333,7 +335,7 @@ async function shareClaudeAutoMemory(
         title: candidate.title,
         statement: candidate.statement,
         references: [candidate.sourceUri],
-        semanticKey: candidate.semanticKey,
+        semanticKey,
         origin: "host_native",
         confidence: 0.95,
         actor: { agentInstallationId: "claude-code-auto-memory", host: "claude-code" }
@@ -344,13 +346,14 @@ async function shareClaudeAutoMemory(
       || existing.statement !== candidate.statement
       || existing.references.length !== 1
       || existing.references[0] !== candidate.sourceUri
+      || existing.semanticKey !== semanticKey
     ) {
       service.update(space, {
         memoryId: candidate.memoryId,
         title: candidate.title,
         statement: candidate.statement,
         references: [candidate.sourceUri],
-        semanticKey: candidate.semanticKey,
+        semanticKey,
         origin: "host_native",
         confidence: 0.95,
         actor: { agentInstallationId: "claude-code-auto-memory", host: "claude-code" }
@@ -981,10 +984,7 @@ async function main(): Promise<void> {
   }
   if (command === "share-claude") {
     const [url, deviceId] = rest;
-    if (url === undefined) {
-      throw new Error("Usage: spinal-plug share-claude <db-path> <project-dir> [url] [device-id]  (default: local sync server, local mode if unreachable)");
-    }
-    const endpoint = url ? { url, explicit: true } : resolveSyncEndpoint();
+    const endpoint = url?.trim() ? { url: url.trim(), explicit: true } : resolveSyncEndpoint();
     console.log(JSON.stringify(
       await shareClaudeAutoMemory(
         database,
@@ -992,7 +992,7 @@ async function main(): Promise<void> {
         space,
         projectPath,
         endpoint.url,
-        deviceId || "device-local",
+        deviceId || process.env.SPINAL_PLUG_DEVICE_ID || "device-local",
         endpoint.explicit
       ),
       null,
