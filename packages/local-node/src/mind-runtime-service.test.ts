@@ -88,3 +88,19 @@ test("Mind Core compiles a capsule and incarnates it without polluting Canonical
   assert.equal(resumed.status, "hibernated");
   assert.equal(target.listPendingOutboxForSpace(space.spaceId)[0].eventType, "runtime.incarnation.updated");
 });
+
+test("rejects likely secret material in durable runtime context", () => {
+  const database = openDatabase();
+  const runtime = new MindRuntimeService(database);
+  const core = runtime.createMindCore({ space, displayName: "Secure runtime" });
+
+  assert.throws(
+    () => runtime.createMission({
+      space,
+      mindId: core.mindId,
+      title: "Unsafe mission",
+      objective: "password=local-test-credential-20260728"
+    }),
+    /Refusing to store likely secret material/
+  );
+});

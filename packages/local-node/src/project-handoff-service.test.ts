@@ -60,3 +60,15 @@ test("remote checkpoint events are idempotently materialized without an outbox e
   assert.equal(target.latestCheckpoint(space.spaceId)?.checkpointId, checkpoint.checkpointId);
   assert.equal(target.listPendingOutboxForSpace(space.spaceId).length, 0);
 });
+
+test("rejects likely secret material in checkpoints", () => {
+  const handoffs = new ProjectHandoffService(openTestDatabase());
+  assert.throws(
+    () => handoffs.checkpoint({
+      space,
+      title: "Unsafe handoff",
+      summary: "password=local-test-credential-20260728"
+    }),
+    /Refusing to store likely secret material/
+  );
+});

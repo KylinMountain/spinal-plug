@@ -18,6 +18,7 @@ import type {
 } from "@spinal-plug/protocol";
 import { SpinalPlugDatabase } from "./index.js";
 import { ProjectMemoryService } from "./project-memory-service.js";
+import { memoryContainsLikelySecret, valueContainsLikelySecret } from "./sensitive-data.js";
 
 const defaultSyncProfile: SyncProfile = {
   pullMode: "notify",
@@ -227,8 +228,18 @@ export class MindRuntimeService {
       ? this.requireEntity<TaskGraph>(input.taskGraphId, "spinal-plug.task-graph/v0.1", input.space)
       : null;
     if (graph && graph.missionId !== mission.missionId) throw new Error("Task Graph does not belong to Mission.");
-    const memories = this.database.listActiveMemories(input.space.spaceId);
-    const checkpoint = this.database.latestCheckpoint(input.space.spaceId);
+    if (valueContainsLikelySecret([core, role, mission, graph])) {
+      throw new Error("Refusing to compile a Mind Capsule with likely secret material. Store a secret reference, not the secret value.");
+    }
+    const memories = this.database.listActiveMemories(input.space.spaceId)
+      .filter(memory => !memoryContainsLikelySecret(memory));
+    // The capsule references the checkpoint by id only, but a legacy
+    // secret-shaped checkpoint is excluded like the handoff service does —
+    // read-time filtering stays consistent across all consumers.
+    const latestCheckpoint = this.database.latestCheckpoint(input.space.spaceId);
+    const checkpoint = latestCheckpoint && !valueContainsLikelySecret(latestCheckpoint)
+      ? latestCheckpoint
+      : null;
     const timestamp = now();
     const capsule: MindCapsule = {
       schema: "spinal-plug.mind-capsule/v0.1",
@@ -315,6 +326,9 @@ export class MindRuntimeService {
   }
 
   private persist<T extends RuntimeEntity>(entity: T, update: boolean, actor?: Partial<EventActor>): T {
+    if (valueContainsLikelySecret(entity)) {
+      throw new Error("Refusing to store likely secret material in runtime context. Store a secret reference, not the secret value.");
+    }
     const eventId = `evt_${randomUUID()}`;
     entity.sourceEventIds = [...new Set([...entity.sourceEventIds, eventId])];
     const event: EventEnvelope = {

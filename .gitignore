@@ -2,7 +2,9 @@ node_modules
 dist
 .DS_Store
 *.tsbuildinfo
-.mind-palace
+.spinal-plug/
 data
 .playwright-cli
-output/playwright
+output/
+docs/
+.mind-palace/

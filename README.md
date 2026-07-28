@@ -152,16 +152,11 @@ Codex 与 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可
 
 当前版本聚焦项目级持久记忆、宿主原生投影、本地优先存储和选择性同步。`Mind Core`、`Mind Capsule`、`Incarnation` 与更完整的工作交接已保留扩展方向，但不承诺不同模型会产生完全相同的行为。
 
-## Documentation / 文档
+## Engineering
 
-- [Spinal Plug 术语与文案语气](docs/spinal-plug-voice.md)
-- [Mind Runtime(Mind Core / Capsule / Incarnation)](docs/mind-runtime.md)
-- [M1 本地工作流与 CLI 契约](docs/phase-m1-local-workflow.md)
-- [M2 同步内核与边界](docs/phase-m2-sync-core.md)
-- [Control Plane 控制台](docs/control-plane-console.md)
-- [Claude Code 插件集成](docs/integrations/claude-code-plugin.md)
-- [Codex 插件集成](docs/integrations/codex-plugin.md)
-- [Claude Code 参考实现观察](docs/research/claude-code-reference-notes.md)
+- [Architecture](ARCHITECTURE.md)
+- [Agent guide](AGENTS.md)
+- `pnpm verify` runs repository checks, type checks, builds, and tests.
 
 ## 开发
 
