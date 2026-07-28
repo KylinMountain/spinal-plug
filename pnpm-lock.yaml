@@ -62,12 +62,18 @@ importers:
       '@spinal-plug/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@spinal-plug/sync-server':
+        specifier: workspace:*
+        version: link:../sync-server
 
   packages/local-node:
     dependencies:
       '@spinal-plug/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@spinal-plug/sync-server':
+        specifier: workspace:*
+        version: link:../sync-server
 
   packages/mcp-server:
     dependencies:
@@ -79,6 +85,12 @@ importers:
         version: link:../protocol
 
   packages/protocol: {}
+
+  packages/sync-server:
+    dependencies:
+      '@spinal-plug/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
 packages:
 

@@ -128,6 +128,8 @@ spinal-plug boot "$HOME/.spinal-plug/spinal-plug.db" .
 
 ### 03 / 接入同步端点
 
+不配置端点时，发布会先尝试本机开发中心（`127.0.0.1:8787`)，无人应答则静默留在本地模式——本地优先是默认，不需要认证，开箱即可测试。需要跨设备或跨 Agent 同步时才配置：
+
 ```bash
 export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
 export SPINAL_PLUG_DEVICE_ID="device-local"
@@ -144,6 +146,28 @@ Codex 与 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可
 /spinal-plug:share
 /spinal-plug:sync
 /spinal-plug:boot
+```
+
+## 项目状态
+
+当前版本聚焦项目级持久记忆、宿主原生投影、本地优先存储和选择性同步。`Mind Core`、`Mind Capsule`、`Incarnation` 与更完整的工作交接已保留扩展方向，但不承诺不同模型会产生完全相同的行为。
+
+## Documentation / 文档
+
+- [Spinal Plug 术语与文案语气](docs/spinal-plug-voice.md)
+- [Mind Runtime(Mind Core / Capsule / Incarnation)](docs/mind-runtime.md)
+- [M1 本地工作流与 CLI 契约](docs/phase-m1-local-workflow.md)
+- [M2 同步内核与边界](docs/phase-m2-sync-core.md)
+- [Control Plane 控制台](docs/control-plane-console.md)
+- [Claude Code 插件集成](docs/integrations/claude-code-plugin.md)
+- [Codex 插件集成](docs/integrations/codex-plugin.md)
+- [Claude Code 参考实现观察](docs/research/claude-code-reference-notes.md)
+
+## 开发
+
+```bash
+pnpm test
+pnpm typecheck
 ```
 
 ---
