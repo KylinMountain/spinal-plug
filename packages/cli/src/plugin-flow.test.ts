@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createSyncHttpServer, PersistentSyncServer } from "@spinal-plug/sync-server";
@@ -88,9 +88,19 @@ function claudeMemoryDir(home: string, projectDir: string): string {
   return join(home, ".claude", "projects", sanitizePath(projectDir), "memory");
 }
 
-function spaceIdOf(projectDir: string): string {
-  const manifest = JSON.parse(readFileSync(join(projectDir, ".spinal-plug", "space.json"), "utf8")) as { spaceId: string };
-  return manifest.spaceId;
+function bindingManifest(home: string, projectDir: string): { spaceId: string; type?: string; boundPath?: string; repository?: { canonicalRemote: string } } {
+  const bindingsDir = join(home, ".spinal-plug", "projects");
+  const resolved = resolve(projectDir);
+  for (const entry of readdirSync(bindingsDir)) {
+    if (!entry.endsWith(".json")) continue;
+    const manifest = JSON.parse(readFileSync(join(bindingsDir, entry), "utf8")) as { boundPath?: string } & ReturnType<typeof bindingManifest>;
+    if (manifest.boundPath === resolved) return manifest;
+  }
+  throw new Error(`No home binding registered for ${resolved}`);
+}
+
+function spaceIdOf(home: string, projectDir: string): string {
+  return bindingManifest(home, projectDir).spaceId;
 }
 
 interface CliOptions {
@@ -185,14 +195,49 @@ test("Git workspace auto-binds on session start and receives a boot projection",
     assert.equal(started.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(started.hookSpecificOutput.additionalContext, /<spinal-plug_project_context/);
 
-    const manifest = JSON.parse(readFileSync(join(project, ".spinal-plug", "space.json"), "utf8")) as {
-      spaceId: string;
-      type: string;
-      repository?: { canonicalRemote: string };
-    };
+    const manifest = bindingManifest(home, project);
     assert.match(manifest.spaceId, /^spc_git_[0-9a-f]{32}$/);
     assert.equal(manifest.type, "project");
     assert.equal(manifest.repository?.canonicalRemote, "https://github.com/spinal-plug-tests/alpha");
+    // Bindings are device-local state: the project worktree stays untouched.
+    assert.ok(!existsSync(join(project, ".spinal-plug")), "no binding artifacts in the project directory");
+  } finally {
+    await server.close();
+  }
+});
+
+test("a legacy worktree binding migrates into the home registry on first contact", async () => {
+  const server = await startServer();
+  try {
+    const home = tempDir("spinal-plug-home-");
+    const project = initGitProject("https://github.com/spinal-plug-tests/legacy-binding.git");
+    const db = join(tempDir("spinal-plug-db-"), "local.db");
+
+    // A binding written by the pre-migration layout.
+    const legacyDir = join(project, ".spinal-plug");
+    mkdirSync(legacyDir, { recursive: true });
+    const legacySpace = {
+      schema: "spinal-plug.project-space/v0.1",
+      spaceId: "spc_git_legacy0123456789abcdef0123456",
+      type: "project",
+      displayName: "legacy-binding"
+    };
+    writeFileSync(join(legacyDir, "space.json"), `${JSON.stringify(legacySpace, null, 2)}\n`);
+
+    const started = await runCliJson<{ hookSpecificOutput: { additionalContext: string } }>(
+      ["hook", "claude-code", "session.start", db, project],
+      { home, syncUrl: server.url }
+    );
+    assert.match(started.hookSpecificOutput.additionalContext, /<spinal-plug_project_context/);
+
+    const manifest = bindingManifest(home, project);
+    assert.equal(manifest.spaceId, legacySpace.spaceId, "space identity is preserved across migration");
+    assert.ok(!existsSync(join(legacyDir, "space.json")), "legacy file is removed after migration");
+
+    // A remembered native memory under the same spaceId still resolves.
+    await runCli(["share", db, project, "context", "--url", "", "Memory survives binding migration."], { home });
+    const memories = await runCliJson<Array<{ statement: string }>>(["list", db, project], { home });
+    assert.deepEqual(memories.map(memory => memory.statement), ["Memory survives binding migration."]);
   } finally {
     await server.close();
   }
@@ -234,7 +279,7 @@ test("share-claude imports topic files once, skips secrets, and stays idempotent
     assert.equal(second.unchanged, 2);
     assert.equal(second.shared.pushed, 0);
 
-    const serverSnapshot = await snapshot(server, spaceIdOf(project));
+    const serverSnapshot = await snapshot(server, spaceIdOf(home, project));
     const titles = serverSnapshot.memories.map(memory => memory.title).sort();
     assert.deepEqual(titles, ["Port map", "deploy-runbook"]);
   } finally {
@@ -360,7 +405,7 @@ test("Claude Stop hook auto-shares new native memory without an explicit command
     });
     await runCli(["hook-stdin", "claude-code", db], { home, syncUrl: server.url, deviceId: "device-a", input: payload });
 
-    const serverSnapshot = await snapshot(server, spaceIdOf(project));
+    const serverSnapshot = await snapshot(server, spaceIdOf(home, project));
     assert.deepEqual(serverSnapshot.memories.map(memory => memory.title), ["Late fact"]);
   } finally {
     await server.close();
@@ -416,7 +461,7 @@ test("Codex Stop hook extracts reviewable candidates and promote publishes them"
     assert.match(candidates[0].statement, /pnpm/);
 
     // Candidates are reviewable locally but must not leak to the Control Plane.
-    const beforePromote = await snapshot(server, spaceIdOf(project));
+    const beforePromote = await snapshot(server, spaceIdOf(home, project));
     assert.equal(beforePromote.memories.length, 0);
     assert.equal(beforePromote.candidates.length, 0);
 
@@ -427,7 +472,7 @@ test("Codex Stop hook extracts reviewable candidates and promote publishes them"
     assert.equal(promoted.memory.status, "active");
     assert.ok(promoted.published.pushed >= 1);
 
-    const afterPromote = await snapshot(server, spaceIdOf(project));
+    const afterPromote = await snapshot(server, spaceIdOf(home, project));
     assert.equal(afterPromote.memories.length, 1);
     assert.match(afterPromote.memories[0].statement, /pnpm/);
   } finally {
@@ -455,7 +500,7 @@ test("republish re-bootstraps a new server after delivered events were stranded"
       { home }
     );
     assert.equal(stranded.shared.pushed, 0, "delivered events are not re-sent automatically");
-    assert.equal((await snapshot(serverB, spaceIdOf(project))).memories.length, 0);
+    assert.equal((await snapshot(serverB, spaceIdOf(home, project))).memories.length, 0);
 
     const republished = await runCliJson<{ requeued: number; pushed: number }>(
       ["republish", db, project, serverB.url, "device-a"],
@@ -463,7 +508,7 @@ test("republish re-bootstraps a new server after delivered events were stranded"
     );
     assert.equal(republished.requeued, 1);
     assert.equal(republished.pushed, 1);
-    const titles = (await snapshot(serverB, spaceIdOf(project))).memories.map(memory => memory.title);
+    const titles = (await snapshot(serverB, spaceIdOf(home, project))).memories.map(memory => memory.title);
     assert.deepEqual(titles, ["Migrated fact"]);
 
     // Re-publishing is a no-op once the new server acknowledges the events.
@@ -611,7 +656,7 @@ test("republish adopts Control Plane identity when migrating from a dev server",
     assert.ok(republished.pushed >= 1);
 
     const response = await fetch(
-      `${controlUrl}/v1/spaces/${encodeURIComponent(spaceIdOf(project))}/snapshot`,
+      `${controlUrl}/v1/spaces/${encodeURIComponent(spaceIdOf(home, project))}/snapshot`,
       { headers: { authorization: `Bearer ${token}` } }
     );
     assert.ok(response.ok);
@@ -763,7 +808,7 @@ test("an unset endpoint defaults to the local sync server when one is running", 
     assert.equal(shared.sync, "endpoint");
     assert.equal(shared.shared.pushed, 1);
     const response = await fetch(
-      `http://127.0.0.1:8787/v1/spaces/${encodeURIComponent(spaceIdOf(project))}/snapshot`
+      `http://127.0.0.1:8787/v1/spaces/${encodeURIComponent(spaceIdOf(home, project))}/snapshot`
     );
     assert.ok(response.ok);
     const serverSnapshot = await response.json() as { memories: Array<{ statement: string }> };
@@ -806,7 +851,7 @@ test("share keeps statements verbatim and only publishes to --url", async t => {
     assert.equal(published.shared.pushed, 2);
     // Publishing flushes the durable outbox: the earlier local-only memory
     // travels with the new one — local-first, not local-forever.
-    const serverSnapshot = await snapshot(server, spaceIdOf(project));
+    const serverSnapshot = await snapshot(server, spaceIdOf(home, project));
     assert.deepEqual(
       serverSnapshot.memories.map(memory => memory.statement).sort(),
       ["See the runbook https://example.com/runbook now", "Use pnpm as the only package manager."]
@@ -1037,7 +1082,7 @@ test("Claude PostToolUse on a memory-dir write hot-syncs; other writes stay quie
       { home, syncUrl: server.url, input: postToolUse(join(project, "src", "index.ts")) }
     );
     assert.equal(ignored.trim(), "{}");
-    assert.equal((await snapshot(server, spaceIdOf(project))).memories.length, 0);
+    assert.equal((await snapshot(server, spaceIdOf(home, project))).memories.length, 0);
 
     // A write inside the native memory directory syncs while the write is hot.
     const hot = await runCli(
@@ -1045,7 +1090,7 @@ test("Claude PostToolUse on a memory-dir write hot-syncs; other writes stay quie
       { home, syncUrl: server.url, input: postToolUse(join(memoryDir, "fresh.md")) }
     );
     assert.equal(hot.trim(), "{}");
-    const serverSnapshot = await snapshot(server, spaceIdOf(project));
+    const serverSnapshot = await snapshot(server, spaceIdOf(home, project));
     assert.deepEqual(serverSnapshot.memories.map(memory => memory.title), ["Fresh fact"]);
 
     // The managed projection file lives in the same directory: it triggers the
@@ -1055,7 +1100,7 @@ test("Claude PostToolUse on a memory-dir write hot-syncs; other writes stay quie
       ["hook-stdin", "claude-code", db],
       { home, syncUrl: server.url, input: postToolUse(join(memoryDir, "spinal-plug-synced.md")) }
     );
-    assert.equal((await snapshot(server, spaceIdOf(project))).memories.length, 1);
+    assert.equal((await snapshot(server, spaceIdOf(home, project))).memories.length, 1);
   } finally {
     await server.close();
   }
@@ -1082,7 +1127,7 @@ test("a secret-shaped candidate cannot wedge the Codex candidate drain", async (
        db.enqueueCandidateExtraction({
          jobId: "extract_poison_test",
          host: "codex",
-         spaceId: ${JSON.stringify(spaceIdOf(project))},
+         spaceId: ${JSON.stringify(spaceIdOf(home, project))},
          sessionId: "legacy-session",
          sourceDigest: "legacy",
          candidates: [

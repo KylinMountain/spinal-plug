@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,13 +22,13 @@ if (!existsSync(cliEntry)) {
   throw new Error("CLI build output is missing. Run pnpm build before starting a server.");
 }
 
-const stateDirectory = resolve(process.cwd(), ".spinal-plug");
+const stateDirectory = resolve(homedir(), ".spinal-plug");
 mkdirSync(stateDirectory, { recursive: true });
 const databasePath = resolve(stateDirectory, controlPlane ? "control-plane.db" : "sync-server.db");
 const command = controlPlane ? "serve-control-plane" : "serve";
 
 console.log(`Starting ${command} on http://127.0.0.1:${port}`);
-console.log(`Using worktree-local database ${databasePath}`);
+console.log(`Using device-local database ${databasePath}`);
 
 const child = spawn(process.execPath, [cliEntry, command, databasePath, String(port)], {
   cwd: repositoryRoot,
