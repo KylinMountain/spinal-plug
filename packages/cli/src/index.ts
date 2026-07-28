@@ -236,6 +236,22 @@ function toHostHookOutput(host: string, event: HookEventName, output: { addition
       }
     };
   }
+  if (host === "codex" && output.additionalContext) {
+    const codexEvent: Record<HookEventName, string> = {
+      "session.start": "SessionStart",
+      "prompt.submit": "UserPromptSubmit",
+      "post.tool.use": "PostToolUse",
+      "pre.compact": "PreCompact",
+      "stop": "Stop",
+      "session.end": "SessionEnd"
+    };
+    return {
+      hookSpecificOutput: {
+        hookEventName: codexEvent[event],
+        additionalContext: output.additionalContext
+      }
+    };
+  }
   if (host === "codex" && output.systemMessage) {
     return { systemMessage: output.systemMessage };
   }
@@ -390,26 +406,37 @@ function drainCodexCandidateJobs(
       for (const [index, candidate] of job.candidates.entries()) {
         const memoryId = `mem_candidate_${digest(`${job.jobId}:${index}`).slice(0, 24)}`;
         if (database.getMemory(memoryId)) continue;
-        service.remember({
-          space,
-          memoryId,
-          kind: candidate.kind,
-          title: candidate.title,
-          statement: candidate.statement,
-          why: candidate.why,
-          howToApply: candidate.howToApply,
-          references: candidate.references,
-          semanticKey: candidate.semanticKey,
-          origin: "agent_inferred",
-          confidence: candidate.confidence,
-          asCandidate: true,
-          actor: {
-            agentInstallationId: "spinal-plug-codex-hook",
-            host: "codex",
-            sessionId: job.sessionId
+        try {
+          service.remember({
+            space,
+            memoryId,
+            kind: candidate.kind,
+            title: candidate.title,
+            statement: candidate.statement,
+            why: candidate.why,
+            howToApply: candidate.howToApply,
+            references: candidate.references,
+            semanticKey: candidate.semanticKey,
+            origin: "agent_inferred",
+            confidence: candidate.confidence,
+            asCandidate: true,
+            actor: {
+              agentInstallationId: "spinal-plug-codex-hook",
+              host: "codex",
+              sessionId: job.sessionId
+            }
+          });
+          created += 1;
+        } catch (error) {
+          // A permanent validation failure (secret-shaped content) must not
+          // wedge the queue: skip just this candidate and let the job and its
+          // siblings complete. Transient errors still requeue below.
+          if (error instanceof Error && error.message.startsWith("Refusing to store likely secret")) {
+            console.error(`Spinal Plug skipped a secret-shaped candidate from job ${job.jobId}.`);
+            continue;
           }
-        });
-        created += 1;
+          throw error;
+        }
       }
       database.completeCandidateExtraction(job.jobId);
     } catch (error) {
@@ -449,10 +476,9 @@ async function executeHook(
   const space = await adapter.resolveProjectSpace(payload);
   if (!space) {
     if (payload.event === "session.start") {
-      const discovery = createWorkspaceDiscoveryContext(payload.cwd);
-      const output = host === "claude-code"
-        ? { additionalContext: discovery }
-        : { systemMessage: discovery };
+      // Discovery must reach the model, so both hosts get additionalContext —
+      // a codex systemMessage is only a user-visible warning.
+      const output = { additionalContext: createWorkspaceDiscoveryContext(payload.cwd) };
       console.log(JSON.stringify(toHostHookOutput(host, payload.event, output)));
       return;
     }
@@ -632,14 +658,18 @@ async function executeHook(
   ) {
     database.recordMemoryNudge(space.spaceId, payload.sessionId, host, new Date().toISOString());
     const nudge = buildMemoryNudge(rawDbPath, payload.cwd);
-    if (host === "claude-code") {
-      // A blocked Stop hands the reason back to the agent as its next
-      // instruction, so generation actually happens instead of passing by as
-      // a notice.
-      console.log(JSON.stringify({ decision: "block", reason: nudge }));
-    } else {
-      console.log(JSON.stringify({ systemMessage: nudge }));
-    }
+    // Both hosts support blocking a Stop: the reason is handed back to the
+    // agent as its next instruction, so generation actually happens instead
+    // of passing by as a notice (a codex systemMessage is only a
+    // user-visible warning and would never reach the model).
+    console.log(JSON.stringify({ decision: "block", reason: nudge }));
+    return;
+  }
+  if (host === "codex") {
+    // Codex Stop only accepts its documented common hook fields. Candidate
+    // state is durable and discoverable through the plugin commands, so keep
+    // the successful lifecycle response intentionally empty.
+    console.log("{}");
     return;
   }
   console.log(JSON.stringify({

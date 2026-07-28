@@ -1,11 +1,12 @@
 {
   "name": "spinal-plug-codex",
-  "version": "0.2.0+codex.20260724102825",
+  "version": "0.2.0+codex.20260728032907",
   "description": "Automatically lock, load, synchronize, and inspect Spinal Plug project memory from Codex.",
   "author": {
     "name": "KylinMountain"
   },
   "skills": "./skills/",
+  "hooks": "./hooks.json",
   "interface": {
     "displayName": "Spinal Plug // Codex",
     "shortDescription": "Lock, load, and synchronize project memory.",

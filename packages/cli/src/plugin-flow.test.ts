@@ -211,6 +211,7 @@ test("share-claude imports topic files once, skips secrets, and stays idempotent
     writeFileSync(join(memoryDir, "deploy.md"), "---\nname: deploy-runbook\n---\n\nDeploy with pnpm build && pnpm start.\n");
     writeFileSync(join(memoryDir, "ports.md"), "# Port map\n\nAPI listens on 48081 by default.\n");
     writeFileSync(join(memoryDir, "credentials.md"), "# do not share\n\nkey = sk-abcdefghijklmnopqrstuvwxyz123456\n");
+    writeFileSync(join(memoryDir, "device-access.md"), "# local device\n\n测试设备密码 local-test-credential-20260728\n");
     writeFileSync(join(memoryDir, "MEMORY.md"), "- [Deploy](deploy.md) — index only, never imported\n");
     writeFileSync(join(memoryDir, "spinal-plug-synced.md"), "stale managed projection, never imported\n");
 
@@ -225,7 +226,7 @@ test("share-claude imports topic files once, skips secrets, and stays idempotent
     const first = await runCliJson<ShareResult>(["share-claude", db, project, server.url, "device-a"], { home });
     assert.equal(first.discovered, 2);
     assert.equal(first.created, 2);
-    assert.equal(first.skippedSecretFiles, 1);
+    assert.equal(first.skippedSecretFiles, 2);
     assert.equal(first.shared.pushed, 2);
 
     const second = await runCliJson<ShareResult>(["share-claude", db, project, server.url, "device-a"], { home });
@@ -366,6 +367,25 @@ test("Claude Stop hook auto-shares new native memory without an explicit command
   }
 });
 
+test("Codex SessionStart injects the boot projection as developer context", async () => {
+  const home = tempDir("spinal-plug-home-");
+  const project = initGitProject("https://github.com/spinal-plug-tests/codex-context.git");
+  const db = join(tempDir("spinal-plug-db-"), "local.db");
+
+  await runCli(["hook", "codex", "session.start", db, project], { home, ...CLOSED_ENDPOINT });
+  await runCli(["remember", db, project, "context", "Codex needs this durable test context at session start."], {
+    home,
+    ...CLOSED_ENDPOINT
+  });
+  const started = await runCliJson<{ hookSpecificOutput: { hookEventName: string; additionalContext: string } }>(
+    ["hook", "codex", "session.start", db, project],
+    { home, ...CLOSED_ENDPOINT }
+  );
+
+  assert.equal(started.hookSpecificOutput.hookEventName, "SessionStart");
+  assert.match(started.hookSpecificOutput.additionalContext, /Codex needs this durable test context/);
+});
+
 test("Codex Stop hook extracts reviewable candidates and promote publishes them", async () => {
   const server = await startServer();
   try {
@@ -381,11 +401,11 @@ test("Codex Stop hook extracts reviewable candidates and promote publishes them"
       session_id: "codex-session-1",
       last_assistant_message: "决定采用 pnpm 作为本仓库唯一的包管理器。其他改动已经完成。"
     });
-    const stopResult = await runCliJson<{ notices: string[] }>(
+    const stopResult = await runCliJson<Record<string, never>>(
       ["hook-stdin", "codex", db],
       { home, syncUrl: server.url, deviceId: "device-codex", input: stopPayload }
     );
-    assert.match(stopResult.notices[0], /stored 1 reviewable candidate/);
+    assert.deepEqual(stopResult, {});
 
     const candidates = await runCliJson<Array<{ memoryId: string; status: string; statement: string }>>(
       ["candidates", db, project],
@@ -950,7 +970,7 @@ test("empty-chamber Claude Stop nudges once per session and stops after generati
   assert.ok(third.notices);
 });
 
-test("empty-chamber Codex Stop emits a systemMessage nudge instead of blocking", async () => {
+test("empty-chamber Codex Stop blocks with a nudge the model can act on", async () => {
   const home = tempDir("spinal-plug-home-");
   const project = initGitProject("https://github.com/spinal-plug-tests/nudge-codex.git");
   const db = join(tempDir("spinal-plug-db-"), "local.db");
@@ -962,11 +982,14 @@ test("empty-chamber Codex Stop emits a systemMessage nudge instead of blocking",
     session_id: "codex-session-1",
     last_assistant_message: "已完成。"
   });
-  const first = await runCliJson<{ systemMessage?: string }>(
+  // Codex supports decision:block on Stop; a systemMessage would only be a
+  // user-visible warning and never reach the model.
+  const first = await runCliJson<{ decision?: string; reason?: string }>(
     ["hook-stdin", "codex", db],
     { home, input: payload }
   );
-  assert.match(first.systemMessage ?? "", /spinal-plug_memory_nudge/);
+  assert.equal(first.decision, "block");
+  assert.match(first.reason ?? "", /spinal-plug_memory_nudge/);
 
   // A Codex Stop whose output yields a candidate never triggers the nudge.
   const withOutput = JSON.stringify({
@@ -975,12 +998,17 @@ test("empty-chamber Codex Stop emits a systemMessage nudge instead of blocking",
     session_id: "codex-session-2",
     last_assistant_message: "决定采用 pnpm 作为本仓库唯一的包管理器。其他改动已经完成。"
   });
-  const second = await runCliJson<{ systemMessage?: string; notices?: string[] }>(
+  const second = await runCliJson<Record<string, never>>(
     ["hook-stdin", "codex", db],
     { home, input: withOutput }
   );
-  assert.equal(second.systemMessage, undefined);
-  assert.match(second.notices?.[0] ?? "", /stored 1 reviewable candidate/);
+  assert.deepEqual(second, {});
+  const candidates = await runCliJson<Array<{ status: string; statement: string }>>(
+    ["candidates", db, project],
+    { home }
+  );
+  assert.deepEqual(candidates.map(candidate => candidate.status), ["candidate"]);
+  assert.match(candidates[0].statement, /pnpm/);
 });
 
 test("Claude PostToolUse on a memory-dir write hot-syncs; other writes stay quiet", async () => {
@@ -1028,6 +1056,71 @@ test("Claude PostToolUse on a memory-dir write hot-syncs; other writes stay quie
       { home, syncUrl: server.url, input: postToolUse(join(memoryDir, "spinal-plug-synced.md")) }
     );
     assert.equal((await snapshot(server, spaceIdOf(project))).memories.length, 1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("a secret-shaped candidate cannot wedge the Codex candidate drain", async () => {
+  const server = await startServer();
+  try {
+    const home = tempDir("spinal-plug-home-");
+    const project = initGitProject("https://github.com/spinal-plug-tests/poison-job.git");
+    const db = join(tempDir("spinal-plug-db-"), "local.db");
+    await runCli(["hook", "codex", "session.start", db, project], { home, syncUrl: server.url });
+
+    // Simulate a legacy job enqueued before the write-time secret guard: one
+    // poisoned candidate followed by a clean one.
+    execFileSync(process.execPath, [
+      "--input-type=module",
+      "-e",
+      `import { SpinalPlugDatabase } from ${JSON.stringify(
+        fileURLToPath(new URL("../../local-node/dist/index.js", import.meta.url))
+      )};
+       const db = new SpinalPlugDatabase(${JSON.stringify(db)});
+       db.init();
+       db.enqueueCandidateExtraction({
+         jobId: "extract_poison_test",
+         host: "codex",
+         spaceId: ${JSON.stringify(spaceIdOf(project))},
+         sessionId: "legacy-session",
+         sourceDigest: "legacy",
+         candidates: [
+           { kind: "context", title: "poison", statement: "password hunter2hunter2", references: [], confidence: 0.7 },
+           { kind: "context", title: "clean", statement: "The API listens on 48081.", references: [], confidence: 0.7 }
+         ],
+         createdAt: new Date().toISOString()
+       });`
+    ], { env: { ...process.env, NODE_NO_WARNINGS: "1" } });
+
+    // The drain runs on the next Stop: the clean sibling must be stored and
+    // the job completed — a requeue-and-rethrow here would wedge every later
+    // job behind the poison one.
+    const stop = JSON.stringify({
+      hook_event_name: "Stop",
+      cwd: project,
+      session_id: "codex-session-1",
+      last_assistant_message: "决定采用 pnpm 作为本仓库唯一的包管理器。其他改动已经完成。"
+    });
+    await runCli(["hook-stdin", "codex", db], { home, syncUrl: server.url, input: stop });
+
+    const candidates = await runCliJson<Array<{ statement: string }>>(["candidates", db, project], { home });
+    const statements = candidates.map(candidate => candidate.statement);
+    assert.ok(statements.includes("The API listens on 48081."), "clean sibling of the poison candidate is drained");
+    assert.ok(!statements.some(statement => statement.includes("hunter2")), "secret candidate is skipped, not stored");
+
+    // The pipeline still works afterwards: another clean Stop drains normally.
+    await runCli(["hook-stdin", "codex", db], {
+      home,
+      syncUrl: server.url,
+      input: JSON.stringify({
+        hook_event_name: "Stop",
+        cwd: project,
+        session_id: "codex-session-2",
+        last_assistant_message: "决定保持 SQLite 作为本地存储。收尾完成。"
+      })
+    });
+    assert.ok(true, "second drain completes without rethrowing the poison job");
   } finally {
     await server.close();
   }

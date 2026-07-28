@@ -28,6 +28,7 @@ test("rejects secrets, temporary progress, and non-stop input", () => {
     sessionId: "session_b",
     output: [
       "决定采用 Kafka，token=ABCD1234efgh5678。",
+      "决定使用测试设备，密码 local-test-credential-20260728。",
       "当前正在运行测试，下一步确认结果。",
       "普通回复，没有持久决策。"
     ].join("\n")

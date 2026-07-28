@@ -10,6 +10,7 @@ import type {
   SyncPushResponse
 } from "@spinal-plug/protocol";
 import { SpinalPlugDatabase } from "./index.js";
+import { valueContainsLikelySecret } from "./sensitive-data.js";
 
 export interface SyncTransport {
   push(request: SyncPushRequest): Promise<SyncPushResponse>;
@@ -28,6 +29,7 @@ export interface SyncRunResult {
 export interface PublishResult {
   pushed: number;
   duplicates: number;
+  skippedSecrets?: number;
 }
 
 export interface SynchronizeResult {
@@ -61,14 +63,30 @@ export class SpinalPlugSyncClient {
     const pending = this.database.listPendingOutboxForSpace(spaceId, batchSize);
     if (pending.length === 0) return { pushed: 0, duplicates: 0 };
 
-    const pushResult = await this.transport.push({ spaceId, deviceId, events: pending });
+    // Secrets never leave the device: an event whose payload trips the
+    // detector (anything minted before the write-time guard existed) is
+    // marked delivered without being sent, so it cannot wedge the outbox
+    // either. The local event log keeps it for a future controlled cleanup.
+    const sendable = pending.filter(event => !valueContainsLikelySecret(event.payload));
+    const skippedSecrets = pending.length - sendable.length;
+    for (const event of pending) {
+      if (!sendable.includes(event)) {
+        this.database.markOutboxDelivered(event.eventId);
+      }
+    }
+    if (sendable.length === 0) {
+      return { pushed: 0, duplicates: 0, skippedSecrets };
+    }
+
+    const pushResult = await this.transport.push({ spaceId, deviceId, events: sendable });
     for (const eventId of [...pushResult.acceptedEventIds, ...pushResult.duplicateEventIds]) {
       this.database.markOutboxDelivered(eventId);
     }
 
     return {
       pushed: pushResult.acceptedEventIds.length,
-      duplicates: pushResult.duplicateEventIds.length
+      duplicates: pushResult.duplicateEventIds.length,
+      skippedSecrets
     };
   }
 

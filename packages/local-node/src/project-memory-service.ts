@@ -11,6 +11,7 @@ import type {
   ProjectSpace
 } from "@spinal-plug/protocol";
 import { SpinalPlugDatabase } from "./index.js";
+import { memoryContainsLikelySecret, valueContainsLikelySecret } from "./sensitive-data.js";
 
 export interface ProjectMemoryProjection {
   kind: ProjectionKind;
@@ -132,6 +133,12 @@ function scoreMemory(memory: MemoryRecord, prompt: string): number {
   return overlap * 10 + kindWeight;
 }
 
+function assertMemoryIsSafe(memory: MemoryRecord): void {
+  if (memoryContainsLikelySecret(memory)) {
+    throw new Error("Refusing to store likely secret material in project memory. Store a secret reference, not the secret value.");
+  }
+}
+
 export class ProjectMemoryService {
   constructor(
     private readonly database: SpinalPlugDatabase,
@@ -162,6 +169,7 @@ export class ProjectMemoryService {
       createdAt: timestamp,
       updatedAt: timestamp
     };
+    assertMemoryIsSafe(memory);
     const event = makeEvent(
       input.asCandidate ? "memory.candidate.created" : "memory.created",
       memory,
@@ -193,6 +201,7 @@ export class ProjectMemoryService {
       confidence: input.confidence ?? existing.confidence,
       updatedAt: now()
     };
+    assertMemoryIsSafe(memory);
     const event = makeEvent(
       "memory.updated",
       memory,
@@ -236,6 +245,7 @@ export class ProjectMemoryService {
       confidence: Math.max(existing.confidence ?? 0, 0.92),
       updatedAt: now()
     };
+    assertMemoryIsSafe(memory);
     const event = makeEvent(
       "memory.promoted",
       memory,
@@ -250,7 +260,8 @@ export class ProjectMemoryService {
   }
 
   list(space: ProjectSpace, includeInactive = false): MemoryRecord[] {
-    return this.database.listMemories(space.spaceId, includeInactive);
+    return this.database.listMemories(space.spaceId, includeInactive)
+      .filter(memory => !memoryContainsLikelySecret(memory));
   }
 
   recall(space: ProjectSpace, prompt: string, limit = 8): MemoryRecord[] {
@@ -266,7 +277,7 @@ export class ProjectMemoryService {
     const memories = this.list(space).slice(0, limit);
     const projection = this.createProjection("project_boot", space, memories);
     const checkpoint = this.database.latestCheckpoint(space.spaceId);
-    if (!checkpoint) return projection;
+    if (!checkpoint || valueContainsLikelySecret(checkpoint)) return projection;
     const section = (name: string, values: string[]) => values.length
       ? `\n${name}:\n${values.map(value => `- ${escapeXml(value)}`).join("\n")}`
       : "";
