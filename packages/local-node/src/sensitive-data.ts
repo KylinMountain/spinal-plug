@@ -11,8 +11,18 @@ const DIRECT_SECRET_PATTERNS = [
   /\bmpd_[A-Za-z0-9_-]{16,}\b/
 ];
 
+// One label table shared by every separated form, so a label cannot leak
+// through a separator variant (private key nearly did).
+const SECRET_LABEL = String.raw`(?:api[_ -]?key|access[_ -]?token|auth(?:entication)?[_ -]?token|token|secret|password|passwd|private[_ -]?key|credential(?:s)?|密码|口令)`;
+
+// Every separated form requires the value to carry a digit or `_/+=-` —
+// otherwise ordinary prose ("password rotation", "token: required",
+// "口令 requirement") would be refused. A trailing dot does not count, and
+// date-shaped values are explicitly not credential material.
+const GATED_SECRET_VALUE = String.raw`(?!\d{4}[-./]\d{1,2}[-./]\d{1,2}\b)(?=[A-Za-z0-9_./+=-]*(?:\d|[_/+=-]))${SECRET_VALUE}`;
+
 const LABELLED_SECRET_PATTERN = new RegExp(
-  String.raw`(?:api[_ -]?key|access[_ -]?token|auth(?:entication)?[_ -]?token|token|secret|password|passwd|private[_ -]?key|credential(?:s)?|密码|口令)\s*(?:[:=：])\s*["']?${SECRET_VALUE}["']?`,
+  String.raw`${SECRET_LABEL}\s*[:=：]\s*["']?${GATED_SECRET_VALUE}["']?`,
   "i"
 );
 
@@ -23,27 +33,13 @@ const BEARER_TOKEN_PATTERN = new RegExp(
   "i"
 );
 
-// Verb ("is"/"为"/"是") and bare-whitespace separators only count when the
-// value carries a digit or `_/+=-` — otherwise ordinary prose such as
-// "password rotation" or "secret reference." would be refused. A trailing
-// dot does not count: sentence punctuation is not credential material.
-const VALUE_WITH_DIGIT_OR_SYMBOL = `(?=[A-Za-z0-9_./+=-]*(?:\\d|[_/+=-]))${SECRET_VALUE}`;
-
 const VERB_LABELLED_SECRET_PATTERN = new RegExp(
-  String.raw`(?:api[_ -]?key|access[_ -]?token|auth(?:entication)?[_ -]?token|token|secret|password|passwd|credential(?:s)?|密码|口令)\s*(?:is|为|是)\s*["']?${VALUE_WITH_DIGIT_OR_SYMBOL}["']?`,
+  String.raw`${SECRET_LABEL}\s*(?:is|为|是)\s*["']?${GATED_SECRET_VALUE}["']?`,
   "i"
 );
 
 const SPACED_LABELLED_SECRET_PATTERN = new RegExp(
-  String.raw`(?:api[_ -]?key|access[_ -]?token|auth(?:entication)?[_ -]?token|token|secret|password|passwd|credential(?:s)?)\s+["']?${VALUE_WITH_DIGIT_OR_SYMBOL}["']?`,
-  "i"
-);
-
-// Chinese notes often write "密码 value" without punctuation. Keep this
-// separate from English labels so ordinary phrases such as "password rotation"
-// are not mistaken for credentials.
-const CHINESE_LABELLED_SECRET_PATTERN = new RegExp(
-  String.raw`(?:密码|口令)\s+(?:["']?${SECRET_VALUE}["']?)`,
+  String.raw`${SECRET_LABEL}\s+["']?${GATED_SECRET_VALUE}["']?`,
   "i"
 );
 
@@ -52,8 +48,16 @@ export function containsLikelySecret(value: string): boolean {
     || LABELLED_SECRET_PATTERN.test(value)
     || BEARER_TOKEN_PATTERN.test(value)
     || VERB_LABELLED_SECRET_PATTERN.test(value)
-    || SPACED_LABELLED_SECRET_PATTERN.test(value)
-    || CHINESE_LABELLED_SECRET_PATTERN.test(value);
+    || SPACED_LABELLED_SECRET_PATTERN.test(value);
+}
+
+/** Error code carried by write-time secret rejections, so permanent validation failures are identifiable without matching message text. */
+export class SecretMaterialError extends Error {
+  readonly code = "secret_material" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "SecretMaterialError";
+  }
 }
 
 export function memoryContainsLikelySecret(memory: Pick<MemoryRecord, "title" | "statement" | "why" | "howToApply" | "references">): boolean {

@@ -40,6 +40,7 @@ its database under the current worktree's `.spinal-plug/` directory.
 | `packages/adapter-*` | Claude Code and Codex host integration. |
 | `packages/cli` | User-facing command composition and service startup. |
 | `packages/mcp-server` | MCP surface over local project memory. |
+| `plugins/` | Claude Code and Codex marketplace plugins (hooks, skills, commands). |
 | `docs/` | Optional local notes. They are never required by CI. |
 | `scripts/` | Mechanical repository checks and local developer utilities. |
 
@@ -49,13 +50,14 @@ its database under the current worktree's `.spinal-plug/` directory.
   package imports or workspace dependencies change.
 - Treat event envelopes and protocol schemas as compatibility boundaries. Add
   tests for behavior changes at the narrowest affected package.
-- Keep secrets, raw transcripts, and ephemeral task progress out of durable
-  memory and test fixtures.
+- Keep real secrets, raw transcripts, and ephemeral task progress out of
+  durable memory and test fixtures. Synthetic secret-shaped fixtures used to
+  test the detector are allowed and encouraged.
 - Update `README.md` or `ARCHITECTURE.md` when a committed contract or package
   boundary changes. Local `docs/` notes may be updated for personal context but
   must not be added to commits.
 - Do not restore historical documentation wholesale.
-- Reply to users in Chinese. This private repository uses the KylinMountain
+- Reply to users in Chinese. This repository uses the KylinMountain
   GitHub account (`kose2livs@gmail.com`) for GitHub operations.
 
 ## Change Completion

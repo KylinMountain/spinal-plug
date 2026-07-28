@@ -11,7 +11,7 @@ import type {
   ProjectSpace
 } from "@spinal-plug/protocol";
 import { SpinalPlugDatabase } from "./index.js";
-import { memoryContainsLikelySecret, valueContainsLikelySecret } from "./sensitive-data.js";
+import { memoryContainsLikelySecret, SecretMaterialError, valueContainsLikelySecret } from "./sensitive-data.js";
 
 export interface ProjectMemoryProjection {
   kind: ProjectionKind;
@@ -135,7 +135,7 @@ function scoreMemory(memory: MemoryRecord, prompt: string): number {
 
 function assertMemoryIsSafe(memory: MemoryRecord): void {
   if (memoryContainsLikelySecret(memory)) {
-    throw new Error("Refusing to store likely secret material in project memory. Store a secret reference, not the secret value.");
+    throw new SecretMaterialError("Refusing to store likely secret material in project memory. Store a secret reference, not the secret value.");
   }
 }
 

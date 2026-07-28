@@ -233,7 +233,13 @@ export class MindRuntimeService {
     }
     const memories = this.database.listActiveMemories(input.space.spaceId)
       .filter(memory => !memoryContainsLikelySecret(memory));
-    const checkpoint = this.database.latestCheckpoint(input.space.spaceId);
+    // The capsule references the checkpoint by id only, but a legacy
+    // secret-shaped checkpoint is excluded like the handoff service does —
+    // read-time filtering stays consistent across all consumers.
+    const latestCheckpoint = this.database.latestCheckpoint(input.space.spaceId);
+    const checkpoint = latestCheckpoint && !valueContainsLikelySecret(latestCheckpoint)
+      ? latestCheckpoint
+      : null;
     const timestamp = now();
     const capsule: MindCapsule = {
       schema: "spinal-plug.mind-capsule/v0.1",
