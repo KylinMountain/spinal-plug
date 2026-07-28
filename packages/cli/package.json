@@ -17,6 +17,7 @@
     "@spinal-plug/adapter-codex": "workspace:*",
     "@spinal-plug/adapter-sdk": "workspace:*",
     "@spinal-plug/local-node": "workspace:*",
-    "@spinal-plug/protocol": "workspace:*"
+    "@spinal-plug/protocol": "workspace:*",
+    "@spinal-plug/sync-server": "workspace:*"
   }
 }

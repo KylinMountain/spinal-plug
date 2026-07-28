@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Spinal Plug: 让 Claude Code、Codex 和未来的智能体通过可治理的神经记忆链路协作。" />
+    <title>SPINAL-PLUG | Neural Memory Link</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Noto+Sans+SC:wght@400;500;600;700;900&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --ink: #181916;
+        --paper: #f6f1e7;
+        --paper-deep: #ebe3d4;
+        --line: #c6bdad;
+        --red: #e43c2b;
+        --blue: #1166cf;
+        --lime: #a9dc42;
+        --mono: "DM Mono", monospace;
+        --sans: "Noto Sans SC", sans-serif;
+        --display: "Fraunces", "Noto Sans SC", serif;
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 7% 3%, rgba(228, 60, 43, .12), transparent 20rem),
+          radial-gradient(circle at 93% 12%, rgba(17, 102, 207, .12), transparent 24rem),
+          repeating-linear-gradient(0deg, rgba(24, 25, 22, .022) 0 1px, transparent 1px 4px),
+          var(--paper);
+        font-family: var(--sans);
+      }
+
+      .wrap { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+      .eyebrow { font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+
+      nav {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 22px 0; border-bottom: 1px solid var(--ink);
+      }
+      .brand { display: flex; align-items: center; gap: 10px; font: 700 18px/1 var(--display); }
+      .brand-mark { width: 21px; height: 21px; border: 3px solid var(--red); border-radius: 50%; position: relative; }
+      .brand-mark::after { content: ""; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--blue); right: -6px; bottom: -5px; }
+      .nav-meta { display: flex; gap: 18px; align-items: center; font: 500 11px/1 var(--mono); }
+      .nav-meta a { color: inherit; text-decoration: none; }
+      .signal { display: inline-flex; align-items: center; gap: 7px; }
+      .signal i { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 3px rgba(169,220,66,.25); }
+
+      .hero { position: relative; padding: 92px 0 78px; overflow: hidden; }
+      .hero-grid { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(310px, .82fr); gap: 54px; align-items: end; }
+      h1 { margin: 14px 0 22px; max-width: 760px; font: 700 clamp(50px, 7vw, 94px)/.96 var(--display); letter-spacing: -.055em; }
+      h1 em { color: var(--red); font-style: normal; }
+      .hero-copy { max-width: 590px; margin: 0; font-size: 18px; line-height: 1.78; }
+      .hero-actions { display: flex; gap: 12px; margin-top: 32px; flex-wrap: wrap; }
+      .button { display: inline-flex; align-items: center; gap: 10px; padding: 13px 17px; text-decoration: none; font: 600 12px/1 var(--mono); border: 1px solid var(--ink); color: var(--ink); transition: transform .2s, background .2s; }
+      .button:hover { transform: translate(-3px, -3px); box-shadow: 4px 4px 0 var(--ink); }
+      .button.primary { color: white; background: var(--ink); }
+      .button.primary span { color: var(--lime); }
+      .hero-aside { border: 1px solid var(--ink); background: #1c1d1a; color: #eeeadf; box-shadow: 10px 10px 0 var(--red); }
+      .aside-head { display: flex; justify-content: space-between; padding: 13px 15px; border-bottom: 1px solid #55534c; font: 500 10px/1 var(--mono); }
+      .aside-body { padding: 18px 17px 17px; }
+      .aside-title { margin: 0 0 18px; font: 600 17px/1.2 var(--sans); }
+      .boot-line { display: grid; grid-template-columns: 52px 1fr auto; gap: 7px; padding: 8px 0; border-top: 1px solid #363631; font: 11px/1.3 var(--mono); }
+      .boot-line b { color: var(--lime); font-weight: 500; }
+      .boot-line small { color: #a9a69c; font-size: 10px; }
+      .pulse { animation: pulse 1.7s infinite; }
+      @keyframes pulse { 50% { opacity: .45; } }
+
+      .ribbon { border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); overflow: hidden; white-space: nowrap; background: var(--blue); color: white; }
+      .ribbon-track { display: inline-block; padding: 12px 0; font: 500 12px/1 var(--mono); letter-spacing: .09em; animation: ticker 24s linear infinite; }
+      @keyframes ticker { to { transform: translateX(-50%); } }
+
+      section { padding: 96px 0; }
+      .section-head { display: grid; grid-template-columns: 150px 1fr; gap: 25px; padding-bottom: 28px; border-bottom: 1px solid var(--ink); }
+      h2 { margin: -7px 0 0; font: 700 clamp(32px, 4.2vw, 58px)/1 var(--display); letter-spacing: -.045em; }
+      .section-intro { max-width: 620px; margin: 0; font-size: 16px; line-height: 1.75; }
+
+      .principles { display: grid; grid-template-columns: repeat(3, 1fr); border-left: 1px solid var(--ink); margin-top: 0; }
+      .principle { min-height: 265px; padding: 27px 25px; border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); position: relative; }
+      .principle:nth-child(1) { background: rgba(228, 60, 43, .075); }
+      .principle:nth-child(2) { background: rgba(17, 102, 207, .065); }
+      .principle h3 { margin: 38px 0 12px; font: 700 25px/1.1 var(--display); letter-spacing: -.03em; }
+      .principle p { margin: 0; font-size: 14px; line-height: 1.7; }
+      .step-no { font: 500 12px/1 var(--mono); color: var(--red); }
+      .corner { position: absolute; right: 17px; top: 16px; width: 23px; height: 23px; border-top: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+
+      .flow-shell { margin-top: 42px; padding: 26px; border: 1px solid var(--ink); background: #fcf9f1; }
+      .flow-top { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 35px; font: 500 11px/1 var(--mono); }
+      .flow-top span:last-child { color: var(--red); }
+      .flow { display: grid; grid-template-columns: 1fr 82px 1.12fr 82px 1fr; align-items: center; }
+      .flow-card { min-height: 240px; border: 1px solid var(--ink); padding: 22px; position: relative; }
+      .flow-card.origin { background: var(--ink); color: var(--paper); }
+      .flow-card.core { background: var(--red); color: white; }
+      .flow-card.host { background: var(--paper-deep); }
+      .flow-card .eyebrow { opacity: .75; }
+      .flow-card h3 { margin: 45px 0 9px; font: 700 27px/1 var(--display); letter-spacing: -.04em; }
+      .flow-card p { margin: 0; font-size: 13px; line-height: 1.65; }
+      .flow-card ul { margin: 18px 0 0; padding: 0; list-style: none; font: 11px/1.7 var(--mono); }
+      .flow-card li::before { content: "+ "; color: var(--lime); }
+      .flow-card.core li::before { color: var(--ink); }
+      .arrow { height: 1px; background: var(--ink); position: relative; }
+      .arrow::after { content: ""; width: 10px; height: 10px; border-top: 1px solid var(--ink); border-right: 1px solid var(--ink); position: absolute; right: 0; top: -5px; transform: rotate(45deg); }
+      .arrow small { position: absolute; top: -25px; width: 100%; text-align: center; font: 10px/1 var(--mono); }
+      .flow-note { margin: 20px 0 0; font: 12px/1.6 var(--mono); color: #5b5b54; }
+
+      .hosts { display: grid; grid-template-columns: 1.1fr .9fr; gap: 34px; margin-top: 46px; }
+      .host-list { border-top: 1px solid var(--ink); }
+      .host-row { display: grid; grid-template-columns: 48px 1fr auto; gap: 17px; align-items: center; padding: 18px 0; border-bottom: 1px solid var(--ink); }
+      .host-icon { width: 39px; height: 39px; display: grid; place-items: center; color: white; background: var(--ink); font: 500 13px/1 var(--mono); }
+      .host-row:nth-child(2) .host-icon { background: var(--red); }
+      .host-row:nth-child(3) .host-icon { background: var(--blue); }
+      .host-row h3 { margin: 0; font: 700 20px/1 var(--display); }
+      .host-row p { margin: 5px 0 0; font-size: 13px; }
+      .host-row small { font: 10px/1.4 var(--mono); text-align: right; max-width: 130px; }
+      .capsule { padding: 26px; background: var(--blue); color: white; min-height: 360px; position: relative; overflow: hidden; }
+      .capsule::before { content: "CAPSULE"; position: absolute; right: -20px; bottom: -35px; color: rgba(255,255,255,.12); font: 700 92px/1 var(--display); }
+      .capsule h3 { max-width: 360px; margin: 52px 0 18px; font: 700 34px/1.03 var(--display); letter-spacing: -.04em; }
+      .capsule p { position: relative; max-width: 370px; font-size: 14px; line-height: 1.75; }
+      .capsule .chip { position: relative; display: inline-block; margin-top: 18px; padding: 8px 10px; color: var(--ink); background: var(--lime); font: 500 10px/1 var(--mono); }
+
+      .commands { background: var(--ink); color: var(--paper); }
+      .commands .section-head { border-color: #53544d; }
+      .command-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 50px; margin-top: 42px; }
+      .terminal { padding: 20px; border: 1px solid #616159; background: #121310; font: 13px/1.8 var(--mono); }
+      .terminal .dim { color: #8e9187; } .terminal .prompt { color: var(--lime); } .terminal .command { color: #f9f0d2; }
+      .terminal .ok { color: #83caff; } .terminal .warning { color: #ff9b85; }
+      .command-copy { align-self: center; }
+      .command-copy h3 { margin: 0 0 14px; font: 700 30px/1.1 var(--display); }
+      .command-copy p { color: #cecbc1; font-size: 14px; line-height: 1.75; }
+      .command-copy .eyebrow { color: var(--lime); }
+
+      footer { padding: 26px 0 38px; background: var(--ink); color: #bcbab1; border-top: 1px solid #53544d; }
+      .footer-line { display: flex; justify-content: space-between; gap: 20px; font: 10px/1.5 var(--mono); }
+      .footer-line b { color: var(--paper); }
+
+      @media (max-width: 800px) {
+        .wrap { width: min(100% - 28px, 620px); }
+        .nav-meta a { display: none; }
+        .hero { padding: 58px 0 65px; }
+        .hero-grid, .hosts, .command-grid { grid-template-columns: 1fr; gap: 32px; }
+        .section-head { grid-template-columns: 1fr; gap: 16px; }
+        section { padding: 65px 0; }
+        .principles { grid-template-columns: 1fr; }
+        .principle { min-height: 190px; }
+        .flow { grid-template-columns: 1fr; gap: 30px; }
+        .arrow { height: 35px; width: 1px; justify-self: center; }
+        .arrow::after { right: -5px; top: auto; bottom: 0; transform: rotate(135deg); }
+        .arrow small { transform: rotate(90deg); top: 13px; left: -28px; width: 58px; }
+        .flow-card { min-height: auto; }
+        h1 { font-size: clamp(51px, 16vw, 74px); }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="wrap">
+        <nav>
+          <div class="brand"><span class="brand-mark"></span> SPINAL-PLUG</div>
+          <div class="nav-meta"><span class="signal"><i></i> CONTROL PLANE ONLINE</span><a href="#architecture">工作原理</a><a href="#hosts">Agent 接入</a></div>
+        </nav>
+
+        <section class="hero">
+          <div class="hero-grid">
+            <div>
+              <div class="eyebrow">One mind / many capable hosts</div>
+              <h1>不是让 Agent<br />记住更多。<br />而是让它们<em>成为同一个你。</em></h1>
+              <p class="hero-copy">Spinal Plug 将分散在 Claude Code、Codex 与不同设备上的项目经验锁入可追溯、可选择同步、可注入的神经记忆链路。</p>
+              <div class="hero-actions"><a class="button primary" href="#architecture">查看工作原理 <span>↓</span></a><a class="button" href="#hosts">查看宿主接入 →</a></div>
+            </div>
+            <aside class="hero-aside">
+              <div class="aside-head"><span>MEMORY CORE BOOT SEQUENCE</span><span>v0.1</span></div>
+              <div class="aside-body">
+                <p class="aside-title">记忆脊椎栓已锁定</p>
+                <div class="boot-line"><small>01/05</small><span>Project Space</span><b>LINKED</b></div>
+                <div class="boot-line"><small>02/05</small><span>Incarnation Link</span><b>BOUND</b></div>
+                <div class="boot-line"><small>03/05</small><span>Mind Capsule</span><b>READY</b></div>
+                <div class="boot-line"><small>04/05</small><span>Memory Fidelity</span><b>6 REF</b></div>
+                <div class="boot-line"><small>05/05</small><span>Sync Uplink</span><b class="pulse">ONLINE</b></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </div>
+
+      <div class="ribbon"><div class="ribbon-track">MEMORY FIDELITY &nbsp; ✦ &nbsp; PROJECT CONTINUITY &nbsp; ✦ &nbsp; NATIVE HOST PROJECTION &nbsp; ✦ &nbsp; SELECTIVE SYNCHRONIZATION &nbsp; ✦ &nbsp; MEMORY FIDELITY &nbsp; ✦ &nbsp; PROJECT CONTINUITY &nbsp; ✦ &nbsp; NATIVE HOST PROJECTION &nbsp; ✦ &nbsp; SELECTIVE SYNCHRONIZATION &nbsp; ✦ &nbsp;</div></div>
+
+      <section class="wrap">
+        <div class="section-head"><div class="eyebrow">The premise / 01</div><div><h2>一个人的记忆，<br />不应困在一个工具里。</h2><p class="section-intro">你在 Codex 做出技术判断，在 Claude Code 接着排查问题。以前，新的 Agent 是空白的；现在，它可以在启动时接入同一个项目记忆，并在工作后把真正有价值的经验回归中心。</p></div></div>
+        <div class="principles">
+          <article class="principle"><span class="step-no">01 — LOAD</span><span class="corner"></span><h3>加载身份</h3><p>从 Project Space 取回关键规则、历史决策、项目背景与权威引用，形成受 token 预算约束的启动上下文。</p></article>
+          <article class="principle"><span class="step-no">02 — WORK</span><span class="corner"></span><h3>独立行动</h3><p>每个 Agent 在自己的会话和设备上工作。它们不是共享隐藏状态，而是共享经过治理的项目经验。</p></article>
+          <article class="principle"><span class="step-no">03 — RETURN</span><span class="corner"></span><h3>回归记忆</h3><p>值得长期保留的决定、纠正与上下文被发布为事件。其他 Agent 可预览、选择同步，再写入自身原生记忆。</p></article>
+        </div>
+      </section>
+
+      <section id="architecture" class="wrap">
+        <div class="section-head"><div class="eyebrow">Control flow / 02</div><div><h2>不是同步文件，<br />是编译一段共同经历。</h2><p class="section-intro">本地记忆、云端事实流与宿主原生记忆各司其职。事件是事实源，中心决定规范版本，宿主获得自己能理解的投影。</p></div></div>
+        <div class="flow-shell">
+          <div class="flow-top"><span>WORKFLOW / DURABLE MEMORY ONLY</span><span>LOCAL-FIRST · OFFLINE-SAFE</span></div>
+          <div class="flow">
+            <article class="flow-card origin"><div class="eyebrow">01 / Observe</div><h3>Agent Host</h3><p>Claude Code 或 Codex 在自己的会话中完成工作。</p><ul><li>原生记忆</li><li>用户纠正</li><li>项目决定</li></ul></article>
+            <div class="arrow"><small>PUBLISH</small></div>
+            <article class="flow-card core"><div class="eyebrow">02 / Govern</div><h3>Spinal Plug<br />Control Plane</h3><p>本地优先写入信号，再进入中心时间线。去重、版本、删除与冲突不再依赖覆盖文件。</p><ul><li>Event ledger</li><li>Canonical memory</li><li>Neural cursor</li></ul></article>
+            <div class="arrow"><small>PROJECT</small></div>
+            <article class="flow-card host"><div class="eyebrow">03 / Incarnate</div><h3>Native Memory</h3><p>针对每个宿主生成原生可读的记忆投影，让新的工作会话不必从零解释项目。</p><ul><li>Claude topic files</li><li>Codex stage-1 memory</li><li>Context injection</li></ul></article>
+          </div>
+          <p class="flow-note">注：同步的不是模型权重或隐藏思维链，而是身份连续性、项目决策、工作方式与可验证的长期经验。</p>
+        </div>
+      </section>
+
+      <section id="hosts" class="wrap">
+        <div class="section-head"><div class="eyebrow">Host adapters / 03</div><div><h2>同一枚记忆脊椎栓，<br />不同的具身方式。</h2><p class="section-intro">Spinal Plug 不替换 Agent。它在公开 Hook、Skill 与本地兼容层上工作，将同一项目记忆投射到每个宿主自己的语言。</p></div></div>
+        <div class="hosts">
+          <div class="host-list">
+            <div class="host-row"><span class="host-icon">CC</span><div><h3>Claude Code</h3><p>启动、提示与停止边界自动读取原生主题记忆；可将会话蒸馏回主题文件再发布。</p></div><small>TOPIC FILES<br />+ HOOKS</small></div>
+            <div class="host-row"><span class="host-icon">CX</span><div><h3>Codex</h3><p>将同步结果投影为受保留线程 ID 保护的原生 stage-1 memory，不覆盖真实会话。</p></div><small>STAGE-1 DB<br />+ SKILL</small></div>
+            <div class="host-row"><span class="host-icon">+</span><div><h3>Future Hosts</h3><p>协议保留 Persona、Mind Capsule、Incarnation 和 Work State 的扩展口，后续接入不重做事实源。</p></div><small>ADAPTER SDK<br />+ MCP</small></div>
+          </div>
+          <aside class="capsule"><div class="eyebrow">Mind Capsule / future runtime</div><h3>空白 Agent<br />加载之后，获得同一段连续性。</h3><p>未来的 Mind Capsule 会把角色、使命、工作 checkpoint、工具能力和同步策略一起装载。现在先把最重要的项目记忆同步做对。</p><span class="chip">M0/M1 — PROJECT MEMORY SYNC</span></aside>
+        </div>
+      </section>
+
+      <section class="commands">
+        <div class="wrap">
+          <div class="section-head"><div class="eyebrow">Live mechanics / 04</div><div><h2>人只需要说：<br />“把这段经历交给另一个我。”</h2></div></div>
+          <div class="command-grid">
+            <div class="terminal"><span class="dim"># 在 Claude Code 或 Codex 完成一段工作后</span><br /><span class="prompt">❯</span> <span class="command">/spinal-plug:share</span><br /><span class="ok">✓</span> 识别到 2 条持久记忆信号<br /><span class="ok">✓</span> 神经上行链路已提交<br /><br /><span class="dim"># 在另一台设备、另一个 Agent 中</span><br /><span class="prompt">❯</span> <span class="command">spinal-plug sync-codex …</span><br /><span class="ok">✓</span> 6 个规范记忆块已装载<br /><span class="ok">✓</span> Codex native memory 已更新<br /><br /><span class="warning">→ 新会话从已有项目经验开始，而不是从空白开始。</span></div>
+            <div class="command-copy"><div class="eyebrow">A deliberate boundary</div><h3>信号可见，装载可选。</h3><p>你可以看见其他分身产生了什么，但不必立刻把它们带入当前会话。Spinal Plug 的目标不是制造混乱的“全局上下文”，而是让连续性始终由你控制。</p></div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer><div class="wrap footer-line"><span><b>SPINAL-PLUG</b> / ONE MEMORY CORE, MANY INCARNATIONS</span><span>NEURAL MEMORY SYNC · LOCAL-FIRST · EXTENSIBLE BY DESIGN</span></div></footer>
+  </body>
+</html>

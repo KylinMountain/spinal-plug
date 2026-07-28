@@ -1,5 +1,5 @@
 {
-  "name": "@spinal-plug/local-node",
+  "name": "@spinal-plug/sync-server",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -7,10 +7,9 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
-    "test": "node --test dist/*.test.js"
+    "test": "node --test dist/*.test.js palace/*.test.js"
   },
   "dependencies": {
-    "@spinal-plug/protocol": "workspace:*",
-    "@spinal-plug/sync-server": "workspace:*"
+    "@spinal-plug/protocol": "workspace:*"
   }
 }

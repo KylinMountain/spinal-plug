@@ -99,6 +99,16 @@ CREATE TABLE IF NOT EXISTS candidate_extraction_jobs (
   completed_at TEXT
 );
 
+-- One row per (space, session, host) already reminded about an empty memory
+-- chamber, so a Stop-boundary nudge fires at most once per session.
+CREATE TABLE IF NOT EXISTS memory_nudges (
+  space_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  host TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (space_id, session_id, host)
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_space_created_at
   ON events(space_id, created_at);
 

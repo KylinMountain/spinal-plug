@@ -4,6 +4,7 @@
     { "path": "./packages/protocol" },
     { "path": "./packages/adapter-sdk" },
     { "path": "./packages/local-node" },
+    { "path": "./packages/sync-server" },
     { "path": "./packages/adapter-claude-code" },
     { "path": "./packages/adapter-codex" },
     { "path": "./packages/mcp-server" },
