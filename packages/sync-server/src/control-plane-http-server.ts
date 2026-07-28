@@ -392,6 +392,14 @@ export function createControlPlaneHttpServer(
         ));
         return;
       }
+      const overviewMatch = /^\/v1\/spaces\/([^/]+)\/overview$/.exec(url.pathname);
+      if (request.method === "GET" && overviewMatch) {
+        sendJson(response, 200, controlPlane.overview(
+          principal,
+          decodeURIComponent(overviewMatch[1])
+        ));
+        return;
+      }
       const eventsMatch = /^\/v1\/spaces\/([^/]+)\/events$/.exec(url.pathname);
       if (request.method === "GET" && eventsMatch) {
         const limit = url.searchParams.get("limit");

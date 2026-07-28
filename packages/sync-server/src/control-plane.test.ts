@@ -190,6 +190,72 @@ test("HTTP control plane rate-limits authenticated devices", async () => {
   control.close();
 });
 
+test("overview aggregates memory lifecycle, fidelity, and activity for the dashboard", async t => {
+  const control = testControlPlane();
+  const provisioned = control.provisionAccount({
+    accountName: "Acme",
+    ownerEmail: "owner@acme.test",
+    ownerName: "Owner",
+    deviceName: "Owner Mac"
+  });
+  const principal = control.authenticate(provisioned.credential.token);
+  control.createSpace(principal, { spaceId: "spc_overview", type: "project", displayName: "overview" });
+  const secondEvent = eventFor(principal.accountId, principal.deviceId, "spc_overview", "evt_ov2");
+  secondEvent.payload = { ...secondEvent.payload, statement: "Use NATS", title: "Broker" };
+  await control.push(principal, {
+    spaceId: "spc_overview",
+    deviceId: principal.deviceId,
+    events: [
+      eventFor(principal.accountId, principal.deviceId, "spc_overview", "evt_ov1"),
+      secondEvent
+    ]
+  });
+
+  const server = createControlPlaneHttpServer(control, { bootstrapToken: "bootstrap-test" });
+  t.after(async () => {
+    await server.close();
+    control.close();
+  });
+  await server.listen(0);
+  const port = server.address()?.port;
+  assert.ok(port);
+
+  const response = await fetch(`http://127.0.0.1:${port}/v1/spaces/spc_overview/overview`, {
+    headers: { authorization: `Bearer ${provisioned.credential.token}` }
+  });
+  assert.equal(response.status, 200);
+  const overview = await response.json() as {
+    schema: string;
+    memory: { active: number; candidates: number; disputes: number; tombstones: number };
+    fidelity: { percent: number; activeReferences: number; capsuleUsage: { used: number; budget: number } };
+    incarnations: unknown[];
+    incomingUpdates: unknown[];
+    activity: Array<{ eventType: string; deviceId: string }>;
+  };
+  assert.equal(overview.schema, "spinal-plug.space-overview/v0.1");
+  assert.equal(overview.memory.active, 2);
+  assert.equal(overview.memory.candidates, 0);
+  assert.equal(overview.fidelity.percent, 100);
+  assert.equal(overview.fidelity.activeReferences, 2);
+  assert.ok(overview.fidelity.capsuleUsage.used > 0);
+  assert.equal(overview.fidelity.capsuleUsage.budget, 24_000);
+  assert.equal(overview.activity.length, 2);
+  assert.equal(overview.activity[0].deviceId, principal.deviceId);
+  assert.deepEqual(overview.incarnations, []);
+
+  // ACL still applies: another account's token gets no overview.
+  const other = control.provisionAccount({
+    accountName: "Other",
+    ownerEmail: "owner@other.test",
+    ownerName: "Other Owner",
+    deviceName: "Other Mac"
+  });
+  const forbidden = await fetch(`http://127.0.0.1:${port}/v1/spaces/spc_overview/overview`, {
+    headers: { authorization: `Bearer ${other.credential.token}` }
+  });
+  assert.equal(forbidden.status, 404);
+});
+
 test("serves the memory palace shell and static assets", async t => {
   const control = testControlPlane();
   const server = createControlPlaneHttpServer(control, { bootstrapToken: "bootstrap-test" });
@@ -211,12 +277,13 @@ test("serves the memory palace shell and static assets", async t => {
   assert.equal(shell.headers.get("x-content-type-options"), "nosniff");
   assert.match(await shell.text(), /MEMORY PALACE/);
 
-  const script = await fetch(`${base}/palace/palace.js`);
+  const script = await fetch(`${base}/palace/app.js`);
   assert.equal(script.status, 200);
   assert.match(script.headers.get("content-type") ?? "", /text\/javascript/);
 
-  const data = await fetch(`${base}/palace/exhibits.js`);
-  assert.equal(data.status, 200);
+  const styles = await fetch(`${base}/palace/styles.css`);
+  assert.equal(styles.status, 200);
+  assert.match(styles.headers.get("content-type") ?? "", /text\/css/);
 
   const missing = await fetch(`${base}/palace/does-not-exist.js`);
   assert.equal(missing.status, 404);
@@ -268,13 +335,13 @@ test("palace assets support HEAD and refuse other methods", async t => {
   assert.ok(port);
   const base = `http://127.0.0.1:${port}`;
 
-  const head = await fetch(`${base}/palace/palace.js`, { method: "HEAD" });
+  const head = await fetch(`${base}/palace/app.js`, { method: "HEAD" });
   assert.equal(head.status, 200);
   assert.match(head.headers.get("content-type") ?? "", /text\/javascript/);
   assert.ok(Number(head.headers.get("content-length")) > 0);
   assert.equal(await head.text(), "");
 
-  const post = await fetch(`${base}/palace/palace.js`, { method: "POST" });
+  const post = await fetch(`${base}/palace/app.js`, { method: "POST" });
   assert.equal(post.status, 405);
 });
 
@@ -290,7 +357,7 @@ test("palace never serves dotfiles or test sources", async t => {
   assert.ok(port);
   const base = `http://127.0.0.1:${port}`;
 
-  for (const path of ["/palace/.env", "/palace/exhibits.test.js", "/palace/vendor/fetch-three.mjs"]) {
+  for (const path of ["/palace/.env", "/palace/.git/config", "/palace/.hidden key"]) {
     const response = await fetch(`${base}${path}`);
     assert.equal(response.status, 404, `${path} -> ${response.status}`);
   }
@@ -337,7 +404,7 @@ test("palace asset requests are rate-limited per client", async t => {
   assert.ok(port);
   const base = `http://127.0.0.1:${port}`;
 
-  assert.equal((await fetch(`${base}/palace/palace.js`)).status, 200);
-  assert.equal((await fetch(`${base}/palace/palace.js`)).status, 200);
-  assert.equal((await fetch(`${base}/palace/palace.js`)).status, 429);
+  assert.equal((await fetch(`${base}/palace/app.js`)).status, 200);
+  assert.equal((await fetch(`${base}/palace/app.js`)).status, 200);
+  assert.equal((await fetch(`${base}/palace/app.js`)).status, 429);
 });
