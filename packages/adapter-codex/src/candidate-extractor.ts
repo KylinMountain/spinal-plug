@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AdapterObservation, HostHookPayload } from "@spinal-plug/adapter-sdk";
+import { containsLikelySecret } from "@spinal-plug/local-node";
 
-const SECRET_PATTERN = /(?:api[_-]?key|access[_-]?token|token|secret|password|private[_ -]?key|bearer\s+)[=:"'\s]*[A-Za-z0-9_\-/.+=]{8,}/i;
 const EPHEMERAL_PATTERN = /(?:\btodo\b|\bnext\s+(?:step|action)\b|\bworking on\b|\brunning tests?\b|\bcurrently\b|下一步|正在|待处理|临时|本轮)/i;
 const DECISION_PATTERN = /(?:决定(?:采用|使用|选择)|确定(?:采用|使用|选择)|改为|统一使用|采用|选择|will use|we(?:'ll| will) use|decided to use|choose|instead of)/i;
 const DIRECTIVE_PATTERN = /(?:以后|始终|一律|必须|不要|禁止|请务必|always|never|must|do not|don't)/i;
@@ -52,7 +52,7 @@ export function extractCodexCandidates(payload: HostHookPayload): AdapterObserva
   const observations: AdapterObservation[] = [];
   const seen = new Set<string>();
   for (const sentence of sentences(payload.output)) {
-    if (SECRET_PATTERN.test(sentence) || EPHEMERAL_PATTERN.test(sentence)) continue;
+    if (containsLikelySecret(sentence) || EPHEMERAL_PATTERN.test(sentence)) continue;
     const references = sentence.match(URL_PATTERN) ?? [];
     let kind: AdapterObservation["kind"] | null = null;
     let confidence = 0;

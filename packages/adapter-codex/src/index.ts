@@ -37,7 +37,7 @@ export class CodexAdapter implements SpinalPlugAdapter {
     _payload: HostHookPayload
   ): Promise<AdapterOutput> {
     return {
-      systemMessage: projection.content
+      additionalContext: projection.content
     };
   }
 
