@@ -283,8 +283,10 @@ function renderTopology() {
   wrap.querySelectorAll(".topo-label,.topo-core-label").forEach(node => node.remove());
   for (const node of TOPO_NODES) {
     const angle = (node.angle * Math.PI) / 180;
-    const nx = cx + Math.cos(angle) * radius * 1.45;
-    const ny = cy + Math.sin(angle) * radius * 1.05;
+    // Clamp anchors into the canvas (label half-size + padding), so no dot,
+    // line, or label can bleed past the wrap at any viewport width.
+    const nx = Math.min(Math.max(cx + Math.cos(angle) * radius * 1.45, 72), width - 72);
+    const ny = Math.min(Math.max(cy + Math.sin(angle) * radius * 1.05, 42), height - 42);
     const gradient = context.createLinearGradient(cx, cy, nx, ny);
     gradient.addColorStop(0, "rgba(123, 104, 238, .55)");
     gradient.addColorStop(1, "rgba(34, 184, 166, .25)");
