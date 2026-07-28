@@ -6,9 +6,9 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packagesRoot = resolve(repositoryRoot, "packages");
 const allowedDependencies = new Map([
   ["@spinal-plug/protocol", new Set()],
-  ["@spinal-plug/sync-server", new Set(["@spinal-plug/protocol"])],
+  ["@spinal-plug/sync-server", new Set(["@spinal-plug/protocol", "@spinal-plug/local-node"])],
   ["@spinal-plug/adapter-sdk", new Set(["@spinal-plug/protocol"])],
-  ["@spinal-plug/local-node", new Set(["@spinal-plug/protocol", "@spinal-plug/sync-server"])],
+  ["@spinal-plug/local-node", new Set(["@spinal-plug/protocol"])],
   ["@spinal-plug/adapter-claude-code", new Set(["@spinal-plug/protocol", "@spinal-plug/local-node", "@spinal-plug/adapter-sdk"])],
   ["@spinal-plug/adapter-codex", new Set(["@spinal-plug/protocol", "@spinal-plug/local-node", "@spinal-plug/adapter-sdk"])],
   ["@spinal-plug/mcp-server", new Set(["@spinal-plug/protocol", "@spinal-plug/local-node"])],
