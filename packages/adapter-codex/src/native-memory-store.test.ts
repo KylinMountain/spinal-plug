@@ -74,3 +74,20 @@ test("uses the explicit native-memory database override", () => {
     else process.env.SPINAL_PLUG_CODEX_MEMORY_DB = previous;
   }
 });
+
+test("an explicit override path that does not exist is a configuration error", () => {
+  const previous = process.env.SPINAL_PLUG_CODEX_MEMORY_DB;
+  process.env.SPINAL_PLUG_CODEX_MEMORY_DB = join(tmpdir(), "spinal-plug-definitely-missing", "memories_1.sqlite");
+
+  try {
+    // Strict-explicit: a user-chosen path that is wrong must surface, not
+    // silently disable the projection.
+    assert.throws(
+      () => new CodexNativeMemoryStore().materialize(space, [memory]),
+      /SPINAL_PLUG_CODEX_MEMORY_DB does not exist/
+    );
+  } finally {
+    if (previous === undefined) delete process.env.SPINAL_PLUG_CODEX_MEMORY_DB;
+    else process.env.SPINAL_PLUG_CODEX_MEMORY_DB = previous;
+  }
+});

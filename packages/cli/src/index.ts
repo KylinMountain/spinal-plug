@@ -14,7 +14,8 @@ import {
   MindRuntimeService,
   ProjectHandoffService,
   ProjectMemoryService,
-  ProjectSpaceResolver
+  ProjectSpaceResolver,
+  SecretMaterialError
 } from "@spinal-plug/local-node";
 import type { MindCapsule, MemoryKind, ProjectSpace } from "@spinal-plug/protocol";
 import {
@@ -431,7 +432,7 @@ function drainCodexCandidateJobs(
           // A permanent validation failure (secret-shaped content) must not
           // wedge the queue: skip just this candidate and let the job and its
           // siblings complete. Transient errors still requeue below.
-          if (error instanceof Error && error.message.startsWith("Refusing to store likely secret")) {
+          if (error instanceof SecretMaterialError) {
             console.error(`Spinal Plug skipped a secret-shaped candidate from job ${job.jobId}.`);
             continue;
           }
