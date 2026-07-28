@@ -373,6 +373,58 @@ export class SpinalPlugDatabase {
     return this.listMemories(spaceId);
   }
 
+  /**
+   * The Space's semantic-key registry: one row per key with a representative
+   * statement, so a host can classify a new fact against existing keys
+   * instead of freely inventing a divergent one.
+   */
+  listSemanticKeys(spaceId: string): Array<{ semanticKey: string; memoryCount: number; sample: string }> {
+    const statement = this.db.prepare(`
+      SELECT semantic_key AS semanticKey, COUNT(*) AS memoryCount,
+             MAX(statement) AS sample
+      FROM memories
+      WHERE space_id = ? AND status = 'active' AND semantic_key IS NOT NULL
+      GROUP BY semantic_key
+      ORDER BY memoryCount DESC, semanticKey ASC
+    `);
+    return (statement.all(spaceId) as Array<Record<string, unknown>>).map(row => ({
+      semanticKey: String(row.semanticKey),
+      memoryCount: Number(row.memoryCount),
+      sample: String(row.sample)
+    }));
+  }
+
+  /**
+   * A Space "has memory" once anything reviewable exists — active memories or
+   * pending candidates — so empty-chamber nudges stop as soon as generation
+   * produces its first draft.
+   */
+  hasDurableMemory(spaceId: string): boolean {
+    const statement = this.db.prepare(`
+      SELECT 1 FROM memories
+      WHERE space_id = ? AND status IN ('active', 'candidate')
+      LIMIT 1
+    `);
+    return statement.get(spaceId) !== undefined;
+  }
+
+  hasMemoryNudge(spaceId: string, sessionId: string, host: string): boolean {
+    const statement = this.db.prepare(`
+      SELECT 1 FROM memory_nudges
+      WHERE space_id = ? AND session_id = ? AND host = ?
+      LIMIT 1
+    `);
+    return statement.get(spaceId, sessionId, host) !== undefined;
+  }
+
+  recordMemoryNudge(spaceId: string, sessionId: string, host: string, createdAt: string): void {
+    const statement = this.db.prepare(`
+      INSERT OR IGNORE INTO memory_nudges (space_id, session_id, host, created_at)
+      VALUES (?, ?, ?, ?)
+    `);
+    statement.run(spaceId, sessionId, host, createdAt);
+  }
+
   getCursor(scope: SyncCursor["scope"], ownerId: string, spaceId: string): SyncCursor | null {
     const statement = this.db.prepare(`
       SELECT * FROM sync_cursors
@@ -558,6 +610,52 @@ export class SpinalPlugDatabase {
       WHERE event_id = ?
     `);
     statement.run(eventId);
+  }
+
+  /**
+   * Re-queues events already delivered to a previous server. Delivery is not
+   * tracked per-server, so pointing this device at a new Control Plane (or a
+   * server that lost its database) requires this explicit re-bootstrap. The
+   * receiving server deduplicates by event_id, so re-publishing is safe.
+   */
+  requeueDeliveredOutboxForSpace(spaceId: string): number {
+    const result = this.db.prepare(`
+      UPDATE outbox
+      SET status = 'pending'
+      WHERE space_id = ? AND status = 'delivered'
+    `).run(spaceId);
+    return Number(result.changes);
+  }
+
+  /**
+   * Rewrites the account/device identity on this Space's local event history.
+   * Events minted by the unauthenticated local runtime carry accountId "local"
+   * and an arbitrary device id; an authenticated Control Plane rejects those.
+   * Adopting the credential's identity is the migration path onto such a
+   * server. Returns the number of rewritten events.
+   */
+  adoptIdentityForSpace(spaceId: string, identity: { accountId: string; deviceId: string }): number {
+    const rows = this.db.prepare(`
+      SELECT event_id, payload_json FROM events WHERE space_id = ?
+    `).all(spaceId) as Record<string, unknown>[];
+    const update = this.db.prepare("UPDATE events SET payload_json = ? WHERE event_id = ?");
+    let rewritten = 0;
+    try {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      for (const row of rows) {
+        const event = JSON.parse(String(row.payload_json)) as EventEnvelope;
+        if (event.accountId === identity.accountId && event.actor.deviceId === identity.deviceId) continue;
+        event.accountId = identity.accountId;
+        event.actor = { ...event.actor, deviceId: identity.deviceId };
+        update.run(JSON.stringify(event), String(row.event_id));
+        rewritten += 1;
+      }
+      this.db.exec("COMMIT;");
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+    return rewritten;
   }
 
   applyRemoteMemoryEvents(events: EventEnvelope[]): number {

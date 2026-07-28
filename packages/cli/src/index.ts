@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, resolve, sep } from "node:path";
 import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer, ClaudeCodeAdapter } from "@spinal-plug/adapter-claude-code";
 import { CodexAdapter, CodexNativeMemoryStore } from "@spinal-plug/adapter-codex";
 import type { HookEventName, SpinalPlugAdapter } from "@spinal-plug/adapter-sdk";
@@ -16,6 +17,12 @@ import {
   ProjectSpaceResolver
 } from "@spinal-plug/local-node";
 import type { MindCapsule, MemoryKind, ProjectSpace } from "@spinal-plug/protocol";
+import {
+  createControlPlaneHttpServer,
+  createSyncHttpServer,
+  SpinalPlugControlPlane,
+  PersistentSyncServer
+} from "@spinal-plug/sync-server";
 
 const MEMORY_KINDS: ReadonlySet<string> = new Set(["directive", "decision", "context", "reference"]);
 const HOOK_EVENTS: ReadonlySet<string> = new Set([
@@ -27,40 +34,65 @@ const HOOK_EVENTS: ReadonlySet<string> = new Set([
   "session.end"
 ]);
 
+/**
+ * Host hooks spawn this CLI without the user's shell profile, so credentials
+ * exported there never reach the sync path. Loading the device's env file as
+ * a fallback lets hooks publish to an authenticated Control Plane. Explicit
+ * environment variables always win.
+ */
+function loadDeviceEnvFile(): void {
+  const path = process.env.SPINAL_PLUG_ENV_FILE
+    ?? resolve(homedir(), ".spinal-plug", "device.env");
+  if (!existsSync(path)) return;
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const match = /^\s*(?:export\s+)?(SPINAL_PLUG_[A-Z_]+)\s*=\s*(.*)\s*$/.exec(line);
+    if (!match) continue;
+    const key = match[1];
+    if (process.env[key] !== undefined) continue;
+    let value = match[2];
+    if (
+      (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+loadDeviceEnvFile();
+
 function printHelp(): void {
   console.log(`spinal-plug
 
 Spinal Plug is the project command and lifecycle runtime.
+Endpoint resolution is three-tier: SPINAL_PLUG_SYNC_URL if set, otherwise
+the local sync server (127.0.0.1:8787), otherwise silent local mode —
+the outbox retains everything for a later retry, no authentication needed.
 
-Commands:
+Binding:
   connect <db-path> <project-dir>                  Create a project or archive binding for this directory
   archive <db-path> <project-dir> [name]           Create a named non-Git workspace archive
   general <db-path> <project-dir>                  Bind this directory to General Space
   link <db-path> <project-dir> <space-id> [name]   Bind this directory to an existing archive
   status <db-path> [project-dir]                   Show user-facing status for the current Space
   boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
-  share <db-path> <project-dir> <kind> <text> <url> <device-id>
-                                                     Share a durable memory with the configured sync endpoint
-  share-claude <db-path> <project-dir> <url> <device-id>
+
+Memory:
+  share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>
+                                                     Share a durable memory; publishes when --url or
+                                                     SPINAL_PLUG_SYNC_URL is set, local-only otherwise
+  share-claude <db-path> <project-dir> [url] [device-id]
                                                      Share current Claude Code project memory
-  remember <db-path> <project-dir> <kind> <text>   Internal local staging command
+                                                     (default: local sync server, local mode if unreachable)
   candidates <db-path> <project-dir>               List reviewable inferred memory candidates
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
-  checkpoint <db-path> <project-dir> <json>        Save a work-state checkpoint for Agent handoff
-  mind-core <db-path> <project-dir> <json>         Create a Mind Core runtime entity
-  role <db-path> <project-dir> <json>              Create a Role Profile runtime entity
-  mission <db-path> <project-dir> <json>           Create a Mission runtime entity
-  task-graph <db-path> <project-dir> <json>        Create or update a Task Graph
-  capsule <db-path> <project-dir> <json>           Compile a Mind Capsule boot package
-  incarnate <db-path> <project-dir> <json>         Spawn an Incarnation from a Capsule
-  runtime <db-path> <project-dir>                  List runtime entities in this Space
-  handoff <db-path> <project-dir>                  Show the newest work-state handoff
-  checkpoints <db-path> <project-dir>              List work-state checkpoints
   update <db-path> <project-dir> <memory-id> <text> Update active memory
   forget <db-path> <project-dir> <memory-id>       Tombstone active memory
   list <db-path> <project-dir> [--all]             List project memories
   recall <db-path> <project-dir> <prompt>          Print relevant active memories
-  sync <db-path> <project-dir> <url> <device-id>   Download and merge central memory updates
+  keys <db-path> <project-dir>                     List this Space's semantic-key registry
+
+Selective sync (requires a configured endpoint):
   fetch <db-path> <project-dir> <url> <device-id>  Fetch updates without applying optional changes
   preview <db-path> <project-dir>                  Preview fetched canonical updates
   apply <db-path> <project-dir> [update-id...]     Apply selected updates; no IDs applies all
@@ -68,13 +100,38 @@ Commands:
                                                      Apply selection and refresh Claude native memory
   apply-codex <db-path> <project-dir> [update-id...]
                                                      Apply selection and refresh Codex native memory
-  sync-claude <db-path> <project-dir> <url> <device-id>
-                                                     Sync and materialize into Claude Auto Memory
-  sync-codex <db-path> <project-dir> <url> <device-id>
-                                                     Sync and materialize into Codex native memory
+  sync-codex <db-path> <project-dir>               Refresh Codex native memory from local state (no network)
+  republish <db-path> <project-dir> <url> <device-id>
+                                                     Re-send delivered events after switching servers
+  space-register <db-path> <project-dir> <url>     Register this Space on an authenticated Control Plane
+
+Work handoff:
+  checkpoint <db-path> <project-dir> <json>        Save a work-state checkpoint for Agent handoff
+  handoff <db-path> <project-dir>                  Show the newest work-state handoff
+  checkpoints <db-path> <project-dir>              List work-state checkpoints
+
+Mind runtime:
+  mind-core <db-path> <project-dir> <json>         Create a Mind Core runtime entity
+  role <db-path> <project-dir> <json>              Create a Role Profile runtime entity
+  mission <db-path> <project-dir> <json>           Create a Mission runtime entity
+  task-graph <db-path> <project-dir> <json>        Create or update a Task Graph
+  capsule <db-path> <project-dir> <json>           Compile a Mind Capsule boot package
+  incarnate <db-path> <project-dir> <json>         Spawn an Incarnation from a Capsule
+  runtime <db-path> <project-dir>                  List runtime entities in this Space
+
+Server administration:
+  serve <server-db-path> [port]                    Start a durable local sync HTTP server
+  serve-control-plane <server-db-path> [port]      Start authenticated Control Plane
+  control-provision <server-db-path> <account> <email> <owner> <device>
+                                                     Provision an account and first device
+
+Internal (used by plugins and hooks — not user-facing):
+  remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
+                                                     Local staging; --candidate stages for review
   hook <host> <event> <db-path> <project-dir> [prompt]
                                                      Emit Claude Code / Codex hook context as JSON
-  hook-stdin <host> <db-path>                        Read a host Hook payload from stdin
+  hook-stdin <host> <db-path>                      Read a host Hook payload from stdin
+  init-db <db-path>                                Initialize the local cache database
 
 Hosts: claude-code, codex
 Kinds: directive, decision, context, reference
@@ -116,6 +173,53 @@ function requireMemoryKind(value: string): MemoryKind {
   return value as MemoryKind;
 }
 
+/**
+ * Normalize an LLM-chosen semantic key: kebab-case segments with an optional
+ * `namespace:` prefix. Imported Claude topic paths use this same conversion,
+ * so every value returned by the registry can be copied into --key unchanged.
+ * Normalization is mechanical — classification (which key a fact belongs to)
+ * is the host model's job.
+ */
+function normalizeSemanticKey(raw: string): string {
+  const key = raw.trim().toLowerCase()
+    .replace(/[\s_./\\]+/g, "-")
+    .replace(/[^a-z0-9:-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^[-:]+|[-:]+$/g, "");
+  if (!/^[a-z0-9][a-z0-9-]*(:[a-z0-9][a-z0-9-]*)*$/.test(key)) {
+    throw new Error(`Invalid semantic key "${raw}": use kebab-case, optionally with a namespace: prefix.`);
+  }
+  return key;
+}
+
+/**
+ * Leading-flag parser: consumes known flags that appear before the free-text
+ * argument, so the text itself is kept verbatim — a statement ending in a URL
+ * or containing a literal flag token can never be misparsed as options.
+ */
+function takeLeadingFlags(
+  args: string[],
+  spec: Record<string, "value" | "boolean">
+): { flags: Record<string, string | boolean>; rest: string[] } {
+  const flags: Record<string, string | boolean> = {};
+  let index = 0;
+  while (index < args.length && args[index] in spec) {
+    const flag = args[index];
+    if (spec[flag] === "boolean") {
+      flags[flag] = true;
+      index += 1;
+    } else {
+      const value = args[index + 1];
+      if (value === undefined) {
+        throw new Error(`Flag ${flag} requires a value.`);
+      }
+      flags[flag] = value;
+      index += 2;
+    }
+  }
+  return { flags, rest: args.slice(index) };
+}
+
 function resolveAdapter(host: string): SpinalPlugAdapter {
   if (host === "claude-code") return new ClaudeCodeAdapter();
   if (host === "codex") return new CodexAdapter();
@@ -151,6 +255,50 @@ function createWorkspaceDiscoveryContext(projectDir: string): string {
 
 const DEFAULT_LOCAL_SYNC_URL = "http://127.0.0.1:8787";
 
+/**
+ * Three-tier endpoint resolution: an explicit SPINAL_PLUG_SYNC_URL wins;
+ * otherwise the local development server is tried; if nothing answers there
+ * either, publication degrades silently to local mode — the WAL/outbox
+ * retains every event for a later retry, and no authentication is ever
+ * required for purely local use. `explicit` marks user-chosen endpoints,
+ * whose failures are surfaced instead of silently degraded.
+ */
+function resolveSyncEndpoint(): { url: string; explicit: boolean } {
+  const env = process.env.SPINAL_PLUG_SYNC_URL?.trim();
+  return env
+    ? { url: env, explicit: true }
+    : { url: DEFAULT_LOCAL_SYNC_URL, explicit: false };
+}
+
+type PublishResult = Awaited<ReturnType<SpinalPlugSyncClient["publish"]>>;
+
+/**
+ * Placeholder reported when publication falls back to local mode. Typed
+ * against publish()'s real return so a future field addition fails to
+ * compile here instead of drifting at each call site.
+ */
+const LOCAL_ONLY_PUBLISH_RESULT: PublishResult = { pushed: 0, duplicates: 0 };
+
+/**
+ * Publish if the endpoint answers. Failures degrade to local mode — unless
+ * `strict` (an endpoint the user explicitly chose), where they surface.
+ */
+async function tryPublish(
+  database: SpinalPlugDatabase,
+  spaceId: string,
+  deviceId: string,
+  url: string,
+  strict = false
+): Promise<{ result: PublishResult; mode: "endpoint" | "local-fallback" }> {
+  try {
+    const result = await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(spaceId, deviceId);
+    return { result, mode: "endpoint" };
+  } catch (error) {
+    if (strict) throw error;
+    return { result: LOCAL_ONLY_PUBLISH_RESULT, mode: "local-fallback" };
+  }
+}
+
 interface ClaudeAutoMemoryShareResult {
   source: "claude-code-auto-memory";
   discovered: number;
@@ -159,6 +307,7 @@ interface ClaudeAutoMemoryShareResult {
   unchanged: number;
   skippedSecretFiles: number;
   shared: { pushed: number; duplicates: number };
+  sync: "endpoint" | "local-fallback";
 }
 
 /** Import native Claude topic files before publishing; the SQLite cache itself never leaves the device. */
@@ -168,13 +317,15 @@ async function shareClaudeAutoMemory(
   space: import("@spinal-plug/protocol").ProjectSpace,
   projectPath: string,
   url: string,
-  deviceId: string
+  deviceId: string,
+  strict = false
 ): Promise<ClaudeAutoMemoryShareResult> {
   const imported = new ClaudeAutoMemoryImporter().import(space, projectPath);
   let created = 0;
   let updated = 0;
   let unchanged = 0;
   for (const candidate of imported.candidates) {
+    const semanticKey = normalizeSemanticKey(candidate.semanticKey);
     const existing = database.getMemory(candidate.memoryId);
     if (!existing) {
       service.remember({
@@ -184,7 +335,7 @@ async function shareClaudeAutoMemory(
         title: candidate.title,
         statement: candidate.statement,
         references: [candidate.sourceUri],
-        semanticKey: candidate.semanticKey,
+        semanticKey,
         origin: "host_native",
         confidence: 0.95,
         actor: { agentInstallationId: "claude-code-auto-memory", host: "claude-code" }
@@ -195,13 +346,14 @@ async function shareClaudeAutoMemory(
       || existing.statement !== candidate.statement
       || existing.references.length !== 1
       || existing.references[0] !== candidate.sourceUri
+      || existing.semanticKey !== semanticKey
     ) {
       service.update(space, {
         memoryId: candidate.memoryId,
         title: candidate.title,
         statement: candidate.statement,
         references: [candidate.sourceUri],
-        semanticKey: candidate.semanticKey,
+        semanticKey,
         origin: "host_native",
         confidence: 0.95,
         actor: { agentInstallationId: "claude-code-auto-memory", host: "claude-code" }
@@ -211,7 +363,9 @@ async function shareClaudeAutoMemory(
       unchanged += 1;
     }
   }
-  const shared = await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
+  // Publication rides the three-tier endpoint resolution: an unreachable or
+  // refusing endpoint degrades to local mode, never an error.
+  const { result: shared, mode } = await tryPublish(database, space.spaceId, deviceId, url, strict);
   return {
     source: "claude-code-auto-memory",
     discovered: imported.candidates.length,
@@ -219,7 +373,8 @@ async function shareClaudeAutoMemory(
     updated,
     unchanged,
     skippedSecretFiles: imported.skippedSecretFiles,
-    shared
+    shared,
+    sync: mode
   };
 }
 
@@ -271,18 +426,23 @@ async function executeHook(
   rawDbPath: string,
   projectDir: string,
   prompt?: string,
-  sessionId = process.env.SPINAL_PLUG_SESSION_ID ?? "hook-session",
-  output?: string
+  sessionId?: string,
+  output?: string,
+  toolFilePath?: string
 ): Promise<void> {
   if (!HOOK_EVENTS.has(rawEvent)) {
     throw new Error(`Unsupported hook event: ${rawEvent}`);
   }
 
+  // Without a real session id the nudge key would collapse every session into
+  // one ("hook-session"), permanently suppressing nudges after the first —
+  // so nudging requires an identified session.
+  const identifiedSessionId = sessionId ?? process.env.SPINAL_PLUG_SESSION_ID;
   const adapter = resolveAdapter(host);
   const payload = {
     event: rawEvent as HookEventName,
     cwd: resolve(process.cwd(), projectDir),
-    sessionId,
+    sessionId: identifiedSessionId ?? "hook-session",
     prompt,
     output
   };
@@ -313,7 +473,7 @@ async function executeHook(
           service,
           space,
           payload.cwd,
-          process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
+          resolveSyncEndpoint().url,
           process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
         );
       } catch {
@@ -366,7 +526,7 @@ async function executeHook(
           service,
           space,
           payload.cwd,
-          process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
+          resolveSyncEndpoint().url,
           process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
         );
       } catch {
@@ -378,6 +538,34 @@ async function executeHook(
     return;
   }
 
+  if (payload.event === "post.tool.use") {
+    // A write inside the project's native memory directory means Claude's own
+    // extractor (or the main agent) just persisted a topic file: import and
+    // publish while it is hot instead of waiting for a session boundary. The
+    // importer is idempotent and skips the managed projection file, so this
+    // cannot re-trigger itself.
+    if (host === "claude-code" && toolFilePath) {
+      const memoryDir = new ClaudeAutoMemoryImporter().memoryDirectory(payload.cwd);
+      const resolvedFile = resolve(toolFilePath);
+      if (resolvedFile.startsWith(memoryDir + sep)) {
+        try {
+          await shareClaudeAutoMemory(
+            database,
+            service,
+            space,
+            payload.cwd,
+            resolveSyncEndpoint().url,
+            process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+          );
+        } catch {
+          // A failed hot-sync is retried at the next session boundary.
+        }
+      }
+    }
+    console.log("{}");
+    return;
+  }
+
   if (host === "claude-code" && (payload.event === "stop" || payload.event === "session.end")) {
     try {
       await shareClaudeAutoMemory(
@@ -385,7 +573,7 @@ async function executeHook(
         service,
         space,
         payload.cwd,
-        process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL,
+        resolveSyncEndpoint().url,
         process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
       );
     } catch {
@@ -425,11 +613,34 @@ async function executeHook(
       // memory and work-state events are eligible for automatic publication.
       await new SpinalPlugSyncClient(
         database,
-        createSyncTransport(process.env.SPINAL_PLUG_SYNC_URL ?? DEFAULT_LOCAL_SYNC_URL)
+        createSyncTransport(resolveSyncEndpoint().url)
       ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
     } catch {
       // The local WAL/outbox retries on a later lifecycle boundary.
     }
+  }
+  // Empty-chamber nudge: a project with neither active memories nor pending
+  // candidates asks the host to generate its first durable memories from the
+  // current session. Stop is the only actionable boundary — session.end
+  // output can no longer be acted on — and each session is nudged at most
+  // once, recorded before printing so a crash cannot re-nudge.
+  if (
+    payload.event === "stop"
+    && identifiedSessionId !== undefined
+    && !database.hasDurableMemory(space.spaceId)
+    && !database.hasMemoryNudge(space.spaceId, payload.sessionId, host)
+  ) {
+    database.recordMemoryNudge(space.spaceId, payload.sessionId, host, new Date().toISOString());
+    const nudge = buildMemoryNudge(rawDbPath, payload.cwd);
+    if (host === "claude-code") {
+      // A blocked Stop hands the reason back to the agent as its next
+      // instruction, so generation actually happens instead of passing by as
+      // a notice.
+      console.log(JSON.stringify({ decision: "block", reason: nudge }));
+    } else {
+      console.log(JSON.stringify({ systemMessage: nudge }));
+    }
+    return;
   }
   console.log(JSON.stringify({
     notices: [
@@ -438,6 +649,24 @@ async function executeHook(
         : "Spinal Plug hook completed."
     ]
   }));
+}
+
+/** Instruction handed to the host agent when its project memory chamber is empty. */
+function buildMemoryNudge(dbPath: string, projectDir: string): string {
+  return [
+    '<spinal-plug_memory_nudge schema="v0.1">',
+    "This project has no durable Spinal Plug memory yet. Review this session and extract up to 3 facts that will still matter after it ends:",
+    "- directive: a persistent instruction about how work should be done",
+    "- decision: a technical or product choice and its reason",
+    "- context: background that cannot be cheaply re-read from the repository",
+    "- reference: a pointer to an authoritative external source",
+    "Never retain secrets, raw transcripts, or temporary task state. Before staging, classify each fact against the existing semantic keys:",
+    `  spinal-plug keys "${dbPath}" "${projectDir}"`,
+    "Reuse a listed key when one fits (pass --key <semantic-key>); only mint a new kebab-case key when none does. Then stage each fact as a reviewable candidate:",
+    `  spinal-plug remember "${dbPath}" "${projectDir}" <kind> --candidate [--key <semantic-key>] "<concise statement>"`,
+    "Then tell the user the candidates are ready for review (spinal-plug candidates / promote).",
+    "</spinal-plug_memory_nudge>"
+  ].join("\n");
 }
 
 async function runHook(args: string[]): Promise<void> {
@@ -480,7 +709,7 @@ async function runStdinHook(args: string[]): Promise<void> {
     throw new Error(`Unsupported ${host} hook event: ${String(input.hook_event_name)}`);
   }
   const cwd = typeof input.cwd === "string" ? input.cwd : process.cwd();
-  const sessionId = typeof input.session_id === "string" ? input.session_id : "hook-session";
+  const sessionId = typeof input.session_id === "string" ? input.session_id : undefined;
   const prompt = typeof input.prompt === "string"
     ? input.prompt
     : typeof input.user_prompt === "string"
@@ -495,7 +724,9 @@ async function runStdinHook(args: string[]): Promise<void> {
         : typeof input.output === "string"
           ? input.output
           : undefined;
-  await executeHook(host, event, rawDbPath, cwd, prompt, sessionId, output);
+  const toolInput = input.tool_input as Record<string, unknown> | undefined;
+  const toolFilePath = typeof toolInput?.file_path === "string" ? toolInput.file_path : undefined;
+  await executeHook(host, event, rawDbPath, cwd, prompt, sessionId, output, toolFilePath);
 }
 
 async function main(): Promise<void> {
@@ -513,6 +744,72 @@ async function main(): Promise<void> {
     await runStdinHook(args);
     return;
   }
+  if (command === "serve") {
+    const [serverDbPath, rawPort] = args;
+    if (!serverDbPath) throw new Error("Usage: spinal-plug serve <server-db-path> [port]");
+    const databasePath = resolve(process.cwd(), serverDbPath);
+    ensureParentDir(databasePath);
+    const syncServer = new PersistentSyncServer(databasePath);
+    const httpServer = createSyncHttpServer(syncServer);
+    const port = rawPort ? Number(rawPort) : 8787;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Port must be an integer from 1 to 65535.");
+    await httpServer.listen(port);
+    console.log(`Spinal Plug sync server listening on http://127.0.0.1:${port}`);
+    return;
+  }
+  if (command === "serve-control-plane") {
+    const [serverDbPath, rawPort] = args;
+    if (!serverDbPath) {
+      throw new Error("Usage: spinal-plug serve-control-plane <server-db-path> [port]");
+    }
+    const bootstrapToken = process.env.SPINAL_PLUG_BOOTSTRAP_TOKEN;
+    if (!bootstrapToken) throw new Error("SPINAL_PLUG_BOOTSTRAP_TOKEN is required.");
+    const databasePath = resolve(process.cwd(), serverDbPath);
+    ensureParentDir(databasePath);
+    const certPath = process.env.SPINAL_PLUG_TLS_CERT;
+    const keyPath = process.env.SPINAL_PLUG_TLS_KEY;
+    if (Boolean(certPath) !== Boolean(keyPath)) {
+      throw new Error("SPINAL_PLUG_TLS_CERT and SPINAL_PLUG_TLS_KEY must be set together.");
+    }
+    const controlPlane = new SpinalPlugControlPlane(databasePath);
+    const httpServer = createControlPlaneHttpServer(controlPlane, {
+      bootstrapToken,
+      tls: certPath && keyPath
+        ? { cert: readFileSync(certPath), key: readFileSync(keyPath) }
+        : undefined
+    });
+    const port = rawPort ? Number(rawPort) : 8787;
+    const host = process.env.SPINAL_PLUG_LISTEN_HOST ?? "127.0.0.1";
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error("Port must be an integer from 1 to 65535.");
+    }
+    await httpServer.listen(port, host);
+    console.log(`Spinal Plug Control Plane listening on ${httpServer.secure ? "https" : "http"}://${host}:${port}`);
+    return;
+  }
+  if (command === "control-provision") {
+    const [serverDbPath, accountName, ownerEmail, ownerName, deviceName] = args;
+    if (!serverDbPath || !accountName || !ownerEmail || !ownerName || !deviceName) {
+      throw new Error(
+        "Usage: spinal-plug control-provision <server-db-path> <account> <email> <owner> <device>"
+      );
+    }
+    const databasePath = resolve(process.cwd(), serverDbPath);
+    ensureParentDir(databasePath);
+    const controlPlane = new SpinalPlugControlPlane(databasePath);
+    try {
+      console.log(JSON.stringify(controlPlane.provisionAccount({
+        accountName,
+        ownerEmail,
+        ownerName,
+        deviceName
+      }), null, 2));
+    } finally {
+      controlPlane.close();
+    }
+    return;
+  }
+
   const [rawDbPath, projectDir, ...rest] = args;
   if (!rawDbPath) {
     throw new Error("Missing <db-path> argument.");
@@ -687,31 +984,92 @@ async function main(): Promise<void> {
   }
   if (command === "share-claude") {
     const [url, deviceId] = rest;
-    if (!url || !deviceId) {
-      throw new Error("Usage: spinal-plug share-claude <db-path> <project-dir> <url> <device-id>");
-    }
-    console.log(JSON.stringify(await shareClaudeAutoMemory(database, service, space, projectPath, url, deviceId), null, 2));
+    const endpoint = url?.trim() ? { url: url.trim(), explicit: true } : resolveSyncEndpoint();
+    console.log(JSON.stringify(
+      await shareClaudeAutoMemory(
+        database,
+        service,
+        space,
+        projectPath,
+        endpoint.url,
+        deviceId || process.env.SPINAL_PLUG_DEVICE_ID || "device-local",
+        endpoint.explicit
+      ),
+      null,
+      2
+    ));
     return;
   }
   if (command === "share") {
     const [kind, ...shareArgs] = rest;
-    const deviceId = shareArgs.pop();
-    const url = shareArgs.pop();
-    const statement = shareArgs.join(" ");
-    if (!kind || !statement || !url || !deviceId) {
-      throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> <text> <url> <device-id>");
+    // Flags must precede the text: the statement is kept verbatim, so a
+    // trailing URL in the text can never be mistaken for a publish endpoint.
+    const { flags, rest: statementParts } = takeLeadingFlags(shareArgs, {
+      "--url": "value",
+      "--device-id": "value",
+      "--key": "value"
+    });
+    const semanticKey = typeof flags["--key"] === "string"
+      ? normalizeSemanticKey(flags["--key"])
+      : undefined;
+    // An empty --url (e.g. an unset $SPINAL_PLUG_SYNC_URL in plugin scripts)
+    // falls through to the same three-tier resolution as no flag at all.
+    const endpoint = typeof flags["--url"] === "string" && (flags["--url"] as string).trim()
+      ? { url: (flags["--url"] as string).trim(), explicit: true }
+      : resolveSyncEndpoint();
+    const deviceId = typeof flags["--device-id"] === "string" && flags["--device-id"]
+      ? flags["--device-id"] as string
+      : process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local";
+    const statement = statementParts.join(" ");
+    if (!kind || !statement) {
+      throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>");
     }
-    const memory = service.remember({ space, kind: requireMemoryKind(kind), statement });
-    const publish = await new SpinalPlugSyncClient(database, createSyncTransport(url)).publish(space.spaceId, deviceId);
-    console.log(JSON.stringify({ memory, shared: publish }, null, 2));
+    const memory = service.remember({ space, kind: requireMemoryKind(kind), statement, ...(semanticKey ? { semanticKey } : {}) });
+    const { result: publish, mode } = await tryPublish(database, space.spaceId, deviceId, endpoint.url, endpoint.explicit);
+    console.log(JSON.stringify({
+      memory,
+      shared: publish,
+      sync: mode,
+      activeMemories: database.listActiveMemories(space.spaceId).length
+    }, null, 2));
     return;
   }
   if (command === "remember") {
-    const [kind, ...statementParts] = rest;
-    if (!kind || statementParts.length === 0) {
-      throw new Error("Usage: spinal-plug remember <db-path> <project-dir> <kind> <text>");
+    const [kind, ...statementArgs] = rest;
+    const { flags, rest: parts } = takeLeadingFlags(statementArgs, {
+      "--candidate": "boolean",
+      "--key": "value"
+    });
+    const asCandidate = flags["--candidate"] === true;
+    const semanticKey = typeof flags["--key"] === "string"
+      ? normalizeSemanticKey(flags["--key"])
+      : undefined;
+    const statement = parts.join(" ");
+    if (!kind || !statement) {
+      throw new Error("Usage: spinal-plug remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>");
     }
-    const memory = service.remember({ space, kind: requireMemoryKind(kind), statement: statementParts.join(" ") });
+    // Candidates get a deterministic identity: re-staging the same fact
+    // (a retried nudge, a rephrased duplicate) returns the existing record
+    // instead of piling up identical candidates.
+    const memoryId = asCandidate
+      ? `mem_candidate_${digest(`${space.spaceId}:${kind}:${statement}`).slice(0, 24)}`
+      : undefined;
+    if (memoryId) {
+      const existing = database.getMemory(memoryId);
+      if (existing) {
+        console.log(JSON.stringify({ ...existing, duplicate: true }, null, 2));
+        return;
+      }
+    }
+    const memory = service.remember({
+      space,
+      kind: requireMemoryKind(kind),
+      statement,
+      ...(memoryId ? { memoryId } : {}),
+      ...(semanticKey ? { semanticKey } : {}),
+      asCandidate,
+      ...(asCandidate ? { origin: "agent_inferred" } : {})
+    });
     console.log(JSON.stringify(memory, null, 2));
     return;
   }
@@ -731,18 +1089,15 @@ async function main(): Promise<void> {
       host: "spinal-plug",
       sessionId: "candidate-review"
     });
-    let published: unknown = undefined;
-    if (process.env.SPINAL_PLUG_SYNC_URL) {
-      try {
-        published = await new SpinalPlugSyncClient(
-          database,
-          createSyncTransport(process.env.SPINAL_PLUG_SYNC_URL)
-        ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
-      } catch {
-        // The candidate and promotion events remain in the durable outbox.
-      }
-    }
-    console.log(JSON.stringify({ memory, published, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
+    const endpoint = resolveSyncEndpoint();
+    const { result: published, mode } = await tryPublish(
+      database,
+      space.spaceId,
+      process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local",
+      endpoint.url,
+      endpoint.explicit
+    );
+    console.log(JSON.stringify({ memory, published, sync: mode, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
     return;
   }
   if (command === "checkpoint") {
@@ -813,8 +1168,18 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(service.recall(space, rest.join(" ")), null, 2));
     return;
   }
+  if (command === "keys") {
+    // The semantic-key registry a host classifies new facts against before
+    // sharing — classification beats free naming for cross-model consistency.
+    console.log(JSON.stringify(database.listSemanticKeys(space.spaceId), null, 2));
+    return;
+  }
   if (command === "boot") {
     const memories = service.list(space);
+    // Disputed records carry status "disputed", which the active-only list
+    // excludes — count them from the full view instead.
+    const disputed = service.list(space, true)
+      .filter(memory => memory.status === "disputed").length;
     const pending = database.listPendingOutboxForSpace(space.spaceId).length;
     const fidelity = memories.length === 0 ? "BASELINE ONLY" : `${memories.length} DURABLE MEMORY REFERENCES`;
     const lines = [
@@ -824,16 +1189,45 @@ async function main(): Promise<void> {
       "[03/05] Mind Capsule ............. PROJECT-SCOPE CONTEXT ENGAGED",
       `[04/05] Memory Fidelity ........ ${fidelity}`,
       `[05/05] Neural Uplink .......... ${pending === 0 ? "STANDBY" : `${pending} SIGNAL${pending === 1 ? "" : "S"} PENDING`}`,
+      ...(disputed > 0
+        ? [`WARNING: MEMORY FIDELITY CONFLICT DETECTED — ${disputed} DISPUTED REFERENCE${disputed === 1 ? "" : "S"} AWAITING RESOLUTION`]
+        : []),
       "STATUS: SPINAL PLUG LOCKED // MEMORY CHANNEL ONLINE"
     ];
     console.log(lines.join("\n"));
     return;
   }
-  if (command === "sync") {
+  if (command === "republish") {
     const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: spinal-plug sync <db-path> <project-dir> <url> <device-id>");
-    const result = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
-    console.log(JSON.stringify(result, null, 2));
+    if (!url || !deviceId) throw new Error("Usage: spinal-plug republish <db-path> <project-dir> <url> <device-id>");
+    const transport = createSyncTransport(url);
+    // Migrating onto an authenticated Control Plane: local events were minted
+    // with the unauthenticated runtime's identity and would be rejected, so
+    // adopt the credential's account/device identity before re-sending.
+    let identity: { accountId: string; deviceId: string } | null = null;
+    if (process.env.SPINAL_PLUG_DEVICE_TOKEN) {
+      try {
+        const principal = await transport.whoami();
+        identity = { accountId: principal.accountId, deviceId: principal.deviceId };
+        if (principal.deviceId !== deviceId) {
+          throw new Error(`Device ${deviceId} does not match the credential's device ${principal.deviceId}.`);
+        }
+      } catch (error) {
+        if (identity) throw error;
+        // Unauthenticated development servers have no /v1/me; nothing to adopt.
+      }
+    }
+    const adopted = identity ? database.adoptIdentityForSpace(space.spaceId, identity) : 0;
+    const requeued = database.requeueDeliveredOutboxForSpace(space.spaceId);
+    const result = await new SpinalPlugSyncClient(database, transport).publish(space.spaceId, deviceId);
+    console.log(JSON.stringify({ adoptedIdentity: adopted, requeued, ...result }, null, 2));
+    return;
+  }
+  if (command === "space-register") {
+    const [url] = rest;
+    if (!url) throw new Error("Usage: spinal-plug space-register <db-path> <project-dir> <url>");
+    const registered = await createSyncTransport(url).registerSpace(space);
+    console.log(JSON.stringify(registered, null, 2));
     return;
   }
   if (command === "fetch") {
@@ -891,30 +1285,11 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ applied, materialized }, null, 2));
     return;
   }
-  if (command === "sync-claude") {
-    const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: spinal-plug sync-claude <db-path> <project-dir> <url> <device-id>");
-    const synchronized = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
-    const importer = new ClaudeAutoMemoryImporter();
-    const localNativeMemoryIds = new Set(
-      importer.import(space, projectPath).candidates.map(candidate => candidate.memoryId)
-    );
-    const allMemories = service.list(space);
-    const projectedMemories = allMemories.filter(memory => !localNativeMemoryIds.has(memory.memoryId));
-    const materialized = new ClaudeAutoMemoryMaterializer().materialize(projectPath, projectedMemories);
-    console.log(JSON.stringify({
-      synchronized,
-      materialized,
-      excludedLocalClaudeMemories: allMemories.length - projectedMemories.length
-    }, null, 2));
-    return;
-  }
   if (command === "sync-codex") {
-    const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: spinal-plug sync-codex <db-path> <project-dir> <url> <device-id>");
-    const synchronized = await new SpinalPlugSyncClient(database, createSyncTransport(url)).synchronize(space.spaceId, deviceId);
+    // Local projection refresh only: network sync goes through the selective
+    // fetch → preview → apply flow, never through this command.
     const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
-    console.log(JSON.stringify({ synchronized, materialized }, null, 2));
+    console.log(JSON.stringify({ materialized }, null, 2));
     return;
   }
 

@@ -3,9 +3,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ProjectSpace } from "@spinal-plug/protocol";
+import type { Incarnation, MindCapsule, ProjectSpace } from "@spinal-plug/protocol";
+import { InMemorySyncServer } from "@spinal-plug/sync-server";
 import { SpinalPlugDatabase } from "./index.js";
 import { MindRuntimeService } from "./mind-runtime-service.js";
+import { SpinalPlugSyncClient } from "./sync-client.js";
 
 const space: ProjectSpace = {
   schema: "spinal-plug.project-space/v0.1",
@@ -72,7 +74,17 @@ test("Mind Core compiles a capsule and incarnates it without polluting Canonical
   assert.equal(source.listRuntimeEntities(space.spaceId).length, 6);
   assert.equal(source.listPendingOutboxForSpace(space.spaceId).length, 6);
 
-  const resumed = new MindRuntimeService(source).setIncarnationStatus(incarnation.incarnationId, "hibernated");
+  const controlPlane = new InMemorySyncServer();
+  const sourceClient = new SpinalPlugSyncClient(source, controlPlane);
+  assert.equal((await sourceClient.publish(space.spaceId, "device_mac")).pushed, 6);
+
+  const target = openDatabase();
+  const result = await new SpinalPlugSyncClient(target, controlPlane).fetch(space.spaceId, "device_linux");
+  assert.equal(result.runtimeEntitiesStored, 6);
+  assert.equal(target.getRuntimeEntity<MindCapsule>(capsule.capsuleId)?.missionId, mission.missionId);
+  assert.equal(target.getRuntimeEntity<Incarnation>(incarnation.incarnationId)?.host, "codex");
+
+  const resumed = new MindRuntimeService(target).setIncarnationStatus(incarnation.incarnationId, "hibernated");
   assert.equal(resumed.status, "hibernated");
-  assert.equal(source.listPendingOutboxForSpace(space.spaceId).at(-1)?.eventType, "runtime.incarnation.updated");
+  assert.equal(target.listPendingOutboxForSpace(space.spaceId)[0].eventType, "runtime.incarnation.updated");
 });
