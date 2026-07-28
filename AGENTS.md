@@ -26,8 +26,9 @@ pnpm dev:server -- --port 8787
 ```
 
 `pnpm verify` is the default pre-PR gate. It validates repository knowledge,
-architecture boundaries, types, builds, and tests. The development server keeps
-its database under the current worktree's `.spinal-plug/` directory.
+architecture boundaries, types, builds, and tests. Space bindings and server
+databases are device-local state and live under `~/.spinal-plug/` — the
+current worktree is never touched.
 
 ## Repository Map
 

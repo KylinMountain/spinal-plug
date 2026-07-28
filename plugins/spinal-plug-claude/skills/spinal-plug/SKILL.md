@@ -11,7 +11,7 @@ The local database is an implementation detail: a private device cache and event
 
 On the first session in a Git repository, Spinal Plug automatically creates a local Project Space binding. Its suggested name is the Git remote repository name, falling back to the Git root directory name.
 
-For a non-Git workspace with no binding, the SessionStart Hook provides a workspace-discovery choice. Ask the user to choose exactly one: create a new archive using the suggested directory name, use General, link an existing archive, or keep Spinal Plug disabled. Do not create a binding until the user selects an option. Once selected, `.spinal-plug/space.json` remembers the binding and future sessions load it automatically.
+For a non-Git workspace with no binding, the SessionStart Hook provides a workspace-discovery choice. Ask the user to choose exactly one: create a new archive using the suggested directory name, use General, link an existing archive, or keep Spinal Plug disabled. Do not create a binding until the user selects an option. Once selected, the binding is remembered under `~/.spinal-plug/projects/` (device-local, the project directory is never touched) and future sessions load it automatically.
 
 ## User-facing memory operations
 

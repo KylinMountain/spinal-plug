@@ -8,4 +8,4 @@ The user has explicitly requested to create a suggested Spinal Plug binding for 
 spinal-plug connect "$HOME/.spinal-plug/spinal-plug.db" .
 ```
 
-Report the Space type, name, and ID. Explain that this creates a small `.spinal-plug/space.json` directory binding and a private local event cache; neither the local SQLite file nor Claude Code's native memory directory is uploaded.
+Report the Space type, name, and ID. Explain that this registers a device-local binding under `~/.spinal-plug/projects/`(the project directory is never touched) plus a private local event cache; neither the local SQLite file nor Claude Code's native memory directory is uploaded.
