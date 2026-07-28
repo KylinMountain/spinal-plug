@@ -10,8 +10,8 @@ views that can be rebuilt from events.
 
 ```text
 protocol
-  |-- sync-server
-  |-- local-node <- sync-server
+  |-- local-node (owns the deterministic sync kernel)
+  |-- sync-server <- local-node
   |-- adapter-sdk
   |-- adapter-claude-code <- local-node + adapter-sdk
   |-- adapter-codex       <- local-node + adapter-sdk
@@ -27,9 +27,9 @@ allowed internal imports and declared workspace dependencies.
 | Package | Allowed internal dependencies |
 | --- | --- |
 | `protocol` | None |
-| `sync-server` | `protocol` |
+| `sync-server` | `protocol`, `local-node` |
 | `adapter-sdk` | `protocol` |
-| `local-node` | `protocol`, `sync-server` |
+| `local-node` | `protocol` |
 | `adapter-claude-code`, `adapter-codex` | `protocol`, `local-node`, `adapter-sdk` |
 | `mcp-server` | `protocol`, `local-node` |
 | `cli` | All runtime packages; it composes the application. |
