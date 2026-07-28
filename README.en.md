@@ -128,6 +128,8 @@ Local SQLite is a device cache and outbox. The database file is never uploaded; 
 
 ### 03 / Attach a sync endpoint
 
+With no endpoint configured, publication first tries the local development server at `127.0.0.1:8787` and silently stays in local mode when nothing answers — local-first is the default, no authentication, testable out of the box. Configure an endpoint only when you need cross-device or cross-agent sync:
+
 ```bash
 export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
 export SPINAL_PLUG_DEVICE_ID="device-local"
@@ -144,6 +146,28 @@ Marketplace manifests for Codex and Claude Code are under `plugins/`. After inst
 /spinal-plug:share
 /spinal-plug:sync
 /spinal-plug:boot
+```
+
+## Project Status
+
+The current release focuses on project-scoped durable memory, native host projections, local-first storage, and selective synchronization. `Mind Core`, `Mind Capsule`, `Incarnation`, and richer work-state handoff are modeled as extensible runtime concepts, not promises of identical behavior between models.
+
+## Documentation
+
+- [Voice and terminology](docs/spinal-plug-voice.md)
+- [Mind Runtime (Mind Core / Capsule / Incarnation)](docs/mind-runtime.md)
+- [M1 local workflow and CLI contract](docs/phase-m1-local-workflow.md)
+- [M2 sync core and boundaries](docs/phase-m2-sync-core.md)
+- [Control Plane console](docs/control-plane-console.md)
+- [Claude Code plugin integration](docs/integrations/claude-code-plugin.md)
+- [Codex plugin integration](docs/integrations/codex-plugin.md)
+- [Claude Code reference notes](docs/research/claude-code-reference-notes.md)
+
+## Development
+
+```bash
+pnpm test
+pnpm typecheck
 ```
 
 ---

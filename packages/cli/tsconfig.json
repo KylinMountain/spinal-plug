@@ -10,6 +10,7 @@
     { "path": "../local-node" },
     { "path": "../adapter-sdk" },
     { "path": "../adapter-claude-code" },
-    { "path": "../adapter-codex" }
+    { "path": "../adapter-codex" },
+    { "path": "../sync-server" }
   ]
 }
