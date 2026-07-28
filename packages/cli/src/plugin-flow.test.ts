@@ -869,6 +869,40 @@ test("keys lists the registry and share/remember classify with --key", async () 
   }
 });
 
+test("share-claude uses environment defaults and registry keys round-trip", async () => {
+  const server = await startServer();
+  try {
+    const home = tempDir("spinal-plug-home-");
+    const project = initGitProject("https://github.com/spinal-plug-tests/topic-key-round-trip.git");
+    const db = join(tempDir("spinal-plug-db-"), "local.db");
+    const options = { home, syncUrl: server.url, deviceId: "device-from-env" };
+    await bindViaSessionStart(db, project, options);
+
+    const memoryDir = claudeMemoryDir(home, project);
+    mkdirSync(join(memoryDir, "nested"), { recursive: true });
+    writeFileSync(join(memoryDir, "nested", "topic.md"), "# Topic\n\nImported from Claude Auto Memory.\n");
+
+    // Both positional arguments are optional: use the configured endpoint and device.
+    const shared = await runCliJson<{ created: number; shared: { pushed: number } }>(
+      ["share-claude", db, project],
+      options
+    );
+    assert.equal(shared.created, 1);
+    assert.equal(shared.shared.pushed, 1);
+
+    const keys = await runCliJson<Array<{ semanticKey: string }>>(["keys", db, project], options);
+    assert.deepEqual(keys.map(key => key.semanticKey), ["claude-topic:nested-topic-md"]);
+
+    const reused = await runCliJson<{ memory: { semanticKey?: string } }>(
+      ["share", db, project, "context", "--key", keys[0].semanticKey, "Use the imported topic key."],
+      options
+    );
+    assert.equal(reused.memory.semanticKey, keys[0].semanticKey);
+  } finally {
+    await server.close();
+  }
+});
+
 test("empty-chamber Claude Stop nudges once per session and stops after generation", async () => {
   const home = tempDir("spinal-plug-home-");
   const project = initGitProject("https://github.com/spinal-plug-tests/nudge.git");
