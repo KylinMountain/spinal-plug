@@ -13,8 +13,8 @@ import type {
   SyncPushRequest,
   SyncPushResponse
 } from "@spinal-plug/protocol";
-import { createCanonicalUpdates } from "./canonical-updates.js";
-import { MemoryCompiler } from "./memory-compiler.js";
+import { createCanonicalUpdates } from "@spinal-plug/local-node";
+import { MemoryCompiler } from "@spinal-plug/local-node";
 
 interface StoredEvent {
   sequence: number;
