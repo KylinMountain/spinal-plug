@@ -89,7 +89,7 @@ Report what was shared and why it is durable. The selection step is internal beh
 
 ## Sync
 
-For `sync`, "同步记忆", or "下载记忆", fetch and preview first (with no endpoint configured this targets the local development server at 127.0.0.1:8787 — start it in a separate terminal with `spinal-plug serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787`; if it is not running, say so instead of retrying):
+For `sync`, "同步记忆", or "下载记忆", fetch and preview first (with no endpoint configured this targets the local development server at 127.0.0.1:8787 — start it in a separate terminal with `mind-palace serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787`; if it is not running, say so instead of retrying):
 
 ```bash
 spinal-plug fetch "$SPINAL_PLUG_DB" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}" "$SPINAL_PLUG_DEVICE_ID"

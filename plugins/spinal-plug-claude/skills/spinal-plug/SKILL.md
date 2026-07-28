@@ -44,7 +44,7 @@ Endpoint resolution is three-tier: a configured `SPINAL_PLUG_SYNC_URL` wins; oth
 To sync between devices or agents, start the M2 development service in a separate terminal (or export `SPINAL_PLUG_SYNC_URL` pointing at a compatible endpoint):
 
 ```bash
-spinal-plug serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787
+mind-palace serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787  # 服务端在私有 mind-palace 仓库
 ```
 
 Then use `/spinal-plug:share` to publish local memory, or `/spinal-plug:sync` to download central updates.

@@ -11,7 +11,6 @@ views that can be rebuilt from events.
 ```text
 protocol
   |-- local-node (owns the deterministic sync kernel)
-  |-- sync-server <- local-node
   |-- adapter-sdk
   |-- adapter-claude-code <- local-node + adapter-sdk
   |-- adapter-codex       <- local-node + adapter-sdk
@@ -27,7 +26,6 @@ allowed internal imports and declared workspace dependencies.
 | Package | Allowed internal dependencies |
 | --- | --- |
 | `protocol` | None |
-| `sync-server` | `protocol`, `local-node` |
 | `adapter-sdk` | `protocol` |
 | `local-node` | `protocol` |
 | `adapter-claude-code`, `adapter-codex` | `protocol`, `local-node`, `adapter-sdk` |
@@ -39,7 +37,7 @@ allowed internal imports and declared workspace dependencies.
 1. A host adapter sends a normalized observation to the CLI or local node.
 2. `local-node` writes an immutable event and local projection in one SQLite
    transaction, then places the event in the outbox.
-3. `sync-server` accepts idempotent events, compiles canonical memory state,
+3. The sync server (private `mind-palace` repository) accepts idempotent events, compiles canonical memory state,
    and exposes authenticated Control Plane APIs.
 4. A client fetches canonical updates, previews them, and applies selected
    updates locally. Tombstones are mandatory updates.
