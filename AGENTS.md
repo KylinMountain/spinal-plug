@@ -35,7 +35,6 @@ current worktree is never touched.
 | Path | Owns |
 | --- | --- |
 | `packages/protocol` | Shared schemas and event contracts. |
-| `packages/sync-server` | Sync semantics, persistence, Control Plane, and `/palace`. |
 | `packages/local-node` | Local SQLite state, sync client, projections, and runtime entities. |
 | `packages/adapter-sdk` | Stable host adapter contract. |
 | `packages/adapter-*` | Claude Code and Codex host integration. |
