@@ -931,6 +931,10 @@ export { MindRuntimeService } from "./mind-runtime-service.js";
 export { containsLikelySecret, memoryContainsLikelySecret, SecretMaterialError, valueContainsLikelySecret } from "./sensitive-data.js";
 export { SpinalPlugSyncClient } from "./sync-client.js";
 export { HttpSyncTransport } from "./http-sync-transport.js";
+export { InMemorySyncServer } from "./in-memory-sync-server.js";
+export { MemoryCompiler } from "./memory-compiler.js";
+export { createCanonicalUpdates } from "./canonical-updates.js";
+export type { MemoryCompilerOptions, SequencedMemoryEvent } from "./memory-compiler.js";
 export type { ResolvedProjectSpace } from "./project-space.js";
 export type {
   ProjectMemoryProjection,

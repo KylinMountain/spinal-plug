@@ -10,7 +10,6 @@
     "test": "node --test dist/*.test.js"
   },
   "dependencies": {
-    "@spinal-plug/protocol": "workspace:*",
-    "@spinal-plug/sync-server": "workspace:*"
+    "@spinal-plug/protocol": "workspace:*"
   }
 }

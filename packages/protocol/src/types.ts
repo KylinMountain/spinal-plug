@@ -94,6 +94,7 @@ export interface AuthenticatedPrincipal {
   userId: string;
   deviceId: string;
   deviceStatus: DeviceStatus;
+  deviceDisplayName?: string;
 }
 
 export interface DeviceCredential {
