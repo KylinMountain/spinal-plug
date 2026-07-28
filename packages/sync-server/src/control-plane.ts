@@ -200,7 +200,7 @@ export class SpinalPlugControlPlane {
 
   authenticate(token: string): AuthenticatedPrincipal {
     const row = this.database.prepare(`
-      SELECT device_id, account_id, user_id, status
+      SELECT device_id, account_id, user_id, status, display_name
       FROM control_devices WHERE token_hash = ? LIMIT 1
     `).get(tokenHash(token)) as Record<string, unknown> | undefined;
     if (!row) throw new ControlPlaneError("Invalid device credential.", 401, "invalid_token");
@@ -211,6 +211,7 @@ export class SpinalPlugControlPlane {
       accountId: String(row.account_id),
       userId: String(row.user_id),
       deviceId: String(row.device_id),
+      deviceDisplayName: String(row.display_name),
       deviceStatus: "active"
     };
     this.database.prepare(

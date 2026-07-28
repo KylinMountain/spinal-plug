@@ -226,8 +226,8 @@ function renderTopology() {
   context.clearRect(0, 0, width, height);
 
   const cx = width / 2;
-  const cy = height / 2 + 6;
-  const radius = Math.min(width, height) * 0.34;
+  const cy = height / 2 + 10;
+  const radius = Math.min(width * 0.62, height * 0.92) * 0.5;
 
   // 轨道环
   for (const [ringRadius, alpha] of [[radius * 0.55, 0.5], [radius * 0.82, 0.35], [radius * 1.08, 0.22]]) {
@@ -253,28 +253,28 @@ function renderTopology() {
   // 核心晶体
   context.save();
   context.translate(cx, cy);
-  const coreGradient = context.createLinearGradient(-26, -26, 26, 30);
+  const coreGradient = context.createLinearGradient(-40, -40, 40, 48);
   coreGradient.addColorStop(0, "#a89cf7");
   coreGradient.addColorStop(1, "#5b4bd6");
   context.fillStyle = coreGradient;
   context.shadowColor = "rgba(123, 104, 238, .55)";
-  context.shadowBlur = 34;
+  context.shadowBlur = 46;
   context.beginPath();
-  context.moveTo(0, -30);
-  context.lineTo(24, -12);
-  context.lineTo(24, 16);
-  context.lineTo(0, 32);
-  context.lineTo(-24, 16);
-  context.lineTo(-24, -12);
+  context.moveTo(0, -46);
+  context.lineTo(37, -18);
+  context.lineTo(37, 24);
+  context.lineTo(0, 48);
+  context.lineTo(-37, 24);
+  context.lineTo(-37, -18);
   context.closePath();
   context.fill();
   context.shadowBlur = 0;
   context.fillStyle = "rgba(255,255,255,.35)";
   context.beginPath();
-  context.moveTo(0, -30);
-  context.lineTo(24, -12);
-  context.lineTo(0, 2);
-  context.lineTo(-24, -12);
+  context.moveTo(0, -46);
+  context.lineTo(37, -18);
+  context.lineTo(0, 3);
+  context.lineTo(-37, -18);
   context.closePath();
   context.fill();
   context.restore();
@@ -283,8 +283,8 @@ function renderTopology() {
   wrap.querySelectorAll(".topo-label,.topo-core-label").forEach(node => node.remove());
   for (const node of TOPO_NODES) {
     const angle = (node.angle * Math.PI) / 180;
-    const nx = cx + Math.cos(angle) * radius * 1.08;
-    const ny = cy + Math.sin(angle) * radius * 0.98;
+    const nx = cx + Math.cos(angle) * radius * 1.45;
+    const ny = cy + Math.sin(angle) * radius * 1.05;
     const gradient = context.createLinearGradient(cx, cy, nx, ny);
     gradient.addColorStop(0, "rgba(123, 104, 238, .55)");
     gradient.addColorStop(1, "rgba(34, 184, 166, .25)");
