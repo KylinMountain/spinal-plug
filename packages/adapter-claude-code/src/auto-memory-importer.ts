@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
+import { containsLikelySecret } from "@spinal-plug/local-node";
 import type { ProjectSpace } from "@spinal-plug/protocol";
 
 export interface ClaudeAutoMemoryCandidate {
@@ -29,10 +30,6 @@ function topicTitle(relativePath: string, content: string): string {
 
 function stripFrontmatter(content: string): string {
   return content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "").trim();
-}
-
-function containsLikelySecret(content: string): boolean {
-  return /(?:\bAKIA[0-9A-Z]{16}\b|\bsk-[A-Za-z0-9_-]{20,}\b|BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY)/.test(content);
 }
 
 function scanMarkdown(directory: string, root = directory): string[] {

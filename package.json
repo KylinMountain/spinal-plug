@@ -3,10 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=22.5.0",
+    "pnpm": ">=10.14.0"
+  },
   "scripts": {
     "build": "pnpm -r build",
+    "check": "pnpm check:repository && pnpm check:architecture",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "check:repository": "node scripts/check-repository.mjs",
+    "dev:server": "pnpm build && node scripts/dev-server.mjs",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm build && pnpm -r --if-present test"
+    "test": "pnpm build && pnpm -r --if-present test",
+    "verify": "pnpm check && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
     "@types/node": "^24.0.13",

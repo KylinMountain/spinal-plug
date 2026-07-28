@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { MemoryRecord, ProjectSpace } from "@spinal-plug/protocol";
 
 export interface CodexNativeMemoryWriteResult {
@@ -17,10 +17,22 @@ export interface CodexNativeMemoryStoreOptions {
 }
 
 function codexMemoryDatabasePaths(): string[] {
-  const base = homedir();
+  // Keep integration runs out of a user's real Codex profile. Production can
+  // also follow Codex's standard configurable home directory. An explicitly
+  // configured path that does not exist is a configuration error and must
+  // surface — silently writing nothing would disable the projection
+  // invisibly; only the default discovery chain may come back empty.
+  const explicitDatabase = process.env.SPINAL_PLUG_CODEX_MEMORY_DB?.trim();
+  if (explicitDatabase) {
+    if (!existsSync(explicitDatabase)) {
+      throw new Error(`SPINAL_PLUG_CODEX_MEMORY_DB does not exist: ${explicitDatabase}`);
+    }
+    return [resolve(explicitDatabase)];
+  }
+  const base = process.env.CODEX_HOME?.trim() || join(homedir(), ".codex");
   return [
-    join(base, ".codex", "memories_1.sqlite"),
-    join(base, ".codex", "sqlite", "memories_1.sqlite")
+    join(base, "memories_1.sqlite"),
+    join(base, "sqlite", "memories_1.sqlite")
   ].filter(existsSync);
 }
 

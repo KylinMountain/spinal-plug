@@ -928,6 +928,7 @@ export { ProjectSpaceResolver } from "./project-space.js";
 export { ProjectMemoryService } from "./project-memory-service.js";
 export { ProjectHandoffService } from "./project-handoff-service.js";
 export { MindRuntimeService } from "./mind-runtime-service.js";
+export { containsLikelySecret, memoryContainsLikelySecret, SecretMaterialError, valueContainsLikelySecret } from "./sensitive-data.js";
 export { SpinalPlugSyncClient } from "./sync-client.js";
 export { HttpSyncTransport } from "./http-sync-transport.js";
 export type { ResolvedProjectSpace } from "./project-space.js";

@@ -8,6 +8,7 @@ import type {
   ProjectSpace
 } from "@spinal-plug/protocol";
 import { SpinalPlugDatabase } from "./index.js";
+import { valueContainsLikelySecret } from "./sensitive-data.js";
 
 export interface CreateCheckpointInput {
   space: ProjectSpace;
@@ -43,6 +44,12 @@ function actor(overrides: Partial<EventActor> = {}): EventActor {
   };
 }
 
+function assertCheckpointIsSafe(checkpoint: ProjectCheckpoint): void {
+  if (valueContainsLikelySecret(checkpoint)) {
+    throw new Error("Refusing to store likely secret material in a project checkpoint. Store a secret reference, not the secret value.");
+  }
+}
+
 /** Work-state service. Checkpoints are handoff artifacts, never canonical memory. */
 export class ProjectHandoffService {
   constructor(
@@ -75,6 +82,7 @@ export class ProjectHandoffService {
       createdAt: timestamp,
       updatedAt: timestamp
     };
+    assertCheckpointIsSafe(checkpoint);
     const eventId = `evt_${randomUUID()}`;
     const event: EventEnvelope = {
       schemaVersion: 1,
@@ -103,11 +111,12 @@ export class ProjectHandoffService {
   }
 
   latest(space: ProjectSpace): ProjectCheckpoint | null {
-    return this.database.latestCheckpoint(space.spaceId);
+    return this.list(space)[0] ?? null;
   }
 
   list(space: ProjectSpace, includeInactive = false): ProjectCheckpoint[] {
-    return this.database.listCheckpoints(space.spaceId, includeInactive);
+    return this.database.listCheckpoints(space.spaceId, includeInactive)
+      .filter(checkpoint => !valueContainsLikelySecret(checkpoint));
   }
 
   formatForBoot(space: ProjectSpace): string | null {
