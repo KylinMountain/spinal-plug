@@ -1,0 +1,133 @@
+export const sqliteSchema = `
+CREATE TABLE IF NOT EXISTS events (
+  event_id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memories (
+  memory_id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  statement TEXT NOT NULL,
+  why_text TEXT,
+  how_to_apply TEXT,
+  references_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  semantic_key TEXT,
+  origin TEXT,
+  confidence REAL,
+  source_event_ids_json TEXT NOT NULL DEFAULT '[]',
+  superseded_by_memory_id TEXT,
+  dispute_id TEXT,
+  created_from_event_id TEXT NOT NULL,
+  last_updated_from_event_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS outbox (
+  event_id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  available_at TEXT NOT NULL,
+  last_error TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_cursors (
+  cursor_id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  space_id TEXT NOT NULL,
+  last_event_id TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_inbox (
+  update_id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL,
+  memory_id TEXT NOT NULL,
+  update_kind TEXT NOT NULL,
+  required INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  payload_json TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  applied_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS project_checkpoints (
+  checkpoint_id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  branch_id TEXT,
+  updated_at TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_checkpoints_space_updated
+  ON project_checkpoints(space_id, status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS runtime_entities (
+  entity_id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_runtime_entities_space_type_updated
+  ON runtime_entities(space_id, entity_type, updated_at DESC);
+
+-- Stores only extracted candidate drafts and a one-way source digest. The raw
+-- prompt and model response never enter the Spinal Plug database.
+CREATE TABLE IF NOT EXISTS candidate_extraction_jobs (
+  job_id TEXT PRIMARY KEY,
+  host TEXT NOT NULL,
+  space_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  source_digest TEXT NOT NULL,
+  candidates_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  lease_expires_at TEXT,
+  created_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+-- One row per (space, session, host) already reminded about an empty memory
+-- chamber, so a Stop-boundary nudge fires at most once per session.
+CREATE TABLE IF NOT EXISTS memory_nudges (
+  space_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  host TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (space_id, session_id, host)
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_space_created_at
+  ON events(space_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_memories_space_status
+  ON memories(space_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_memories_space_updated_at
+  ON memories(space_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_status_available_at
+  ON outbox(status, available_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_cursors_unique_scope
+  ON sync_cursors(scope, owner_id, space_id);
+
+CREATE INDEX IF NOT EXISTS idx_sync_inbox_space_status
+  ON sync_inbox(space_id, status, fetched_at);
+
+CREATE INDEX IF NOT EXISTS idx_candidate_extraction_jobs_ready
+  ON candidate_extraction_jobs(status, lease_expires_at, created_at);
+`;
+//# sourceMappingURL=schema.js.map

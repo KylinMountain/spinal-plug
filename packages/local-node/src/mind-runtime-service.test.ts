@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Incarnation, MindCapsule, ProjectSpace } from "@spinal-plug/protocol";
-import { InMemorySyncServer } from "@spinal-plug/sync-server";
+import { InMemorySyncServer } from "./in-memory-sync-server.js";
 import { SpinalPlugDatabase } from "./index.js";
 import { MindRuntimeService } from "./mind-runtime-service.js";
 import { SpinalPlugSyncClient } from "./sync-client.js";
