@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { basename, dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { ProjectSpace, ProjectSpaceType, RepositoryProvider } from "@spinal-plug/protocol";
 
-const SPACE_FILE = join(".spinal-plug", "space.json");
+const LEGACY_SPACE_FILE = join(".spinal-plug", "space.json");
 
 function findProjectRoot(cwd: string): string {
   let current = resolve(cwd);
@@ -82,15 +83,62 @@ export interface ResolvedProjectSpace {
   space: ProjectSpace;
 }
 
+export interface ProjectSpaceResolverOptions {
+  /** Test seam; production uses the real home directory. */
+  homeDirectory?: string;
+}
+
+function bindingKey(boundPath: string): string {
+  return createHash("sha256").update(boundPath).digest("hex").slice(0, 16);
+}
+
+/**
+ * Space bindings are device-local state, so they live with the rest of the
+ * device state under ~/.spinal-plug/projects/ — never inside the bound
+ * project. Worktrees stay pristine (no untracked noise, no accidental
+ * commits, read-only directories can bind), matching how Claude Code and
+ * Codex keep their per-project state under ~/.claude and ~/.codex.
+ */
 export class ProjectSpaceResolver {
+  private readonly bindingsDir: string;
+
+  constructor(options: ProjectSpaceResolverOptions = {}) {
+    this.bindingsDir = join(options.homeDirectory ?? homedir(), ".spinal-plug", "projects");
+  }
+
   resolve(cwd: string): ResolvedProjectSpace | null {
-    const rootPath = findProjectRoot(cwd);
-    const filePath = join(rootPath, SPACE_FILE);
-    if (!existsSync(filePath)) {
-      return null;
+    const resolved = resolve(cwd);
+    // The longest registered ancestor wins: Git repositories resolve at
+    // their root, and non-Git archives stay discoverable from any
+    // subdirectory of the bound path.
+    let best: { boundPath: string; filePath: string; space: ProjectSpace } | null = null;
+    for (const binding of this.loadBindings()) {
+      if (binding.boundPath === resolved || resolved.startsWith(binding.boundPath + sep)) {
+        if (!best || binding.boundPath.length > best.boundPath.length) {
+          best = binding;
+        }
+      }
+    }
+    if (best) {
+      return { rootPath: best.boundPath, filePath: best.filePath, space: best.space };
     }
 
-    return { rootPath, filePath, space: parseSpace(filePath) };
+    // A legacy worktree binding migrates to the home registry on first
+    // contact; memory is keyed by spaceId, so nothing else has to move.
+    const rootPath = findProjectRoot(cwd);
+    const legacyPath = join(rootPath, LEGACY_SPACE_FILE);
+    if (!existsSync(legacyPath)) {
+      return null;
+    }
+    const space = parseSpace(legacyPath);
+    const migrated = this.writeBinding(rootPath, space);
+    try {
+      unlinkSync(legacyPath);
+      rmSync(join(rootPath, ".spinal-plug"), { recursive: false });
+    } catch {
+      // A non-empty or read-only directory is harmless to leave behind.
+    }
+    return migrated;
   }
 
   /** Returns true only for a Git-backed workspace, including worktrees with a .git file. */
@@ -110,23 +158,17 @@ export class ProjectSpaceResolver {
 
   initialize(cwd: string, displayName?: string): ResolvedProjectSpace {
     const rootPath = findProjectRoot(cwd);
-    const filePath = join(rootPath, SPACE_FILE);
-    if (existsSync(filePath)) {
-      return { rootPath, filePath, space: parseSpace(filePath) };
-    }
+    const existing = this.resolve(rootPath);
+    if (existing) return existing;
 
     const repository = repositoryFromGit(rootPath);
-    const space: ProjectSpace = {
+    return this.writeBinding(rootPath, {
       schema: "spinal-plug.project-space/v0.1",
       spaceId: spaceIdFromRepository(repository),
       type: "project",
       displayName: displayName ?? displayNameFromRepository(repository, rootPath),
       repository
-    };
-
-    mkdirSync(dirname(filePath), { recursive: true });
-    writeFileSync(filePath, `${JSON.stringify(space, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-    return { rootPath, filePath, space };
+    });
   }
 
   /** Creates a durable non-Git workspace archive and binds it to this directory. */
@@ -152,19 +194,42 @@ export class ProjectSpaceResolver {
     spaceId = `spc_${randomUUID()}`
   ): ResolvedProjectSpace {
     const rootPath = findProjectRoot(cwd);
-    const filePath = join(rootPath, SPACE_FILE);
-    if (existsSync(filePath)) {
-      return { rootPath, filePath, space: parseSpace(filePath) };
-    }
+    const existing = this.resolve(rootPath);
+    if (existing) return existing;
 
-    const space: ProjectSpace = {
+    return this.writeBinding(rootPath, {
       schema: "spinal-plug.project-space/v0.1",
       spaceId,
       type,
       displayName
-    };
-    mkdirSync(dirname(filePath), { recursive: true });
-    writeFileSync(filePath, `${JSON.stringify(space, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    });
+  }
+
+  private bindingPath(boundPath: string): string {
+    return join(this.bindingsDir, `${bindingKey(boundPath)}.json`);
+  }
+
+  private loadBindings(): Array<{ boundPath: string; filePath: string; space: ProjectSpace }> {
+    if (!existsSync(this.bindingsDir)) return [];
+    const bindings: Array<{ boundPath: string; filePath: string; space: ProjectSpace }> = [];
+    for (const entry of readdirSync(this.bindingsDir)) {
+      if (!entry.endsWith(".json")) continue;
+      const filePath = join(this.bindingsDir, entry);
+      try {
+        const parsed = JSON.parse(readFileSync(filePath, "utf8")) as ProjectSpace & { boundPath?: string };
+        if (typeof parsed.boundPath !== "string") continue;
+        bindings.push({ boundPath: parsed.boundPath, filePath, space: parseSpace(filePath) });
+      } catch {
+        // An unreadable or malformed binding is skipped, never fatal.
+      }
+    }
+    return bindings;
+  }
+
+  private writeBinding(rootPath: string, space: ProjectSpace): ResolvedProjectSpace {
+    const filePath = this.bindingPath(rootPath);
+    mkdirSync(this.bindingsDir, { recursive: true });
+    writeFileSync(filePath, `${JSON.stringify({ ...space, boundPath: rootPath }, null, 2)}\n`, "utf8");
     return { rootPath, filePath, space };
   }
 
