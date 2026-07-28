@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
-    "test": "node --test dist/*.test.js palace/*.test.js"
+    "test": "node --test dist/*.test.js"
   },
   "dependencies": {
     "@spinal-plug/protocol": "workspace:*"

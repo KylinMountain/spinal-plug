@@ -403,6 +403,73 @@ export class SpinalPlugControlPlane {
     return this.sync.snapshot(spaceId);
   }
 
+  /**
+   * Aggregate for the palace overview dashboard: memory lifecycle counts,
+   * incarnation/continuity state, and an honest fidelity metric. Capsule
+   * usage is a rough token estimate (chars/4) of the current active
+   * projection against the documented 24K boot budget — it is a budgeting
+   * aid, not a billing number.
+   */
+  overview(principal: AuthenticatedPrincipal, spaceId: string): Record<string, unknown> {
+    this.authorizeSpace(principal, spaceId, "viewer");
+    const snapshot = this.sync.snapshot(spaceId);
+    const recentEvents = this.sync.events(spaceId, 12);
+    const active = snapshot.memories.length;
+    const candidates = snapshot.candidates?.length ?? 0;
+    const disputes = snapshot.disputes?.length ?? 0;
+    const tombstones = (snapshot.deleted?.length ?? 0) + (snapshot.superseded?.length ?? 0);
+
+    const lastSyncByDevice = new Map<string, string>();
+    for (const event of this.sync.events(spaceId, 200)) {
+      if (!lastSyncByDevice.has(event.actor.deviceId)) {
+        lastSyncByDevice.set(event.actor.deviceId, event.createdAt);
+      }
+    }
+    const incarnations = (snapshot.runtimeEntities ?? [])
+      .filter(entity => entity.schema === "spinal-plug.incarnation/v0.1")
+      .map(entity => ({
+        incarnationId: entity.incarnationId,
+        host: entity.host,
+        deviceId: entity.deviceId,
+        sessionId: entity.sessionId,
+        status: entity.status,
+        projection: "current",
+        lastSync: lastSyncByDevice.get(entity.deviceId) ?? entity.updatedAt
+      }));
+
+    const projectionChars = snapshot.memories.reduce(
+      (sum, memory) => sum + memory.statement.length + (memory.why?.length ?? 0) + (memory.howToApply?.length ?? 0),
+      0
+    );
+    const lifecycleTotal = active + candidates + disputes;
+    const fidelityPercent = lifecycleTotal === 0 ? 100 : Math.round((active / lifecycleTotal) * 100);
+
+    return {
+      schema: "spinal-plug.space-overview/v0.1",
+      spaceId,
+      generatedAt: new Date().toISOString(),
+      memory: { active, candidates, disputes, tombstones },
+      checkpoints: snapshot.checkpoints ?? [],
+      incarnations,
+      fidelity: {
+        percent: fidelityPercent,
+        activeReferences: active,
+        pendingCandidates: candidates,
+        capsuleUsage: { used: Math.ceil(projectionChars / 4), budget: 24_000 },
+        lastCalibration: recentEvents[0]?.createdAt ?? null
+      },
+      incomingUpdates: snapshot.candidates ?? [],
+      activity: recentEvents.map(event => ({
+        eventId: event.eventId,
+        eventType: event.eventType,
+        createdAt: event.createdAt,
+        host: event.actor.host,
+        deviceId: event.actor.deviceId,
+        title: "title" in event.payload ? String(event.payload.title) : undefined
+      }))
+    };
+  }
+
   compilation(principal: AuthenticatedPrincipal, spaceId: string): MemoryCompilation {
     this.authorizeSpace(principal, spaceId, "viewer");
     return this.sync.compilation(spaceId);
