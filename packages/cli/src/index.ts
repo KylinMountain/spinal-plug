@@ -72,32 +72,38 @@ Endpoint resolution is three-tier: SPINAL_PLUG_SYNC_URL if set, otherwise
 the local sync server (127.0.0.1:8787), otherwise silent local mode —
 the outbox retains everything for a later retry, no authentication needed.
 
-Binding:
+Commands are grouped by who runs them. If you are a person at a terminal,
+the first group is the whole tool, and a host plugin usually runs it for you.
+
+For you:
   connect <db-path> <project-dir> [mode]           Bind this directory; without a mode a Git repository
                                                      becomes a project and anything else an archive.
                                                      Modes: general | archive [name] | link <space-id> [name]
   status <db-path> [project-dir]                   Show user-facing status for the current Space
   boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
-
-Memory:
   share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>
                                                      Write one durable memory and publish it; publishes when
                                                      --url or SPINAL_PLUG_SYNC_URL is set, local-only otherwise
-  import <db-path> <project-dir> <host> [url] [device-id]
-                                                     Import what the host already recorded natively, then
-                                                     publish (claude-code only; local mode if unreachable)
-  candidates <db-path> <project-dir>               List reviewable inferred memory candidates
+  handoff <db-path> <project-dir> <json>           Save work state for another Agent to pick up
+  handoff <db-path> <project-dir> --latest|--list  Show the newest handoff, or list them
+
+For your Agent (driven by the plugin skill and lifecycle hooks):
+  remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
+                                                     Local staging; --candidate stages for review
+  list <db-path> <project-dir> [--all | --candidates | --match <prompt>]
+                                                     List active memories; --candidates shows the review
+                                                     queue, --match ranks by relevance to a prompt
+  keys <db-path> <project-dir>                     List this Space's semantic-key registry
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
   update <db-path> <project-dir> <memory-id> <text> Update active memory
   forget <db-path> <project-dir> <memory-id>       Tombstone active memory
-  list <db-path> <project-dir> [--all]             List project memories
-  recall <db-path> <project-dir> <prompt>          Print relevant active memories
-  keys <db-path> <project-dir>                     List this Space's semantic-key registry
-
-Host projection:
+  import <db-path> <project-dir> <host> [url] [device-id]
+                                                     Import what the host already recorded natively, then
+                                                     publish (claude-code only; local mode if unreachable)
   project <db-path> <project-dir> <host>           Refresh a host's native memory from local state (no network)
+  hook-stdin <host> <db-path>                      Read a host Hook payload from stdin
 
-Selective sync (requires a configured endpoint):
+Only with a configured sync endpoint:
   fetch <db-path> <project-dir> <url> <device-id>  Fetch updates without applying optional changes
   preview <db-path> <project-dir>                  Preview fetched canonical updates
   apply <db-path> <project-dir> [--host <host>] [--all | update-id...]
@@ -107,24 +113,11 @@ Selective sync (requires a configured endpoint):
                                                      Re-send delivered events after switching servers
   space-register <db-path> <project-dir> <url>     Register this Space on an authenticated Control Plane
 
-Work handoff:
-  handoff <db-path> <project-dir> <json>           Save work state for another Agent to pick up
-  handoff <db-path> <project-dir> --latest         Show the newest work-state handoff
-  handoff <db-path> <project-dir> --list           List work-state handoffs
-
-Mind runtime (reserved extension surface; no plugin or skill drives it yet):
+Reserved extension surface (nothing drives it yet):
   runtime <db-path> <project-dir> [list]           List runtime entities in this Space
   runtime <db-path> <project-dir> <entity> <json>  Create or compile a runtime entity.
                                                      Entities: mind-core | role | mission | task-graph |
                                                      capsule | incarnate
-
-Internal (used by plugins and hooks — not user-facing):
-  remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
-                                                     Local staging; --candidate stages for review
-  hook <host> <event> <db-path> <project-dir> [prompt]
-                                                     Emit Claude Code / Codex hook context as JSON
-  hook-stdin <host> <db-path>                      Read a host Hook payload from stdin
-  init-db <db-path>                                Initialize the local cache database
 
 Hosts: claude-code, codex
 Kinds: directive, decision, context, reference
@@ -713,17 +706,9 @@ function buildMemoryNudge(dbPath: string, projectDir: string): string {
     `  spinal-plug keys "${dbPath}" "${projectDir}"`,
     "Reuse a listed key when one fits (pass --key <semantic-key>); only mint a new kebab-case key when none does. Then stage each fact as a reviewable candidate:",
     `  spinal-plug remember "${dbPath}" "${projectDir}" <kind> --candidate [--key <semantic-key>] "<concise statement>"`,
-    "Then tell the user the candidates are ready for review (spinal-plug candidates / promote).",
+    "Then tell the user the candidates are ready for review (spinal-plug list --candidates / promote).",
     "</spinal-plug_memory_nudge>"
   ].join("\n");
-}
-
-async function runHook(args: string[]): Promise<void> {
-  const [host, rawEvent, rawDbPath, projectDir, ...promptParts] = args;
-  if (!host || !rawEvent || !rawDbPath || !projectDir) {
-    throw new Error("Usage: spinal-plug hook <host> <event> <db-path> <project-dir> [prompt]");
-  }
-  await executeHook(host, rawEvent, rawDbPath, projectDir, promptParts.join(" ") || undefined);
 }
 
 function mapHostEvent(host: string, hookEventName: unknown): HookEventName | null {
@@ -785,10 +770,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === "hook") {
-    await runHook(args);
-    return;
-  }
   if (command === "hook-stdin") {
     await runStdinHook(args);
     return;
@@ -796,11 +777,6 @@ async function main(): Promise<void> {
   const [rawDbPath, projectDir, ...rest] = args;
   if (!rawDbPath) {
     throw new Error("Missing <db-path> argument.");
-  }
-  if (command === "init-db") {
-    const { dbPath } = openDatabase(rawDbPath);
-    console.log(`Initialized Spinal Plug local cache at ${dbPath}`);
-    return;
   }
   if (command === "status") {
     if (!projectDir) {
@@ -1083,14 +1059,6 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(memory, null, 2));
     return;
   }
-  if (command === "candidates") {
-    console.log(JSON.stringify(
-      service.list(space, true).filter(memory => memory.status === "candidate"),
-      null,
-      2
-    ));
-    return;
-  }
   if (command === "promote") {
     const [memoryId] = rest;
     if (!memoryId) throw new Error("Usage: spinal-plug promote <db-path> <project-dir> <memory-id>");
@@ -1172,12 +1140,29 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "list") {
-    console.log(JSON.stringify(service.list(space, rest.includes("--all")), null, 2));
-    return;
-  }
-  if (command === "recall") {
-    if (rest.length === 0) throw new Error("Usage: spinal-plug recall <db-path> <project-dir> <prompt>");
-    console.log(JSON.stringify(service.recall(space, rest.join(" ")), null, 2));
+    // One reader for project memory, three views of it: the active set, the
+    // review queue, and prompt-relevant recall.
+    const { flags, rest: matchParts } = takeLeadingFlags(rest, {
+      "--all": "boolean",
+      "--candidates": "boolean",
+      "--match": "value"
+    });
+    if (flags["--candidates"] === true) {
+      console.log(JSON.stringify(
+        service.list(space, true).filter(memory => memory.status === "candidate"),
+        null,
+        2
+      ));
+      return;
+    }
+    const match = typeof flags["--match"] === "string" && flags["--match"].trim()
+      ? flags["--match"]
+      : matchParts.join(" ").trim();
+    if (match) {
+      console.log(JSON.stringify(service.recall(space, match), null, 2));
+      return;
+    }
+    console.log(JSON.stringify(service.list(space, flags["--all"] === true), null, 2));
     return;
   }
   if (command === "keys") {

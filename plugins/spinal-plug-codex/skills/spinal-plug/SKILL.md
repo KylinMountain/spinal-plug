@@ -109,7 +109,7 @@ Omit IDs only when the user explicitly chooses all updates. The next Codex sessi
 For "查看候选记忆", run:
 
 ```bash
-spinal-plug candidates "$SPINAL_PLUG_DB" .
+spinal-plug list "$SPINAL_PLUG_DB" . --candidates
 ```
 
 Show concise statements and source provenance. Do not promote automatically. If the user explicitly accepts a candidate, run:

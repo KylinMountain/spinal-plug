@@ -208,7 +208,7 @@ test("the merged commands replaced their predecessors rather than aliasing them"
   const workspace = linkedWorkspace();
   // These are retired command names, not the renamed concept: `handoff` is
   // the surviving verb, so `checkpoint` and `checkpoints` must be gone.
-  for (const retired of ["general", "archive", "link", "checkpoint", "checkpoints", "apply-claude", "apply-codex", "sync-codex", "share-claude", "mind-core", "capsule"]) {
+  for (const retired of ["general", "archive", "link", "checkpoint", "checkpoints", "apply-claude", "apply-codex", "sync-codex", "share-claude", "mind-core", "capsule", "candidates", "recall", "init-db", "hook"]) {
     const result = runCli(workspace, [retired, workspace.db, workspace.project]);
     assert.equal(result.status, 1, `${retired} should no longer be a command`);
     assert.match(result.stdout, /^spinal-plug$/m, `${retired} should fall through to help`);
@@ -222,7 +222,7 @@ test("an unlinked directory reports the four binding actions instead of a Space"
   assert.deepEqual(status.actions, ["archive", "general", "link", "disabled"]);
 });
 
-test("a remembered fact is visible to list, recall and boot", () => {
+test("a remembered fact is visible to list, --match and boot", () => {
   const workspace = linkedWorkspace();
   const remembered = parseJson<MemoryLike>(runCli(workspace, [
     "remember", workspace.db, workspace.project, "decision", "--key", "Storage Choice",
@@ -235,8 +235,10 @@ test("a remembered fact is visible to list, recall and boot", () => {
   const listed = parseJson<MemoryLike[]>(runCli(workspace, ["list", workspace.db, workspace.project]));
   assert.deepEqual(listed.map(memory => memory.memoryId), [remembered.memoryId]);
 
-  const recalled = parseJson<MemoryLike[]>(runCli(workspace, ["recall", workspace.db, workspace.project, "SQLite cache"]));
-  assert.deepEqual(recalled.map(memory => memory.memoryId), [remembered.memoryId]);
+  const matched = parseJson<MemoryLike[]>(runCli(workspace, [
+    "list", workspace.db, workspace.project, "--match", "SQLite cache"
+  ]));
+  assert.deepEqual(matched.map(memory => memory.memoryId), [remembered.memoryId]);
 
   const keys = parseJson<unknown[]>(runCli(workspace, ["keys", workspace.db, workspace.project]));
   assert.equal(keys.length, 1);
@@ -263,7 +265,9 @@ test("a candidate stays out of the active list and re-staging it is deduplicated
   const active = parseJson<MemoryLike[]>(runCli(workspace, ["list", workspace.db, workspace.project]));
   assert.deepEqual(active, [], "a candidate is not durable memory until promoted");
 
-  const candidates = parseJson<MemoryLike[]>(runCli(workspace, ["candidates", workspace.db, workspace.project]));
+  const candidates = parseJson<MemoryLike[]>(runCli(workspace, [
+    "list", workspace.db, workspace.project, "--candidates"
+  ]));
   assert.deepEqual(candidates.map(memory => memory.memoryId), [staged.memoryId]);
 
   const restaged = parseJson<MemoryLike & { duplicate?: boolean }>(runCli(workspace, [
@@ -561,7 +565,7 @@ test("an unknown command prints help and fails", () => {
   const result = runCli(workspace, ["teleport", workspace.db, workspace.project]);
   assert.equal(result.status, 1);
   assert.match(result.stdout, /^spinal-plug$/m);
-  assert.match(result.stdout, /Binding:/);
+  assert.match(result.stdout, /^For you:$/m);
 });
 
 test("help documents the three-tier endpoint resolution", () => {
@@ -569,6 +573,28 @@ test("help documents the three-tier endpoint resolution", () => {
   const help = expectSuccess(runCli(workspace, ["--help"]));
   assert.match(help.stdout, /SPINAL_PLUG_SYNC_URL if set/);
   assert.match(help.stdout, /silent local mode/);
+});
+
+test("help groups commands by who runs them", () => {
+  const workspace = createWorkspace();
+  const help = expectSuccess(runCli(workspace, ["--help"])).stdout;
+  for (const group of ["For you:", "For your Agent", "Only with a configured sync endpoint:", "Reserved extension surface"]) {
+    assert.ok(help.includes(group), `help is missing the "${group}" group`);
+  }
+  // The five commands a person actually types must precede everything else,
+  // so the tool does not read as 24 things to learn.
+  const forYou = help.slice(help.indexOf("For you:"), help.indexOf("For your Agent"));
+  for (const command of ["connect", "status", "boot", "share", "handoff"]) {
+    assert.ok(forYou.includes(`  ${command} `), `${command} should be in the first group`);
+  }
+});
+
+test("a database is created on first use without an explicit init step", () => {
+  const workspace = createWorkspace();
+  // No init-db command exists; connect must be enough to create the cache.
+  expectSuccess(runCli(workspace, ["connect", workspace.db, workspace.project]));
+  const status = parseJson<StatusLike>(runCli(workspace, ["status", workspace.db, workspace.project]));
+  assert.equal(status.state, "linked");
 });
 
 test("missing positional arguments are reported, not ignored", () => {
