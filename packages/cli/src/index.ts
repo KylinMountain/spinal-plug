@@ -18,12 +18,6 @@ import {
   SecretMaterialError
 } from "@spinal-plug/local-node";
 import type { MindCapsule, MemoryKind, ProjectSpace } from "@spinal-plug/protocol";
-import {
-  createControlPlaneHttpServer,
-  createSyncHttpServer,
-  SpinalPlugControlPlane,
-  PersistentSyncServer
-} from "@spinal-plug/sync-server";
 
 const MEMORY_KINDS: ReadonlySet<string> = new Set(["directive", "decision", "context", "reference"]);
 const HOOK_EVENTS: ReadonlySet<string> = new Set([
@@ -119,12 +113,6 @@ Mind runtime:
   capsule <db-path> <project-dir> <json>           Compile a Mind Capsule boot package
   incarnate <db-path> <project-dir> <json>         Spawn an Incarnation from a Capsule
   runtime <db-path> <project-dir>                  List runtime entities in this Space
-
-Server administration:
-  serve <server-db-path> [port]                    Start a durable local sync HTTP server
-  serve-control-plane <server-db-path> [port]      Start authenticated Control Plane
-  control-provision <server-db-path> <account> <email> <owner> <device>
-                                                     Provision an account and first device
 
 Internal (used by plugins and hooks — not user-facing):
   remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
@@ -775,72 +763,6 @@ async function main(): Promise<void> {
     await runStdinHook(args);
     return;
   }
-  if (command === "serve") {
-    const [serverDbPath, rawPort] = args;
-    if (!serverDbPath) throw new Error("Usage: spinal-plug serve <server-db-path> [port]");
-    const databasePath = resolve(process.cwd(), serverDbPath);
-    ensureParentDir(databasePath);
-    const syncServer = new PersistentSyncServer(databasePath);
-    const httpServer = createSyncHttpServer(syncServer);
-    const port = rawPort ? Number(rawPort) : 8787;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Port must be an integer from 1 to 65535.");
-    await httpServer.listen(port);
-    console.log(`Spinal Plug sync server listening on http://127.0.0.1:${port}`);
-    return;
-  }
-  if (command === "serve-control-plane") {
-    const [serverDbPath, rawPort] = args;
-    if (!serverDbPath) {
-      throw new Error("Usage: spinal-plug serve-control-plane <server-db-path> [port]");
-    }
-    const bootstrapToken = process.env.SPINAL_PLUG_BOOTSTRAP_TOKEN;
-    if (!bootstrapToken) throw new Error("SPINAL_PLUG_BOOTSTRAP_TOKEN is required.");
-    const databasePath = resolve(process.cwd(), serverDbPath);
-    ensureParentDir(databasePath);
-    const certPath = process.env.SPINAL_PLUG_TLS_CERT;
-    const keyPath = process.env.SPINAL_PLUG_TLS_KEY;
-    if (Boolean(certPath) !== Boolean(keyPath)) {
-      throw new Error("SPINAL_PLUG_TLS_CERT and SPINAL_PLUG_TLS_KEY must be set together.");
-    }
-    const controlPlane = new SpinalPlugControlPlane(databasePath);
-    const httpServer = createControlPlaneHttpServer(controlPlane, {
-      bootstrapToken,
-      tls: certPath && keyPath
-        ? { cert: readFileSync(certPath), key: readFileSync(keyPath) }
-        : undefined
-    });
-    const port = rawPort ? Number(rawPort) : 8787;
-    const host = process.env.SPINAL_PLUG_LISTEN_HOST ?? "127.0.0.1";
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error("Port must be an integer from 1 to 65535.");
-    }
-    await httpServer.listen(port, host);
-    console.log(`Spinal Plug Control Plane listening on ${httpServer.secure ? "https" : "http"}://${host}:${port}`);
-    return;
-  }
-  if (command === "control-provision") {
-    const [serverDbPath, accountName, ownerEmail, ownerName, deviceName] = args;
-    if (!serverDbPath || !accountName || !ownerEmail || !ownerName || !deviceName) {
-      throw new Error(
-        "Usage: spinal-plug control-provision <server-db-path> <account> <email> <owner> <device>"
-      );
-    }
-    const databasePath = resolve(process.cwd(), serverDbPath);
-    ensureParentDir(databasePath);
-    const controlPlane = new SpinalPlugControlPlane(databasePath);
-    try {
-      console.log(JSON.stringify(controlPlane.provisionAccount({
-        accountName,
-        ownerEmail,
-        ownerName,
-        deviceName
-      }), null, 2));
-    } finally {
-      controlPlane.close();
-    }
-    return;
-  }
-
   const [rawDbPath, projectDir, ...rest] = args;
   if (!rawDbPath) {
     throw new Error("Missing <db-path> argument.");
