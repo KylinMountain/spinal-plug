@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -675,6 +675,39 @@ test("an empty --match is refused rather than listing the whole Space", () => {
   assert.equal(empty.status, 1);
   assert.match(empty.stderr, /prompt cannot be empty/);
   assert.equal(empty.stdout.trim(), "", "no memories may be emitted for an empty query");
+});
+
+test("an empty update id is refused instead of applying nothing successfully", () => {
+  // Regression: `apply "$DB" . --host codex "$IDS"` with IDS unset produced
+  // selected = [""], which matches no pending update. The command applied
+  // nothing, left every approved update pending, and still exited 0.
+  const workspace = linkedWorkspace();
+  const result = runCli(workspace, ["apply", workspace.db, workspace.project, "--host", "codex", ""]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /update id cannot be empty/);
+});
+
+test("the device credential file follows SPINAL_PLUG_HOME", () => {
+  // Regression: bindings relocated with SPINAL_PLUG_HOME but device.env was
+  // still read from the real $HOME, splitting device-local state in half.
+  // Asserting "still linked" would pass either way, so this proves the file
+  // was actually read: it sets an explicit sync endpoint that must fail
+  // loudly (explicit endpoints never degrade to local mode).
+  const workspace = linkedWorkspace();
+  mkdirSync(join(workspace.home, ".spinal-plug"), { recursive: true });
+  writeFileSync(
+    join(workspace.home, ".spinal-plug", "device.env"),
+    "SPINAL_PLUG_SYNC_URL=http://127.0.0.1:1\n"
+  );
+  // $HOME points somewhere with no device.env, so reading the credential from
+  // homedir() instead of SPINAL_PLUG_HOME finds nothing and quietly succeeds
+  // in local mode — which is exactly what this must not do.
+  const decoyHome = realpathSync(mkdtempSync(join(tmpdir(), "spinal-plug-decoy-")));
+  const shared = runCli(workspace, [
+    "share", workspace.db, workspace.project, "decision", "Credentials come from the relocated home"
+  ], { env: { HOME: decoyHome } });
+  assert.equal(shared.status, 1, "the endpoint from device.env must be honoured and its failure surfaced");
+  assert.notEqual(shared.stderr.trim(), "");
 });
 
 test("import reads host-native memory and refuses a host that has none to read", () => {

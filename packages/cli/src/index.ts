@@ -44,8 +44,9 @@ const HOOK_EVENTS: ReadonlySet<string> = new Set([
  * environment variables always win.
  */
 function loadDeviceEnvFile(): void {
+  const home = process.env.SPINAL_PLUG_HOME?.trim() || homedir();
   const path = process.env.SPINAL_PLUG_ENV_FILE
-    ?? resolve(homedir(), ".spinal-plug", "device.env");
+    ?? resolve(home, ".spinal-plug", "device.env");
   if (!existsSync(path)) return;
   for (const line of readFileSync(path, "utf8").split("\n")) {
     const match = /^\s*(?:export\s+)?(SPINAL_PLUG_[A-Z_]+)\s*=\s*(.*)\s*$/.exec(line);
@@ -1281,6 +1282,12 @@ async function main(): Promise<void> {
     const selected = rest.filter((value, index) =>
       value !== "--all"
       && (hostIndex === -1 || (index !== hostIndex && index !== hostIndex + 1)));
+    // An empty id is an unset shell variable, not a selection. Left in, it
+    // matches no pending update, so the command would apply nothing and still
+    // report success — the same silent no-op as an empty --match.
+    if (selected.some(value => !value.trim())) {
+      throw new Error("Usage: spinal-plug apply <db-path> <project-dir> [--host <host>] [--all | update-id...] (an update id cannot be empty)");
+    }
     const applied = database.applyCanonicalUpdates(
       space.spaceId,
       rest.includes("--all") || selected.length === 0 ? undefined : selected
