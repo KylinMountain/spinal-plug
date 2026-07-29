@@ -16,7 +16,7 @@ Summarize each pending update by kind, source and status. `delete` updates are m
 After selection, apply only the chosen update IDs and refresh Claude's native memory projection:
 
 ```bash
-spinal-plug apply-claude "$HOME/.spinal-plug/spinal-plug.db" . <update-id>...
+spinal-plug apply "$HOME/.spinal-plug/spinal-plug.db" . --host claude-code <update-id>...
 ```
 
 If the user explicitly chooses all updates, omit the IDs. Claude Code reloads the native memory index in the next session; the next UserPromptSubmit Hook can inject the current local projection into this conversation.

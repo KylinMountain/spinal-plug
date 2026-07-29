@@ -143,8 +143,10 @@ Marketplace manifests for Codex and Claude Code are under `plugins/`. After inst
 
 ```text
 /spinal-plug:connect
+/spinal-plug:status
 /spinal-plug:share
 /spinal-plug:sync
+/spinal-plug:handoff
 /spinal-plug:boot
 ```
 

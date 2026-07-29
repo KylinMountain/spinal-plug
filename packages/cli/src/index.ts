@@ -20,6 +20,14 @@ import {
 import type { MindCapsule, MemoryKind, ProjectSpace } from "@spinal-plug/protocol";
 
 const MEMORY_KINDS: ReadonlySet<string> = new Set(["directive", "decision", "context", "reference"]);
+const RUNTIME_ENTITIES: ReadonlySet<string> = new Set([
+  "mind-core",
+  "role",
+  "mission",
+  "task-graph",
+  "capsule",
+  "incarnate"
+]);
 const HOOK_EVENTS: ReadonlySet<string> = new Set([
   "session.start",
   "prompt.submit",
@@ -65,20 +73,19 @@ the local sync server (127.0.0.1:8787), otherwise silent local mode —
 the outbox retains everything for a later retry, no authentication needed.
 
 Binding:
-  connect <db-path> <project-dir>                  Create a project or archive binding for this directory
-  archive <db-path> <project-dir> [name]           Create a named non-Git workspace archive
-  general <db-path> <project-dir>                  Bind this directory to General Space
-  link <db-path> <project-dir> <space-id> [name]   Bind this directory to an existing archive
+  connect <db-path> <project-dir> [mode]           Bind this directory; without a mode a Git repository
+                                                     becomes a project and anything else an archive.
+                                                     Modes: general | archive [name] | link <space-id> [name]
   status <db-path> [project-dir]                   Show user-facing status for the current Space
   boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
 
 Memory:
   share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>
-                                                     Share a durable memory; publishes when --url or
-                                                     SPINAL_PLUG_SYNC_URL is set, local-only otherwise
-  share-claude <db-path> <project-dir> [url] [device-id]
-                                                     Share current Claude Code project memory
-                                                     (default: local sync server, local mode if unreachable)
+                                                     Write one durable memory and publish it; publishes when
+                                                     --url or SPINAL_PLUG_SYNC_URL is set, local-only otherwise
+  import <db-path> <project-dir> <host> [url] [device-id]
+                                                     Import what the host already recorded natively, then
+                                                     publish (claude-code only; local mode if unreachable)
   candidates <db-path> <project-dir>               List reviewable inferred memory candidates
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
   update <db-path> <project-dir> <memory-id> <text> Update active memory
@@ -87,32 +94,29 @@ Memory:
   recall <db-path> <project-dir> <prompt>          Print relevant active memories
   keys <db-path> <project-dir>                     List this Space's semantic-key registry
 
+Host projection:
+  project <db-path> <project-dir> <host>           Refresh a host's native memory from local state (no network)
+
 Selective sync (requires a configured endpoint):
   fetch <db-path> <project-dir> <url> <device-id>  Fetch updates without applying optional changes
   preview <db-path> <project-dir>                  Preview fetched canonical updates
-  apply <db-path> <project-dir> [update-id...]     Apply selected updates; no IDs applies all
-  apply-claude <db-path> <project-dir> [update-id...]
-                                                     Apply selection and refresh Claude native memory
-  apply-codex <db-path> <project-dir> [update-id...]
-                                                     Apply selection and refresh Codex native memory
-  sync-codex <db-path> <project-dir>               Refresh Codex native memory from local state (no network)
+  apply <db-path> <project-dir> [--host <host>] [--all | update-id...]
+                                                     Apply selected updates; no IDs applies all.
+                                                     --host also refreshes that host's native memory
   republish <db-path> <project-dir> <url> <device-id>
                                                      Re-send delivered events after switching servers
   space-register <db-path> <project-dir> <url>     Register this Space on an authenticated Control Plane
 
 Work handoff:
-  checkpoint <db-path> <project-dir> <json>        Save a work-state checkpoint for Agent handoff
-  handoff <db-path> <project-dir>                  Show the newest work-state handoff
-  checkpoints <db-path> <project-dir>              List work-state checkpoints
+  handoff <db-path> <project-dir> <json>           Save a work-state checkpoint for Agent handoff
+  handoff <db-path> <project-dir> --latest         Show the newest work-state handoff
+  handoff <db-path> <project-dir> --list           List work-state checkpoints
 
-Mind runtime:
-  mind-core <db-path> <project-dir> <json>         Create a Mind Core runtime entity
-  role <db-path> <project-dir> <json>              Create a Role Profile runtime entity
-  mission <db-path> <project-dir> <json>           Create a Mission runtime entity
-  task-graph <db-path> <project-dir> <json>        Create or update a Task Graph
-  capsule <db-path> <project-dir> <json>           Compile a Mind Capsule boot package
-  incarnate <db-path> <project-dir> <json>         Spawn an Incarnation from a Capsule
-  runtime <db-path> <project-dir>                  List runtime entities in this Space
+Mind runtime (reserved extension surface; no plugin or skill drives it yet):
+  runtime <db-path> <project-dir> [list]           List runtime entities in this Space
+  runtime <db-path> <project-dir> <entity> <json>  Create or compile a runtime entity.
+                                                     Entities: mind-core | role | mission | task-graph |
+                                                     capsule | incarnate
 
 Internal (used by plugins and hooks — not user-facing):
   remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
@@ -434,6 +438,32 @@ function drainCodexCandidateJobs(
     }
   }
   return created;
+}
+
+/**
+ * Refresh a host's native memory from local state. Claude's projection skips
+ * memories that were imported from its own topic files, so a fact the host
+ * already owns is never written back to it as a managed block.
+ */
+function materializeHostProjection(
+  host: string,
+  space: ProjectSpace,
+  service: ProjectMemoryService,
+  projectPath: string
+): unknown {
+  if (host === "claude-code") {
+    const nativeMemoryIds = new Set(
+      new ClaudeAutoMemoryImporter().import(space, projectPath).candidates.map(candidate => candidate.memoryId)
+    );
+    return new ClaudeAutoMemoryMaterializer().materialize(
+      projectPath,
+      service.list(space).filter(memory => !nativeMemoryIds.has(memory.memoryId))
+    );
+  }
+  if (host === "codex") {
+    return new CodexNativeMemoryStore().materialize(space, service.list(space));
+  }
+  throw new Error(`Unsupported host: ${host}. Use claude-code or codex.`);
 }
 
 async function executeHook(
@@ -815,22 +845,29 @@ async function main(): Promise<void> {
 
   const resolver = new ProjectSpaceResolver();
   const projectPath = resolve(process.cwd(), projectDir);
-  if (command === "connect" || command === "archive" || command === "general" || command === "link") {
+  if (command === "connect") {
+    // Binding a directory is one decision with four answers, so it is one
+    // command with an optional mode rather than four near-identical verbs.
     // The database is a private device cache and outbox, not a synced project artifact.
     openDatabase(rawDbPath);
+    const [mode, ...modeArgs] = rest;
     let result;
-    if (command === "general") {
+    if (!mode) {
+      result = resolver.isGitWorkspace(projectPath)
+        ? resolver.initialize(projectPath)
+        : resolver.initializeArchive(projectPath);
+    } else if (mode === "general") {
       result = resolver.initializeGeneral(projectPath);
-    } else if (command === "archive") {
-      result = resolver.initializeArchive(projectPath, rest.join(" ") || undefined);
-    } else if (command === "link") {
-      const [spaceId, ...nameParts] = rest;
-      if (!spaceId) throw new Error("Usage: spinal-plug link <db-path> <project-dir> <space-id> [name]");
+    } else if (mode === "archive") {
+      result = resolver.initializeArchive(projectPath, modeArgs.join(" ") || undefined);
+    } else if (mode === "link") {
+      const [spaceId, ...nameParts] = modeArgs;
+      if (!spaceId) {
+        throw new Error("Usage: spinal-plug connect <db-path> <project-dir> link <space-id> [name]");
+      }
       result = resolver.linkExisting(projectPath, spaceId, nameParts.join(" ") || spaceId);
-    } else if (resolver.isGitWorkspace(projectPath)) {
-      result = resolver.initialize(projectPath);
     } else {
-      result = resolver.initializeArchive(projectPath);
+      throw new Error(`Unsupported connect mode: ${mode}. Use general, archive, or link.`);
     }
     console.log(`Linked ${result.space.type} Space: ${result.space.displayName}`);
     console.log(`Space ID: ${result.space.spaceId}`);
@@ -867,16 +904,32 @@ async function main(): Promise<void> {
     accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
     personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
   });
-  if (["mind-core", "role", "mission", "task-graph", "capsule", "incarnate"].includes(command)) {
-    const rawInput = rest.join(" ");
-    if (!rawInput) throw new Error(`Usage: spinal-plug ${command} <db-path> <project-dir> <json>`);
+  if (command === "runtime") {
+    // The Mind runtime is a reserved extension surface, not a supported
+    // workflow: it takes hand-written JSON and no plugin or skill drives it.
+    // Keeping it behind one namespace stops six speculative verbs from
+    // reading as peers of `remember` in the top-level command list.
+    const [entity, ...entityArgs] = rest;
+    if (!entity || entity === "list") {
+      console.log(JSON.stringify(database.listRuntimeEntities(space.spaceId), null, 2));
+      return;
+    }
+    if (!RUNTIME_ENTITIES.has(entity)) {
+      throw new Error(
+        `Unsupported runtime entity: ${entity}. Use list, ${[...RUNTIME_ENTITIES].join(", ")}.`
+      );
+    }
+    const rawInput = entityArgs.join(" ");
+    if (!rawInput) {
+      throw new Error(`Usage: spinal-plug runtime <db-path> <project-dir> ${entity} <json>`);
+    }
     let input: Record<string, unknown>;
     try {
       input = JSON.parse(rawInput) as Record<string, unknown>;
     } catch {
-      throw new Error(`${command} input must be valid JSON.`);
+      throw new Error(`runtime ${entity} input must be valid JSON.`);
     }
-    const result = command === "mind-core"
+    const result = entity === "mind-core"
       ? runtime.createMindCore({
         space,
         displayName: String(input.displayName ?? ""),
@@ -885,7 +938,7 @@ async function main(): Promise<void> {
           ? input.syncProfile as never
           : undefined
       })
-      : command === "role"
+      : entity === "role"
         ? runtime.createRoleProfile({
           space,
           mindId: String(input.mindId ?? ""),
@@ -893,7 +946,7 @@ async function main(): Promise<void> {
           directives: Array.isArray(input.directives) ? input.directives.map(String) : [],
           requiredCapabilities: Array.isArray(input.requiredCapabilities) ? input.requiredCapabilities.map(String) : []
         })
-        : command === "mission"
+        : entity === "mission"
           ? runtime.createMission({
             space,
             mindId: String(input.mindId ?? ""),
@@ -901,7 +954,7 @@ async function main(): Promise<void> {
             objective: String(input.objective ?? ""),
             successCriteria: Array.isArray(input.successCriteria) ? input.successCriteria.map(String) : []
           })
-          : command === "task-graph"
+          : entity === "task-graph"
             ? runtime.upsertTaskGraph({
               space,
               mindId: String(input.mindId ?? ""),
@@ -909,7 +962,7 @@ async function main(): Promise<void> {
               taskGraphId: typeof input.taskGraphId === "string" ? input.taskGraphId : undefined,
               tasks: Array.isArray(input.tasks) ? input.tasks as never : []
             })
-            : command === "capsule"
+            : entity === "capsule"
               ? runtime.compileCapsule({
                 space,
                 mindId: String(input.mindId ?? ""),
@@ -931,12 +984,16 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  if (command === "runtime") {
-    console.log(JSON.stringify(database.listRuntimeEntities(space.spaceId), null, 2));
-    return;
-  }
-  if (command === "share-claude") {
-    const [url, deviceId] = rest;
+  if (command === "import") {
+    // Distinct from `share`, which writes one new fact: this pulls what the
+    // host already recorded natively. Only Claude Code exposes readable
+    // per-project memory files; Codex's store is write-only to us.
+    const [host, url, deviceId] = rest;
+    if (host !== "claude-code") {
+      throw new Error(
+        `Unsupported import host: ${host || "(none)"}. Only claude-code exposes readable native memory.`
+      );
+    }
     const endpoint = url?.trim() ? { url: url.trim(), explicit: true } : resolveSyncEndpoint();
     console.log(JSON.stringify(
       await shareClaudeAutoMemory(
@@ -1053,19 +1110,29 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ memory, published, sync: mode, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
     return;
   }
-  if (command === "checkpoint") {
+  if (command === "handoff") {
+    // Reading work state is the same concept as writing it, so it stays on
+    // this command as a flag instead of becoming separate verbs.
+    if (rest[0] === "--latest") {
+      console.log(JSON.stringify(handoffs.latest(space), null, 2));
+      return;
+    }
+    if (rest[0] === "--list") {
+      console.log(JSON.stringify(handoffs.list(space, true), null, 2));
+      return;
+    }
     const rawCheckpoint = rest.join(" ");
     if (!rawCheckpoint) {
-      throw new Error("Usage: spinal-plug checkpoint <db-path> <project-dir> <json>");
+      throw new Error("Usage: spinal-plug handoff <db-path> <project-dir> <json> | --latest | --list");
     }
     let input: Record<string, unknown>;
     try {
       input = JSON.parse(rawCheckpoint) as Record<string, unknown>;
     } catch {
-      throw new Error("checkpoint input must be a JSON object.");
+      throw new Error("handoff input must be a JSON object.");
     }
     if (typeof input.title !== "string" || !input.title.trim()) {
-      throw new Error("checkpoint input requires a non-empty title.");
+      throw new Error("handoff input requires a non-empty title.");
     }
     const strings = (key: string) => Array.isArray(input[key])
       ? input[key].filter((value): value is string => typeof value === "string")
@@ -1088,14 +1155,6 @@ async function main(): Promise<void> {
       }
     });
     console.log(JSON.stringify({ checkpoint, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
-    return;
-  }
-  if (command === "handoff") {
-    console.log(JSON.stringify(handoffs.latest(space), null, 2));
-    return;
-  }
-  if (command === "checkpoints") {
-    console.log(JSON.stringify(handoffs.list(space, true), null, 2));
     return;
   }
   if (command === "update") {
@@ -1201,48 +1260,37 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "apply") {
-    const selected = rest.filter(value => value !== "--all");
-    const result = database.applyCanonicalUpdates(
-      space.spaceId,
-      rest.includes("--all") || selected.length === 0 ? undefined : selected
-    );
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  if (command === "apply-claude") {
-    const selected = rest.filter(value => value !== "--all");
+    // Which host to refresh afterwards is an option, not a separate command:
+    // the selection semantics below must stay identical across hosts.
+    const hostIndex = rest.indexOf("--host");
+    const host = hostIndex === -1 ? undefined : rest[hostIndex + 1];
+    if (hostIndex !== -1 && !host) {
+      throw new Error("Usage: spinal-plug apply <db-path> <project-dir> [--host <host>] [--all | update-id...]");
+    }
+    const selected = rest.filter((value, index) =>
+      value !== "--all" && index !== hostIndex && index !== hostIndex + 1);
     const applied = database.applyCanonicalUpdates(
       space.spaceId,
       rest.includes("--all") || selected.length === 0 ? undefined : selected
     );
-    const importer = new ClaudeAutoMemoryImporter();
-    const localNativeMemoryIds = new Set(
-      importer.import(space, projectPath).candidates.map(candidate => candidate.memoryId)
-    );
-    const allMemories = service.list(space);
-    const projectedMemories = allMemories.filter(memory => !localNativeMemoryIds.has(memory.memoryId));
-    const materialized = new ClaudeAutoMemoryMaterializer().materialize(
-      projectPath,
-      projectedMemories
-    );
+    if (!host) {
+      console.log(JSON.stringify(applied, null, 2));
+      return;
+    }
+    const materialized = materializeHostProjection(host, space, service, projectPath);
     console.log(JSON.stringify({ applied, materialized }, null, 2));
     return;
   }
-  if (command === "apply-codex") {
-    const selected = rest.filter(value => value !== "--all");
-    const applied = database.applyCanonicalUpdates(
-      space.spaceId,
-      rest.includes("--all") || selected.length === 0 ? undefined : selected
-    );
-    const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
-    console.log(JSON.stringify({ applied, materialized }, null, 2));
-    return;
-  }
-  if (command === "sync-codex") {
+  if (command === "project") {
     // Local projection refresh only: network sync goes through the selective
     // fetch → preview → apply flow, never through this command.
-    const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
-    console.log(JSON.stringify({ materialized }, null, 2));
+    const [host] = rest;
+    if (!host) throw new Error("Usage: spinal-plug project <db-path> <project-dir> <host>");
+    console.log(JSON.stringify(
+      { materialized: materializeHostProjection(host, space, service, projectPath) },
+      null,
+      2
+    ));
     return;
   }
 

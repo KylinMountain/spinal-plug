@@ -25,7 +25,7 @@ Candidates are not active memory. They remain reviewable until explicitly promot
 | "查看候选记忆" / "确认候选" | 审查自动提取候选，只有用户明确同意时才晋升为 active memory。 |
 | "交接工作" / "保存进度" / "让另一个 Agent 继续" | 创建 Project Checkpoint，不把临时工作状态写成长期记忆。 |
 
-The local cache is an implementation detail. Never tell the user to upload a database file. Do not edit Codex SQLite files directly: `sync-codex` owns only the reserved `spinal-plug:<space-id>` record and never overwrites normal Codex session memory.
+The local cache is an implementation detail. Never tell the user to upload a database file. Do not edit Codex SQLite files directly: `project codex` owns only the reserved `spinal-plug:<space-id>` record and never overwrites normal Codex session memory.
 
 Use these defaults unless the environment overrides them:
 
@@ -82,7 +82,7 @@ spinal-plug share "$SPINAL_PLUG_DB" . <kind> --url "$SPINAL_PLUG_SYNC_URL" --dev
 With `SPINAL_PLUG_SYNC_URL` unset the share is recorded locally only — that is the default, not an error. Then update Codex's native memory projection (purely local, no network):
 
 ```bash
-spinal-plug sync-codex "$SPINAL_PLUG_DB" .
+spinal-plug project "$SPINAL_PLUG_DB" . codex
 ```
 
 Report what was shared and why it is durable. The selection step is internal behavior of **共享记忆**, not a separate user-facing command.
@@ -99,7 +99,7 @@ spinal-plug preview "$SPINAL_PLUG_DB" .
 Show the optional updates and ask which ones to apply. Required tombstones are applied during fetch. After the user selects update IDs, run:
 
 ```bash
-spinal-plug apply-codex "$SPINAL_PLUG_DB" . <update-id>...
+spinal-plug apply "$SPINAL_PLUG_DB" . --host codex <update-id>...
 ```
 
 Omit IDs only when the user explicitly chooses all updates. The next Codex session reads the refreshed native memory projection.
@@ -123,7 +123,7 @@ spinal-plug promote "$SPINAL_PLUG_DB" . <memory-id>
 When the user asks to hand off ongoing work, create a checkpoint with completed work, decisions, open tasks, blockers, next action, and artifact references. Do not place temporary progress into durable memory.
 
 ```bash
-spinal-plug checkpoint "$SPINAL_PLUG_DB" . '<json object with title, completed, decisions, openTasks, blockers, nextAction, artifactRefs>'
+spinal-plug handoff "$SPINAL_PLUG_DB" . '<json object with title, completed, decisions, openTasks, blockers, nextAction, artifactRefs>'
 ```
 
 Use concise project facts. Confirm what will be handed off. An approved checkpoint is published on the next Stop lifecycle boundary; another linked Agent receives the latest checkpoint in its next boot context after synchronization.

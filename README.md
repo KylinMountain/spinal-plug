@@ -143,8 +143,10 @@ Codex 与 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可
 
 ```text
 /spinal-plug:connect
+/spinal-plug:status
 /spinal-plug:share
 /spinal-plug:sync
+/spinal-plug:handoff
 /spinal-plug:boot
 ```
 

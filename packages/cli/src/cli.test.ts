@@ -160,40 +160,57 @@ test("connect binds a Git workspace as a project and a plain directory as an arc
   assert.match(archive.stdout, /^Linked archive Space: project$/m);
 });
 
-test("general, named archive and link produce the space each one names", () => {
+test("each connect mode produces the space it names", () => {
   const general = createWorkspace({ git: false });
-  const generalStatus = parseJson<StatusLike>(
-    (expectSuccess(runCli(general, ["general", general.db, general.project])),
-      runCli(general, ["status", general.db, general.project]))
-  );
+  expectSuccess(runCli(general, ["connect", general.db, general.project, "general"]));
+  const generalStatus = parseJson<StatusLike>(runCli(general, ["status", general.db, general.project]));
   assert.equal(generalStatus.space?.type, "general");
   assert.equal(generalStatus.space?.name, "General");
   assert.equal(generalStatus.space?.id, "spc_general_local");
 
   const named = createWorkspace({ git: false });
-  expectSuccess(runCli(named, ["archive", named.db, named.project, "Field", "Notes"]));
+  expectSuccess(runCli(named, ["connect", named.db, named.project, "archive", "Field", "Notes"]));
   const namedStatus = parseJson<StatusLike>(runCli(named, ["status", named.db, named.project]));
   assert.equal(namedStatus.space?.type, "archive");
   assert.equal(namedStatus.space?.name, "Field Notes");
 
   const linked = createWorkspace({ git: false });
-  expectSuccess(runCli(linked, ["link", linked.db, linked.project, "spc_existing_1", "Shared"]));
+  expectSuccess(runCli(linked, ["connect", linked.db, linked.project, "link", "spc_existing_1", "Shared"]));
   const linkedStatus = parseJson<StatusLike>(runCli(linked, ["status", linked.db, linked.project]));
   assert.equal(linkedStatus.space?.id, "spc_existing_1");
   assert.equal(linkedStatus.space?.name, "Shared");
 });
 
-test("link without a Space ID is a usage error, and rebinding a bound directory is idempotent", () => {
+test("connect rejects an unknown mode and a link without a Space ID", () => {
   const workspace = createWorkspace({ git: false });
-  const missing = runCli(workspace, ["link", workspace.db, workspace.project]);
+  const missing = runCli(workspace, ["connect", workspace.db, workspace.project, "link"]);
   assert.equal(missing.status, 1);
-  assert.match(missing.stderr, /Usage: spinal-plug link/);
+  assert.match(missing.stderr, /Usage: spinal-plug connect .* link <space-id>/);
 
-  expectSuccess(runCli(workspace, ["archive", workspace.db, workspace.project, "First"]));
-  const rebind = expectSuccess(runCli(workspace, ["general", workspace.db, workspace.project]));
+  const unknown = runCli(workspace, ["connect", workspace.db, workspace.project, "borrow"]);
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /Unsupported connect mode: borrow/);
+
+  const status = parseJson<StatusLike>(runCli(workspace, ["status", workspace.db, workspace.project]));
+  assert.equal(status.state, "unlinked", "a rejected mode must not bind the directory");
+});
+
+test("rebinding an already bound directory keeps the original Space", () => {
+  const workspace = createWorkspace({ git: false });
+  expectSuccess(runCli(workspace, ["connect", workspace.db, workspace.project, "archive", "First"]));
+  const rebind = expectSuccess(runCli(workspace, ["connect", workspace.db, workspace.project, "general"]));
   // An existing binding wins over the newly requested one; the directory is
   // never silently re-pointed at a different Space.
   assert.match(rebind.stdout, /^Linked archive Space: First$/m);
+});
+
+test("the merged commands replaced their predecessors rather than aliasing them", () => {
+  const workspace = linkedWorkspace();
+  for (const retired of ["general", "archive", "link", "checkpoint", "checkpoints", "apply-claude", "apply-codex", "sync-codex", "share-claude", "mind-core", "capsule"]) {
+    const result = runCli(workspace, [retired, workspace.db, workspace.project]);
+    assert.equal(result.status, 1, `${retired} should no longer be a command`);
+    assert.match(result.stdout, /^spinal-plug$/m, `${retired} should fall through to help`);
+  }
 });
 
 test("an unlinked directory reports the four binding actions instead of a Space", () => {
@@ -273,7 +290,7 @@ test("update rewrites a statement and forget retires it from the active list", (
   );
 });
 
-test("checkpoint writes work state that handoff and checkpoints both read back", () => {
+test("handoff writes work state that --latest and --list both read back", () => {
   const workspace = linkedWorkspace();
   const checkpoint = {
     title: "Payments migration handoff",
@@ -281,15 +298,17 @@ test("checkpoint writes work state that handoff and checkpoints both read back",
     openTasks: ["Backfill historical rows"],
     nextAction: "Run the backfill in staging"
   };
-  expectSuccess(runCli(workspace, ["checkpoint", workspace.db, workspace.project, JSON.stringify(checkpoint)]));
+  expectSuccess(runCli(workspace, ["handoff", workspace.db, workspace.project, JSON.stringify(checkpoint)]));
 
   const latest = parseJson<{ title: string; nextAction?: string }>(
-    runCli(workspace, ["handoff", workspace.db, workspace.project])
+    runCli(workspace, ["handoff", workspace.db, workspace.project, "--latest"])
   );
   assert.equal(latest.title, checkpoint.title);
   assert.equal(latest.nextAction, checkpoint.nextAction);
 
-  const all = parseJson<Array<{ title: string }>>(runCli(workspace, ["checkpoints", workspace.db, workspace.project]));
+  const all = parseJson<Array<{ title: string }>>(
+    runCli(workspace, ["handoff", workspace.db, workspace.project, "--list"])
+  );
   assert.deepEqual(all.map(entry => entry.title), [checkpoint.title]);
 
   // The next session boots with the handoff attached to the projection.
@@ -299,17 +318,17 @@ test("checkpoint writes work state that handoff and checkpoints both read back",
   assert.match(context.hookSpecificOutput?.additionalContext ?? "", /Payments migration handoff/);
 });
 
-test("checkpoint requires a JSON object with a title", () => {
+test("handoff requires a JSON object with a title", () => {
   const workspace = linkedWorkspace();
-  const empty = runCli(workspace, ["checkpoint", workspace.db, workspace.project]);
+  const empty = runCli(workspace, ["handoff", workspace.db, workspace.project]);
   assert.equal(empty.status, 1);
-  assert.match(empty.stderr, /Usage: spinal-plug checkpoint/);
+  assert.match(empty.stderr, /Usage: spinal-plug handoff/);
 
-  const malformed = runCli(workspace, ["checkpoint", workspace.db, workspace.project, "not json"]);
+  const malformed = runCli(workspace, ["handoff", workspace.db, workspace.project, "not json"]);
   assert.equal(malformed.status, 1);
   assert.match(malformed.stderr, /must be a JSON object/);
 
-  const untitled = runCli(workspace, ["checkpoint", workspace.db, workspace.project, JSON.stringify({ summary: "x" })]);
+  const untitled = runCli(workspace, ["handoff", workspace.db, workspace.project, JSON.stringify({ summary: "x" })]);
   assert.equal(untitled.status, 1);
   assert.match(untitled.stderr, /requires a non-empty title/);
 });
@@ -448,6 +467,92 @@ function localEndpointBusy(): string | false {
   ]);
   return probe.status === 7 ? "a local sync endpoint is listening on 8787" : false;
 }
+
+test("project refreshes a host's native memory and names an unsupported host", () => {
+  const workspace = linkedWorkspace(["Backups run nightly against the replica"]);
+
+  const claude = parseJson<{ materialized: unknown }>(
+    runCli(workspace, ["project", workspace.db, workspace.project, "claude-code"])
+  );
+  assert.ok(claude.materialized, "Claude now has the same projection refresh Codex always had");
+
+  const codex = parseJson<{ materialized: unknown }>(
+    runCli(workspace, ["project", workspace.db, workspace.project, "codex"])
+  );
+  assert.ok(codex.materialized);
+
+  const unsupported = runCli(workspace, ["project", workspace.db, workspace.project, "emacs"]);
+  assert.equal(unsupported.status, 1);
+  assert.match(unsupported.stderr, /Unsupported host: emacs/);
+
+  const missing = runCli(workspace, ["project", workspace.db, workspace.project]);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /Usage: spinal-plug project/);
+});
+
+test("apply reports updates alone, and adds a host projection only when asked", () => {
+  const workspace = linkedWorkspace(["Rate limits are enforced at the edge"]);
+
+  const bare = parseJson<Record<string, unknown>>(runCli(workspace, ["apply", workspace.db, workspace.project]));
+  assert.ok(!("materialized" in bare), "a plain apply stays a pure canonical-update operation");
+
+  const withHost = parseJson<{ applied: unknown; materialized: unknown }>(
+    runCli(workspace, ["apply", workspace.db, workspace.project, "--host", "codex"])
+  );
+  assert.ok(withHost.applied !== undefined);
+  assert.ok(withHost.materialized !== undefined);
+
+  const danglingHost = runCli(workspace, ["apply", workspace.db, workspace.project, "--host"]);
+  assert.equal(danglingHost.status, 1);
+  assert.match(danglingHost.stderr, /Usage: spinal-plug apply/);
+});
+
+test("import reads host-native memory and refuses a host that has none to read", () => {
+  const workspace = linkedWorkspace();
+  const imported = parseJson<{ source: string; discovered: number; sync: string }>(
+    runCli(workspace, ["import", workspace.db, workspace.project, "claude-code"], {
+      env: { SPINAL_PLUG_SYNC_URL: "" }
+    })
+  );
+  assert.equal(imported.source, "claude-code-auto-memory");
+  assert.equal(imported.discovered, 0, "the throwaway home has no Claude topic files");
+
+  const codex = runCli(workspace, ["import", workspace.db, workspace.project, "codex"]);
+  assert.equal(codex.status, 1);
+  assert.match(codex.stderr, /Only claude-code exposes readable native memory/);
+
+  const none = runCli(workspace, ["import", workspace.db, workspace.project]);
+  assert.equal(none.status, 1);
+  assert.match(none.stderr, /Unsupported import host/);
+});
+
+test("the Mind runtime lives behind one namespace", () => {
+  const workspace = linkedWorkspace();
+  assert.deepEqual(parseJson<unknown[]>(runCli(workspace, ["runtime", workspace.db, workspace.project])), []);
+  assert.deepEqual(
+    parseJson<unknown[]>(runCli(workspace, ["runtime", workspace.db, workspace.project, "list"])),
+    [],
+    "an explicit list subcommand behaves like the bare namespace"
+  );
+
+  const core = parseJson<{ mindId?: string }>(runCli(workspace, [
+    "runtime", workspace.db, workspace.project, "mind-core", JSON.stringify({ displayName: "Reviewer" })
+  ]));
+  assert.ok(core.mindId, "creating an entity still works through the namespace");
+  assert.equal(parseJson<unknown[]>(runCli(workspace, ["runtime", workspace.db, workspace.project])).length, 1);
+
+  const unknown = runCli(workspace, ["runtime", workspace.db, workspace.project, "daemon", "{}"]);
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /Unsupported runtime entity: daemon/);
+
+  const noJson = runCli(workspace, ["runtime", workspace.db, workspace.project, "role"]);
+  assert.equal(noJson.status, 1);
+  assert.match(noJson.stderr, /Usage: spinal-plug runtime .* role <json>/);
+
+  const badJson = runCli(workspace, ["runtime", workspace.db, workspace.project, "role", "nope"]);
+  assert.equal(badJson.status, 1);
+  assert.match(badJson.stderr, /runtime role input must be valid JSON/);
+});
 
 test("an unknown command prints help and fails", () => {
   const workspace = linkedWorkspace();
