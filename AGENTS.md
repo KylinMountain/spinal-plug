@@ -22,7 +22,6 @@ pnpm check
 pnpm typecheck
 pnpm test
 pnpm verify
-pnpm dev:server -- --port 8787
 ```
 
 `pnpm verify` is the default pre-PR gate. It validates repository knowledge,

@@ -41,11 +41,7 @@ For “交接工作”“保存当前进度”或“让另一个 Agent 继续”
 
 Endpoint resolution is three-tier: a configured `SPINAL_PLUG_SYNC_URL` wins; otherwise the local development server at `http://127.0.0.1:8787` is tried; if nothing answers (or it rejects), everything silently stays in local mode — memory operations work fully, the outbox retains events for a later retry, and no authentication is ever required. This is the default and needs zero setup.
 
-To sync between devices or agents, start the M2 development service in a separate terminal (or export `SPINAL_PLUG_SYNC_URL` pointing at a compatible endpoint):
-
-```bash
-mind-palace serve "$HOME/.spinal-plug/spinal-plug-central.db" 8787  # 服务端在私有 mind-palace 仓库
-```
+To sync between devices or agents, export `SPINAL_PLUG_SYNC_URL` pointing at a compatible sync endpoint. Local mode is complete on its own; an endpoint is only needed for cross-device or cross-agent sync.
 
 Then use `/spinal-plug:share` to publish local memory, or `/spinal-plug:sync` to download central updates.
 
