@@ -171,7 +171,7 @@ class HandoffTransport implements SyncTransport {
         payload: {
           handoff: {
             schema: "spinal-plug.project-handoff/v0.1",
-            handoffId: "chk_remote",
+            handoffId: "hnd_remote",
             spaceId: space.spaceId,
             title: "Remote handoff",
             completed: ["Created schema"],

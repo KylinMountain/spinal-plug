@@ -60,7 +60,7 @@ export class ProjectHandoffService {
 
   record(input: CreateHandoffInput): ProjectHandoff {
     const timestamp = now();
-    const handoffId = `chk_${randomUUID()}`;
+    const handoffId = `hnd_${randomUUID()}`;
     const previous = input.parentHandoffId ?? this.database.latestHandoff(input.space.spaceId)?.handoffId;
     const handoff: ProjectHandoff = {
       schema: "spinal-plug.project-handoff/v0.1",
