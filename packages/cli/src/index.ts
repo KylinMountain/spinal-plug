@@ -189,7 +189,10 @@ function takeLeadingFlags(
 ): { flags: Record<string, string | boolean>; rest: string[] } {
   const flags: Record<string, string | boolean> = {};
   let index = 0;
-  while (index < args.length && args[index] in spec) {
+  // Object.hasOwn, not `in`: `in` walks the prototype chain, so a statement or
+  // recall prompt beginning with "constructor", "toString", "valueOf" and the
+  // like would be swallowed as a flag and its next word eaten as the value.
+  while (index < args.length && Object.hasOwn(spec, args[index])) {
     const flag = args[index];
     if (spec[flag] === "boolean") {
       flags[flag] = true;
@@ -438,12 +441,21 @@ function drainCodexCandidateJobs(
  * memories that were imported from its own topic files, so a fact the host
  * already owns is never written back to it as a managed block.
  */
+/** Rejects an unknown host before any caller commits state on its behalf. */
+function requireHost(host: string): string {
+  if (host !== "claude-code" && host !== "codex") {
+    throw new Error(`Unsupported host: ${host}. Use claude-code or codex.`);
+  }
+  return host;
+}
+
 function materializeHostProjection(
   host: string,
   space: ProjectSpace,
   service: ProjectMemoryService,
   projectPath: string
 ): unknown {
+  requireHost(host);
   if (host === "claude-code") {
     const nativeMemoryIds = new Set(
       new ClaudeAutoMemoryImporter().import(space, projectPath).candidates.map(candidate => candidate.memoryId)
@@ -1155,7 +1167,13 @@ async function main(): Promise<void> {
       ));
       return;
     }
-    const match = typeof flags["--match"] === "string" && flags["--match"].trim()
+    // An explicit but empty --match is a caller bug (an unset shell variable
+    // in a plugin snippet), not a request for everything. Refuse it rather
+    // than dumping the whole Space as though it were relevant recall.
+    if (typeof flags["--match"] === "string" && !flags["--match"].trim()) {
+      throw new Error("Usage: spinal-plug list <db-path> <project-dir> --match <prompt> (the prompt cannot be empty)");
+    }
+    const match = typeof flags["--match"] === "string"
       ? flags["--match"]
       : matchParts.join(" ").trim();
     if (match) {
@@ -1249,9 +1267,14 @@ async function main(): Promise<void> {
     // the selection semantics below must stay identical across hosts.
     const hostIndex = rest.indexOf("--host");
     const host = hostIndex === -1 ? undefined : rest[hostIndex + 1];
-    if (hostIndex !== -1 && !host) {
+    // Validate the host before anything is committed. Applying first and
+    // checking after would turn `apply --host <typo>` into an irreversible
+    // apply-everything: the typo is swallowed as the host name, the
+    // selection empties, and the whole review queue merges before the error.
+    if (hostIndex !== -1 && (!host || host.startsWith("--"))) {
       throw new Error("Usage: spinal-plug apply <db-path> <project-dir> [--host <host>] [--all | update-id...]");
     }
+    if (host !== undefined) requireHost(host);
     // Guard on hostIndex: without --host it is -1, and dropping index
     // hostIndex + 1 would silently eat the first update id, turning a
     // one-update apply into apply-everything.

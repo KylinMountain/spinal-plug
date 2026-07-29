@@ -132,6 +132,37 @@ interface HookOutput {
   readonly reason?: string;
 }
 
+/** A canonical update as a Control Plane would hand it to this device. */
+function canonicalUpdate(spaceId: string, updateId: string, memoryId: string, statement: string) {
+  return {
+    schema: "spinal-plug.canonical-memory-update/v0.1",
+    updateId,
+    spaceId,
+    memoryId,
+    kind: "activate",
+    required: false,
+    sourceEventIds: [`evt_${memoryId}`],
+    memory: {
+      schema: "spinal-plug.memory-record/v0.1",
+      memoryId,
+      spaceId,
+      kind: "decision",
+      title: statement,
+      statement,
+      references: [],
+      status: "active",
+      origin: "user_explicit",
+      confidence: 1,
+      sourceEventIds: [`evt_${memoryId}`],
+      createdFromEventId: `evt_${memoryId}`,
+      lastUpdatedFromEventId: `evt_${memoryId}`,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    },
+    generatedAt: "2026-01-01T00:00:00.000Z"
+  };
+}
+
 /** A linked Git project with `count` durable memories already stored. */
 function linkedWorkspace(statements: readonly string[] = []): Workspace {
   const workspace = createWorkspace();
@@ -521,33 +552,6 @@ test("apply narrows to the update ids it is given", async t => {
   const spaceId = parseJson<StatusLike>(runCli(workspace, ["status", workspace.db, workspace.project])).space?.id;
   assert.ok(spaceId);
 
-  const update = (updateId: string, memoryId: string, statement: string) => ({
-    schema: "spinal-plug.canonical-memory-update/v0.1",
-    updateId,
-    spaceId,
-    memoryId,
-    kind: "activate",
-    required: false,
-    sourceEventIds: [`evt_${memoryId}`],
-    memory: {
-      schema: "spinal-plug.memory-record/v0.1",
-      memoryId,
-      spaceId,
-      kind: "decision",
-      title: statement,
-      statement,
-      references: [],
-      status: "active",
-      origin: "user_explicit",
-      confidence: 1,
-      sourceEventIds: [`evt_${memoryId}`],
-      createdFromEventId: `evt_${memoryId}`,
-      lastUpdatedFromEventId: `evt_${memoryId}`,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z"
-    },
-    generatedAt: "2026-01-01T00:00:00.000Z"
-  });
 
   // A server that hands this device two optional canonical updates.
   const server = createServer((request, response) => {
@@ -560,8 +564,8 @@ test("apply narrows to the update ids it is given", async t => {
     if ((request.url ?? "").startsWith("/v1/updates:fetch")) {
       response.end(JSON.stringify({
         updates: [
-          update("upd_first", "mem_first", "First shared fact"),
-          update("upd_second", "mem_second", "Second shared fact")
+          canonicalUpdate(spaceId, "upd_first", "mem_first", "First shared fact"),
+          canonicalUpdate(spaceId, "upd_second", "mem_second", "Second shared fact")
         ],
         nextCursor: "evt_mem_second",
         hasMore: false
@@ -592,6 +596,85 @@ test("apply narrows to the update ids it is given", async t => {
   );
   assert.equal(second.applied.applied, 1);
   assert.equal(second.applied.remaining, 0);
+});
+
+test("a bad --host is refused before any update is committed", async t => {
+  // Regression: the host was validated only after applyCanonicalUpdates ran.
+  // A typo was swallowed as the host name, which emptied the selection and
+  // merged the entire review queue. Exit code alone does not prove the fix —
+  // the broken version also exited 1 — so this asserts the queue survives.
+  const workspace = linkedWorkspace();
+  const spaceId = parseJson<StatusLike>(runCli(workspace, ["status", workspace.db, workspace.project])).space?.id;
+  assert.ok(spaceId);
+
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    if ((request.url ?? "").startsWith("/v1/events:pull")) {
+      response.end(JSON.stringify({ events: [], nextCursor: "", hasMore: false }));
+      return;
+    }
+    if ((request.url ?? "").startsWith("/v1/updates:fetch")) {
+      response.end(JSON.stringify({
+        updates: [
+          canonicalUpdate(spaceId, "upd_a", "mem_a", "Queued fact A"),
+          canonicalUpdate(spaceId, "upd_b", "mem_b", "Queued fact B")
+        ],
+        nextCursor: "evt_mem_b",
+        hasMore: false
+      }));
+      return;
+    }
+    response.end(JSON.stringify({ acceptedEventIds: [], duplicateEventIds: [] }));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  expectSuccess(await runCliAsync(workspace, ["fetch", workspace.db, workspace.project, url, "device-test"]));
+  const pendingCount = () => parseJson<{ pending: unknown[] }>(
+    runCli(workspace, ["preview", workspace.db, workspace.project])
+  ).pending.length;
+  assert.equal(pendingCount(), 2);
+
+  for (const args of [["--host", "emacs"], ["--host", "--all"], ["--host"]]) {
+    const result = runCli(workspace, ["apply", workspace.db, workspace.project, ...args]);
+    assert.equal(result.status, 1, `apply ${args.join(" ")} should fail`);
+    assert.equal(
+      pendingCount(),
+      2,
+      `apply ${args.join(" ")} must not commit anything before rejecting the host`
+    );
+  }
+});
+
+test("a statement starting with an Object prototype key is not parsed as a flag", () => {
+  // Regression: flag parsing used `key in spec`, which walks the prototype
+  // chain, so "constructor", "toString" and friends were treated as flags.
+  const workspace = linkedWorkspace();
+  const stored = parseJson<MemoryLike>(runCli(workspace, [
+    "remember", workspace.db, workspace.project, "decision", "constructor injection is the DI convention"
+  ]));
+  assert.equal(stored.statement, "constructor injection is the DI convention");
+
+  // The same hazard reached recall once it moved onto `list`.
+  const matched = parseJson<MemoryLike[]>(runCli(workspace, [
+    "list", workspace.db, workspace.project, "constructor injection"
+  ]));
+  assert.deepEqual(matched.map(memory => memory.memoryId), [stored.memoryId]);
+
+  // A bare prototype key must not throw "Flag toString requires a value".
+  expectSuccess(runCli(workspace, ["list", workspace.db, workspace.project, "toString"]));
+});
+
+test("an empty --match is refused rather than listing the whole Space", () => {
+  // Regression: an unset shell variable in a plugin snippet produced
+  // --match "", which fell through to the plain listing and returned every
+  // memory as though it were relevant recall.
+  const workspace = linkedWorkspace(["First fact", "Second fact"]);
+  const empty = runCli(workspace, ["list", workspace.db, workspace.project, "--match", "   "]);
+  assert.equal(empty.status, 1);
+  assert.match(empty.stderr, /prompt cannot be empty/);
+  assert.equal(empty.stdout.trim(), "", "no memories may be emitted for an empty query");
 });
 
 test("import reads host-native memory and refuses a host that has none to read", () => {
