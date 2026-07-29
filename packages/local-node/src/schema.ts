@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS project_handoffs (
   updated_at TEXT NOT NULL,
   payload_json TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_project_checkpoints_space_updated
+CREATE INDEX IF NOT EXISTS idx_project_handoffs_space_updated
   ON project_handoffs(space_id, status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS runtime_entities (

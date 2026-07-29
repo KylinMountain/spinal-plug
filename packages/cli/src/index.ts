@@ -1089,13 +1089,13 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(handoffs.list(space, true), null, 2));
       return;
     }
-    const rawCheckpoint = rest.join(" ");
-    if (!rawCheckpoint) {
+    const rawHandoff = rest.join(" ");
+    if (!rawHandoff) {
       throw new Error("Usage: spinal-plug handoff <db-path> <project-dir> <json> | --latest | --list");
     }
     let input: Record<string, unknown>;
     try {
-      input = JSON.parse(rawCheckpoint) as Record<string, unknown>;
+      input = JSON.parse(rawHandoff) as Record<string, unknown>;
     } catch {
       throw new Error("handoff input must be a JSON object.");
     }
@@ -1252,8 +1252,12 @@ async function main(): Promise<void> {
     if (hostIndex !== -1 && !host) {
       throw new Error("Usage: spinal-plug apply <db-path> <project-dir> [--host <host>] [--all | update-id...]");
     }
+    // Guard on hostIndex: without --host it is -1, and dropping index
+    // hostIndex + 1 would silently eat the first update id, turning a
+    // one-update apply into apply-everything.
     const selected = rest.filter((value, index) =>
-      value !== "--all" && index !== hostIndex && index !== hostIndex + 1);
+      value !== "--all"
+      && (hostIndex === -1 || (index !== hostIndex && index !== hostIndex + 1)));
     const applied = database.applyCanonicalUpdates(
       space.spaceId,
       rest.includes("--all") || selected.length === 0 ? undefined : selected

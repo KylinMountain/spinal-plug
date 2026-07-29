@@ -55,8 +55,8 @@ test("remote handoff events are idempotently materialized without an outbox echo
   const event = source.listPendingOutboxForSpace(space.spaceId)[0] as EventEnvelope;
   const target = openTestDatabase();
 
-  assert.equal(target.applyRemoteCheckpointEvents([event]), 1);
-  assert.equal(target.applyRemoteCheckpointEvents([event]), 0);
+  assert.equal(target.applyRemoteHandoffEvents([event]), 1);
+  assert.equal(target.applyRemoteHandoffEvents([event]), 0);
   assert.equal(target.latestHandoff(space.spaceId)?.handoffId, handoff.handoffId);
   assert.equal(target.listPendingOutboxForSpace(space.spaceId).length, 0);
 });

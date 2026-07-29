@@ -513,6 +513,87 @@ test("apply reports updates alone, and adds a host projection only when asked", 
   assert.match(danglingHost.stderr, /Usage: spinal-plug apply/);
 });
 
+test("apply narrows to the update ids it is given", async t => {
+  // Regression: --host parsing computed an index of -1 when the flag was
+  // absent, so index hostIndex + 1 dropped the first positional id and a
+  // one-update apply silently became apply-everything.
+  const workspace = linkedWorkspace();
+  const spaceId = parseJson<StatusLike>(runCli(workspace, ["status", workspace.db, workspace.project])).space?.id;
+  assert.ok(spaceId);
+
+  const update = (updateId: string, memoryId: string, statement: string) => ({
+    schema: "spinal-plug.canonical-memory-update/v0.1",
+    updateId,
+    spaceId,
+    memoryId,
+    kind: "activate",
+    required: false,
+    sourceEventIds: [`evt_${memoryId}`],
+    memory: {
+      schema: "spinal-plug.memory-record/v0.1",
+      memoryId,
+      spaceId,
+      kind: "decision",
+      title: statement,
+      statement,
+      references: [],
+      status: "active",
+      origin: "user_explicit",
+      confidence: 1,
+      sourceEventIds: [`evt_${memoryId}`],
+      createdFromEventId: `evt_${memoryId}`,
+      lastUpdatedFromEventId: `evt_${memoryId}`,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    },
+    generatedAt: "2026-01-01T00:00:00.000Z"
+  });
+
+  // A server that hands this device two optional canonical updates.
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    if ((request.url ?? "").startsWith("/v1/events:pull")) {
+      // fetch() also drains handoff and runtime events after the updates.
+      response.end(JSON.stringify({ events: [], nextCursor: "", hasMore: false }));
+      return;
+    }
+    if ((request.url ?? "").startsWith("/v1/updates:fetch")) {
+      response.end(JSON.stringify({
+        updates: [
+          update("upd_first", "mem_first", "First shared fact"),
+          update("upd_second", "mem_second", "Second shared fact")
+        ],
+        nextCursor: "evt_mem_second",
+        hasMore: false
+      }));
+      return;
+    }
+    response.end(JSON.stringify({ acceptedEventIds: [], duplicateEventIds: [] }));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  expectSuccess(await runCliAsync(workspace, ["fetch", workspace.db, workspace.project, url, "device-test"]));
+  const pending = parseJson<{ pending: Array<{ updateId: string }> }>(
+    runCli(workspace, ["preview", workspace.db, workspace.project])
+  ).pending;
+  assert.equal(pending.length, 2, "both updates should be waiting for review");
+
+  const first = parseJson<{ applied: number; remaining: number }>(
+    runCli(workspace, ["apply", workspace.db, workspace.project, "upd_first"])
+  );
+  assert.equal(first.applied, 1, "only the named update may apply");
+  assert.equal(first.remaining, 1, "the unselected update must stay pending");
+
+  // The same narrowing has to survive a host projection request.
+  const second = parseJson<{ applied: { applied: number; remaining: number } }>(
+    runCli(workspace, ["apply", workspace.db, workspace.project, "--host", "codex", "upd_second"])
+  );
+  assert.equal(second.applied.applied, 1);
+  assert.equal(second.applied.remaining, 0);
+});
+
 test("import reads host-native memory and refuses a host that has none to read", () => {
   const workspace = linkedWorkspace();
   const imported = parseJson<{ source: string; discovered: number; sync: string }>(

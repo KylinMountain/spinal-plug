@@ -56,12 +56,12 @@ function parseCandidateExtractionJob(row: Record<string, unknown>): CandidateExt
   };
 }
 
-function isCheckpointPayload(payload: EventEnvelope["payload"]): payload is HandoffPayload {
+function isHandoffPayload(payload: EventEnvelope["payload"]): payload is HandoffPayload {
   const candidate = payload as Partial<HandoffPayload>;
   return Boolean(candidate.handoff?.handoffId && candidate.handoff?.spaceId);
 }
 
-function parseCheckpoint(row: Record<string, unknown>): ProjectHandoff {
+function parseHandoff(row: Record<string, unknown>): ProjectHandoff {
   return JSON.parse(String(row.payload_json)) as ProjectHandoff;
 }
 
@@ -237,7 +237,7 @@ export class SpinalPlugDatabase {
     });
   }
 
-  upsertCheckpoint(handoff: ProjectHandoff): void {
+  upsertHandoff(handoff: ProjectHandoff): void {
     this.db.prepare(`
       INSERT INTO project_handoffs (
         handoff_id, space_id, status, branch_id, updated_at, payload_json
@@ -293,16 +293,16 @@ export class SpinalPlugDatabase {
     return rows.map(parseRuntimeEntity);
   }
 
-  listCheckpoints(spaceId: string, includeInactive = false): ProjectHandoff[] {
+  listHandoffs(spaceId: string, includeInactive = false): ProjectHandoff[] {
     return (this.db.prepare(`
       SELECT payload_json FROM project_handoffs
       WHERE space_id = ? ${includeInactive ? "" : "AND status = 'active'"}
       ORDER BY updated_at DESC, handoff_id ASC
-    `).all(spaceId) as Record<string, unknown>[]).map(parseCheckpoint);
+    `).all(spaceId) as Record<string, unknown>[]).map(parseHandoff);
   }
 
   latestHandoff(spaceId: string): ProjectHandoff | null {
-    return this.listCheckpoints(spaceId)[0] ?? null;
+    return this.listHandoffs(spaceId)[0] ?? null;
   }
 
   recordMemoryMutation(event: EventEnvelope, memory: MemoryRecord): void {
@@ -330,11 +330,11 @@ export class SpinalPlugDatabase {
     }
   }
 
-  recordCheckpointMutation(event: EventEnvelope, handoff: ProjectHandoff): void {
+  recordHandoffMutation(event: EventEnvelope, handoff: ProjectHandoff): void {
     try {
       this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
       this.appendEventWithoutTransaction(event);
-      this.upsertCheckpoint(handoff);
+      this.upsertHandoff(handoff);
       this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");
@@ -708,19 +708,19 @@ export class SpinalPlugDatabase {
     }
   }
 
-  applyRemoteCheckpointEvents(events: EventEnvelope[]): number {
+  applyRemoteHandoffEvents(events: EventEnvelope[]): number {
     let applied = 0;
     try {
       this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
       for (const event of events) {
         if (!event.eventType.startsWith("handoff.") || this.hasEvent(event.eventId)) continue;
-        if (!isCheckpointPayload(event.payload)) continue;
+        if (!isHandoffPayload(event.payload)) continue;
         const handoff = event.payload.handoff;
         if (handoff.spaceId !== event.spaceId) {
           throw new Error(`Handoff ${handoff.handoffId} does not belong to event Space.`);
         }
         this.insertRemoteEventWithoutOutbox(event);
-        this.upsertCheckpoint(handoff);
+        this.upsertHandoff(handoff);
         applied += 1;
       }
       this.db.exec("COMMIT;");

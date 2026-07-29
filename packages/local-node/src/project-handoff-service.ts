@@ -44,13 +44,13 @@ function actor(overrides: Partial<EventActor> = {}): EventActor {
   };
 }
 
-function assertCheckpointIsSafe(handoff: ProjectHandoff): void {
+function assertHandoffIsSafe(handoff: ProjectHandoff): void {
   if (valueContainsLikelySecret(handoff)) {
     throw new Error("Refusing to store likely secret material in a project handoff. Store a secret reference, not the secret value.");
   }
 }
 
-/** Work-state service. Checkpoints are handoff artifacts, never canonical memory. */
+/** Work-state service. Handoffs are work-state artifacts, never canonical memory. */
 export class ProjectHandoffService {
   constructor(
     private readonly database: SpinalPlugDatabase,
@@ -82,7 +82,7 @@ export class ProjectHandoffService {
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    assertCheckpointIsSafe(handoff);
+    assertHandoffIsSafe(handoff);
     const eventId = `evt_${randomUUID()}`;
     const event: EventEnvelope = {
       schemaVersion: 1,
@@ -106,7 +106,7 @@ export class ProjectHandoffService {
       idempotencyKey: eventId
     };
     handoff.sourceEventIds = [eventId];
-    this.database.recordCheckpointMutation(event, handoff);
+    this.database.recordHandoffMutation(event, handoff);
     return handoff;
   }
 
@@ -115,7 +115,7 @@ export class ProjectHandoffService {
   }
 
   list(space: ProjectSpace, includeInactive = false): ProjectHandoff[] {
-    return this.database.listCheckpoints(space.spaceId, includeInactive)
+    return this.database.listHandoffs(space.spaceId, includeInactive)
       .filter(handoff => !valueContainsLikelySecret(handoff));
   }
 

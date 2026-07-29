@@ -41,7 +41,7 @@ export interface SynchronizeResult {
 export interface FetchResult {
   fetched: number;
   stored: number;
-  checkpointsStored: number;
+  handoffsStored: number;
   runtimeEntitiesStored: number;
   requiredApplied: number;
   pending: number;
@@ -117,7 +117,7 @@ export class SpinalPlugSyncClient {
       ?? this.database.getCursor("device", deviceId, spaceId)?.lastEventId;
     let fetched = 0;
     let stored = 0;
-    let checkpointsStored = 0;
+    let handoffsStored = 0;
     let runtimeEntitiesStored = 0;
     let requiredApplied = 0;
     let hasMore = true;
@@ -153,7 +153,7 @@ export class SpinalPlugSyncClient {
         cursor: runtimeCursor,
         limit: batchSize
       });
-      checkpointsStored += this.database.applyRemoteCheckpointEvents(result.events);
+      handoffsStored += this.database.applyRemoteHandoffEvents(result.events);
       runtimeEntitiesStored += this.database.applyRemoteRuntimeEvents(result.events);
       runtimeCursor = result.nextCursor;
       this.database.upsertCursor({
@@ -170,7 +170,7 @@ export class SpinalPlugSyncClient {
     return {
       fetched,
       stored,
-      checkpointsStored,
+      handoffsStored,
       runtimeEntitiesStored,
       requiredApplied,
       pending: this.preview(spaceId).pending.length,
