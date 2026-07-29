@@ -55,7 +55,13 @@ export class ClaudeAutoMemoryImporter {
   constructor(private readonly options: ClaudeAutoMemoryOptions = {}) {}
 
   memoryDirectory(cwd: string): string {
-    return join(this.options.homeDirectory ?? homedir(), ".claude", "projects", sanitizePath(resolve(cwd)), "memory");
+    // CLAUDE_CONFIG_DIR names the .claude directory itself, so honour it
+    // verbatim rather than appending ".claude" to it. An explicit
+    // homeDirectory still wins over ambient environment.
+    const configDir = this.options.homeDirectory
+      ? join(this.options.homeDirectory, ".claude")
+      : process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude");
+    return join(configDir, "projects", sanitizePath(resolve(cwd)), "memory");
   }
 
   sourceUriPrefix(spaceId: string): string {
