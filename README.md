@@ -132,8 +132,9 @@ spinal-plug boot "$HOME/.spinal-plug/spinal-plug.db" .
 
 ```bash
 export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
-export SPINAL_PLUG_DEVICE_ID="device-local"
 ```
+
+只需要配置端点。设备身份来自 `~/.spinal-plug/device.env`（由认证端点签发）；手工设置 `SPINAL_PLUG_DEVICE_ID` 会覆盖该凭据，请求将被端点拒绝。
 
 公开客户端**不包含** Control Plane 服务。请接入或部署兼容同步端点。
 

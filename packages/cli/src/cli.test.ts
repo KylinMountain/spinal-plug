@@ -710,6 +710,72 @@ test("the device credential file follows SPINAL_PLUG_HOME", () => {
   assert.notEqual(shared.stderr.trim(), "");
 });
 
+test("the device id defers to the stored credential when a call site omits it", async t => {
+  // Regression: the id was a required positional argument, so the plugin call
+  // sites filled the slot with "${SPINAL_PLUG_DEVICE_ID:-device-local}". Under
+  // a hook or skill there is no shell profile, so that expanded to the
+  // placeholder, overrode the credential device.env had just supplied, and an
+  // authenticated Control Plane answered "Request device does not match
+  // credential." — the sync path was unusable exactly where it runs unattended.
+  const workspace = linkedWorkspace();
+  mkdirSync(join(workspace.home, ".spinal-plug"), { recursive: true });
+  writeFileSync(
+    join(workspace.home, ".spinal-plug", "device.env"),
+    "export SPINAL_PLUG_DEVICE_ID=dev_credential\n"
+  );
+
+  const seen: string[] = [];
+  const server = createServer((request, response) => {
+    const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+    const deviceId = requested.searchParams.get("device_id");
+    if (deviceId !== null) seen.push(deviceId);
+    response.writeHead(200, { "content-type": "application/json" });
+    if (requested.pathname === "/v1/events:pull") {
+      response.end(JSON.stringify({ events: [], nextCursor: "", hasMore: false }));
+      return;
+    }
+    if (requested.pathname === "/v1/updates:fetch") {
+      response.end(JSON.stringify({ updates: [], nextCursor: "", hasMore: false }));
+      return;
+    }
+    response.end(JSON.stringify({ acceptedEventIds: [], duplicateEventIds: [] }));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  // One fetch identifies this device on more than one request, so compare the
+  // distinct ids the server saw rather than a request-count-sensitive list.
+  const identities = () => [...new Set(seen)];
+
+  expectSuccess(await runCliAsync(workspace, ["fetch", workspace.db, workspace.project, url]));
+  assert.deepEqual(identities(), ["dev_credential"], "an omitted id must come from device.env");
+
+  // An empty argument is what an unset shell variable expands to, not a choice.
+  seen.length = 0;
+  expectSuccess(await runCliAsync(workspace, ["fetch", workspace.db, workspace.project, url, ""]));
+  assert.deepEqual(identities(), ["dev_credential"], "a blank id must not reach the endpoint");
+
+  // Nor may a blank variable shadow the credential the file provides.
+  seen.length = 0;
+  expectSuccess(await runCliAsync(workspace, ["fetch", workspace.db, workspace.project, url], {
+    env: { SPINAL_PLUG_DEVICE_ID: "" }
+  }));
+  assert.deepEqual(identities(), ["dev_credential"], "an empty variable is unset, not a device id");
+
+  // Addressing one device deliberately still has to win.
+  seen.length = 0;
+  expectSuccess(await runCliAsync(workspace, ["fetch", workspace.db, workspace.project, url, "dev_explicit"]));
+  assert.deepEqual(identities(), ["dev_explicit"], "an explicit id must still be honoured");
+
+  // republish shares the same slot and must not demand one either.
+  expectSuccess(await runCliAsync(workspace, ["republish", workspace.db, workspace.project, url]));
+
+  // The endpoint stays required: without it there is nothing to talk to.
+  const noUrl = runCli(workspace, ["fetch", workspace.db, workspace.project]);
+  assert.equal(noUrl.status, 1);
+  assert.match(noUrl.stderr, /Usage: spinal-plug fetch/);
+});
+
 test("import reads host-native memory and refuses a host that has none to read", () => {
   const workspace = linkedWorkspace();
   const imported = parseJson<{ source: string; discovered: number; sync: string }>(

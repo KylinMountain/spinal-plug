@@ -132,8 +132,9 @@ With no endpoint configured, publication first tries the local development serve
 
 ```bash
 export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
-export SPINAL_PLUG_DEVICE_ID="device-local"
 ```
+
+The endpoint is the only thing to configure. This device's identity comes from `~/.spinal-plug/device.env`, which an authenticated endpoint issues; setting `SPINAL_PLUG_DEVICE_ID` by hand overrides that credential and the endpoint rejects the request.
 
 The public client does **not** include a Control Plane service. Connect or deploy a compatible endpoint separately.
 

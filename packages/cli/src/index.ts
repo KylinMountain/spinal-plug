@@ -52,7 +52,10 @@ function loadDeviceEnvFile(): void {
     const match = /^\s*(?:export\s+)?(SPINAL_PLUG_[A-Z_]+)\s*=\s*(.*)\s*$/.exec(line);
     if (!match) continue;
     const key = match[1];
-    if (process.env[key] !== undefined) continue;
+    // A blank variable is an unset one that passed through a shell expansion,
+    // not a deliberate value. Treating it as set would let an empty
+    // `SPINAL_PLUG_DEVICE_ID=` shadow the real credential in this file.
+    if (process.env[key]?.trim()) continue;
     let value = match[2];
     if (
       (value.startsWith('"') && value.endsWith('"'))
@@ -105,12 +108,14 @@ For your Agent (driven by the plugin skill and lifecycle hooks):
   hook-stdin <host> <db-path>                      Read a host Hook payload from stdin
 
 Only with a configured sync endpoint:
-  fetch <db-path> <project-dir> <url> <device-id>  Fetch updates without applying optional changes
+  fetch <db-path> <project-dir> <url> [device-id]  Fetch updates without applying optional changes.
+                                                     Without an id, the credential from
+                                                     ~/.spinal-plug/device.env identifies this device
   preview <db-path> <project-dir>                  Preview fetched canonical updates
   apply <db-path> <project-dir> [--host <host>] [--all | update-id...]
                                                      Apply selected updates; no IDs applies all.
                                                      --host also refreshes that host's native memory
-  republish <db-path> <project-dir> <url> <device-id>
+  republish <db-path> <project-dir> <url> [device-id]
                                                      Re-send delivered events after switching servers
   space-register <db-path> <project-dir> <url>     Register this Space on an authenticated Control Plane
 
@@ -147,6 +152,18 @@ function createMemoryService(database: SpinalPlugDatabase): ProjectMemoryService
 
 function createSyncTransport(url: string): HttpSyncTransport {
   return new HttpSyncTransport(url, process.env.SPINAL_PLUG_DEVICE_TOKEN);
+}
+
+/**
+ * The device id stays addressable so a caller can target one device on
+ * purpose, but hook and skill call sites run without the user's shell profile
+ * and would otherwise have to invent a placeholder to fill the slot. That
+ * placeholder overrides the credential device.env just supplied, and an
+ * authenticated Control Plane rejects the request for a device that does not
+ * match the token. An absent or blank id therefore defers to the environment.
+ */
+function resolveDeviceId(argument?: string, fallback = "device-local"): string {
+  return argument?.trim() || process.env.SPINAL_PLUG_DEVICE_ID?.trim() || fallback;
 }
 
 function digest(value: string): string {
@@ -525,7 +542,7 @@ async function executeHook(
           space,
           payload.cwd,
           resolveSyncEndpoint().url,
-          process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+          resolveDeviceId()
         );
       } catch {
         // An unavailable development Control Plane must not delay host startup.
@@ -560,7 +577,7 @@ async function executeHook(
         space,
         capsuleId: capsule.capsuleId,
         host,
-        deviceId: process.env.SPINAL_PLUG_DEVICE_ID ?? `device-${host}`,
+        deviceId: resolveDeviceId(undefined, `device-${host}`),
         sessionId: payload.sessionId,
         compatibilityWarnings: []
       });
@@ -578,7 +595,7 @@ async function executeHook(
           space,
           payload.cwd,
           resolveSyncEndpoint().url,
-          process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+          resolveDeviceId()
         );
       } catch {
         // Keep the host prompt path available while the local development server is down.
@@ -606,7 +623,7 @@ async function executeHook(
             space,
             payload.cwd,
             resolveSyncEndpoint().url,
-            process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+            resolveDeviceId()
           );
         } catch {
           // A failed hot-sync is retried at the next session boundary.
@@ -625,7 +642,7 @@ async function executeHook(
         space,
         payload.cwd,
         resolveSyncEndpoint().url,
-        process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+        resolveDeviceId()
       );
     } catch {
       // The next session boundary retries idempotently from the local cache.
@@ -665,7 +682,7 @@ async function executeHook(
       await new SpinalPlugSyncClient(
         database,
         createSyncTransport(resolveSyncEndpoint().url)
-      ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
+      ).publish(space.spaceId, resolveDeviceId());
     } catch {
       // The local WAL/outbox retries on a later lifecycle boundary.
     }
@@ -964,7 +981,7 @@ async function main(): Promise<void> {
                 space,
                 capsuleId: String(input.capsuleId ?? ""),
                 host: String(input.host ?? ""),
-                deviceId: String(input.deviceId ?? process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"),
+                deviceId: resolveDeviceId(typeof input.deviceId === "string" ? input.deviceId : undefined),
                 sessionId: String(input.sessionId ?? "runtime-session"),
                 compatibilityWarnings: Array.isArray(input.compatibilityWarnings)
                   ? input.compatibilityWarnings.map(String)
@@ -991,7 +1008,7 @@ async function main(): Promise<void> {
         space,
         projectPath,
         endpoint.url,
-        deviceId || process.env.SPINAL_PLUG_DEVICE_ID || "device-local",
+        resolveDeviceId(deviceId),
         endpoint.explicit
       ),
       null,
@@ -1018,7 +1035,7 @@ async function main(): Promise<void> {
       : resolveSyncEndpoint();
     const deviceId = typeof flags["--device-id"] === "string" && flags["--device-id"]
       ? flags["--device-id"] as string
-      : process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local";
+      : resolveDeviceId();
     const statement = statementParts.join(" ");
     if (!kind || !statement) {
       throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>");
@@ -1084,7 +1101,7 @@ async function main(): Promise<void> {
     const { result: published, mode } = await tryPublish(
       database,
       space.spaceId,
-      process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local",
+      resolveDeviceId(),
       endpoint.url,
       endpoint.explicit
     );
@@ -1214,8 +1231,9 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "republish") {
-    const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: spinal-plug republish <db-path> <project-dir> <url> <device-id>");
+    const [url, deviceIdArgument] = rest;
+    if (!url) throw new Error("Usage: spinal-plug republish <db-path> <project-dir> <url> [device-id]");
+    const deviceId = resolveDeviceId(deviceIdArgument);
     const transport = createSyncTransport(url);
     // Migrating onto an authenticated Control Plane: local events were minted
     // with the unauthenticated runtime's identity and would be rejected, so
@@ -1247,14 +1265,14 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "fetch") {
-    const [url, deviceId] = rest;
-    if (!url || !deviceId) {
-      throw new Error("Usage: spinal-plug fetch <db-path> <project-dir> <url> <device-id>");
+    const [url, deviceIdArgument] = rest;
+    if (!url) {
+      throw new Error("Usage: spinal-plug fetch <db-path> <project-dir> <url> [device-id]");
     }
     const result = await new SpinalPlugSyncClient(
       database,
       createSyncTransport(url)
-    ).fetch(space.spaceId, deviceId);
+    ).fetch(space.spaceId, resolveDeviceId(deviceIdArgument));
     console.log(JSON.stringify(result, null, 2));
     return;
   }

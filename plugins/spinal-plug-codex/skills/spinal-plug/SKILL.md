@@ -31,7 +31,9 @@ Use these defaults unless the environment overrides them:
 
 ```bash
 export SPINAL_PLUG_DB_PATH="${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}"
-export SPINAL_PLUG_DEVICE_ID="${SPINAL_PLUG_DEVICE_ID:-device-local}"
+# Never set SPINAL_PLUG_DEVICE_ID yourself. The CLI reads this device's
+# credential from ~/.spinal-plug/device.env, and a hand-written id overrides it
+# with an identity an authenticated endpoint will reject.
 # Optional. Unset means: try the local sync server at 127.0.0.1:8787, and if
 # nothing answers there, silently stay in local mode — no authentication,
 # everything works and is testable offline.
@@ -76,7 +78,7 @@ If `spinal-plug status "$SPINAL_PLUG_DB_PATH" .` shows `activeMemories: 0` and `
 If no durable learning exists even after review, say so and do not write memory. Otherwise publish each concise fact:
 
 ```bash
-spinal-plug share "$SPINAL_PLUG_DB_PATH" . <kind> --url "$SPINAL_PLUG_SYNC_URL" --device-id "$SPINAL_PLUG_DEVICE_ID" "<durable statement>"
+spinal-plug share "$SPINAL_PLUG_DB_PATH" . <kind> --url "$SPINAL_PLUG_SYNC_URL" "<durable statement>"
 ```
 
 With `SPINAL_PLUG_SYNC_URL` unset the share is recorded locally only — that is the default, not an error. Then update Codex's native memory projection (purely local, no network):
@@ -92,7 +94,7 @@ Report what was shared and why it is durable. The selection step is internal beh
 For `sync`, "同步记忆", or "下载记忆", fetch and preview first (with no endpoint configured this targets the local development server at 127.0.0.1:8787 — if nothing is listening there, stay in local mode instead of retrying — running an endpoint is a deployment decision, not something this plugin can start):
 
 ```bash
-spinal-plug fetch "$SPINAL_PLUG_DB_PATH" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}" "$SPINAL_PLUG_DEVICE_ID"
+spinal-plug fetch "$SPINAL_PLUG_DB_PATH" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}"
 spinal-plug preview "$SPINAL_PLUG_DB_PATH" .
 ```
 
