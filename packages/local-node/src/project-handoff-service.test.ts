@@ -22,10 +22,10 @@ function openTestDatabase(): SpinalPlugDatabase {
   return database;
 }
 
-test("checkpoint is durable work state and appears in the next boot projection", () => {
+test("handoff is durable work state and appears in the next boot projection", () => {
   const database = openTestDatabase();
   const handoffs = new ProjectHandoffService(database);
-  const checkpoint = handoffs.checkpoint({
+  const handoff = handoffs.record({
     space,
     title: "Payment migration handoff",
     completed: ["Created the dual-write schema migration."],
@@ -37,16 +37,16 @@ test("checkpoint is durable work state and appears in the next boot projection",
     runtimeContext: { missionId: "payments-migration", branchId: "codex-mac" }
   });
 
-  assert.equal(database.latestCheckpoint(space.spaceId)?.checkpointId, checkpoint.checkpointId);
-  assert.equal(database.listPendingOutboxForSpace(space.spaceId)[0].eventType, "checkpoint.created");
+  assert.equal(database.latestHandoff(space.spaceId)?.handoffId, handoff.handoffId);
+  assert.equal(database.listPendingOutboxForSpace(space.spaceId)[0].eventType, "handoff.created");
   const boot = new ProjectMemoryService(database).createBootProjection(space);
   assert.match(boot.content, /spinal-plug_handoff/);
   assert.match(boot.content, /Update PaymentConsumer idempotency/);
 });
 
-test("remote checkpoint events are idempotently materialized without an outbox echo", () => {
+test("remote handoff events are idempotently materialized without an outbox echo", () => {
   const source = openTestDatabase();
-  const checkpoint = new ProjectHandoffService(source).checkpoint({
+  const handoff = new ProjectHandoffService(source).record({
     space,
     title: "Remote handoff",
     openTasks: ["Continue on another agent."],
@@ -57,14 +57,14 @@ test("remote checkpoint events are idempotently materialized without an outbox e
 
   assert.equal(target.applyRemoteCheckpointEvents([event]), 1);
   assert.equal(target.applyRemoteCheckpointEvents([event]), 0);
-  assert.equal(target.latestCheckpoint(space.spaceId)?.checkpointId, checkpoint.checkpointId);
+  assert.equal(target.latestHandoff(space.spaceId)?.handoffId, handoff.handoffId);
   assert.equal(target.listPendingOutboxForSpace(space.spaceId).length, 0);
 });
 
-test("rejects likely secret material in checkpoints", () => {
+test("rejects likely secret material in handoffs", () => {
   const handoffs = new ProjectHandoffService(openTestDatabase());
   assert.throws(
-    () => handoffs.checkpoint({
+    () => handoffs.record({
       space,
       title: "Unsafe handoff",
       summary: "password=local-test-credential-20260728"

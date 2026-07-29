@@ -78,7 +78,7 @@ M E M O R Y   C O R E   B O O T   S E Q U E N C E
 - Facts that must be verified from code, Git, or external systems
 ```
 
-Current work should not pollute long-term memory. Keep it in a separate **checkpoint / handoff**: completed work, open work, next action, and blockers.
+Current work should not pollute long-term memory. Keep it in a separate **handoff**: completed work, open work, next action, and blockers.
 
 ## Not Forced Sync. Controlled Loading.
 

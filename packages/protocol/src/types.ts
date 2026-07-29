@@ -23,8 +23,8 @@ export type EventType =
   | "memory.promoted"
   | "memory.dispute.resolved"
   | "memory.deleted"
-  | "checkpoint.created"
-  | "checkpoint.superseded"
+  | "handoff.created"
+  | "handoff.superseded"
   | "runtime.mind-core.created"
   | "runtime.role-profile.created"
   | "runtime.mission.created"
@@ -138,11 +138,11 @@ export interface MemoryPayload {
   resolvesMemoryIds?: string[];
 }
 
-export type CheckpointStatus = "active" | "superseded" | "archived";
+export type HandoffStatus = "active" | "superseded" | "archived";
 
-export interface ProjectCheckpoint {
-  schema: "spinal-plug.project-checkpoint/v0.1";
-  checkpointId: string;
+export interface ProjectHandoff {
+  schema: "spinal-plug.project-handoff/v0.1";
+  handoffId: string;
   spaceId: string;
   title: string;
   summary?: string;
@@ -152,8 +152,8 @@ export interface ProjectCheckpoint {
   blockers: string[];
   nextAction?: string;
   artifactRefs: string[];
-  status: CheckpointStatus;
-  parentCheckpointId?: string;
+  status: HandoffStatus;
+  parentHandoffId?: string;
   missionId?: string | null;
   branchId?: string | null;
   sourceEventIds: string[];
@@ -161,8 +161,8 @@ export interface ProjectCheckpoint {
   updatedAt: string;
 }
 
-export interface CheckpointPayload {
-  checkpoint: ProjectCheckpoint;
+export interface HandoffPayload {
+  handoff: ProjectHandoff;
 }
 
 export type IncarnationStatus = "active" | "hibernated" | "retired";
@@ -181,7 +181,7 @@ export type RuntimeEntityType =
 
 export interface SyncProfile {
   pullMode: "manual" | "notify" | "follow_stable" | "frozen";
-  pushMode: "local_only" | "explicit" | "checkpoint" | "candidate";
+  pushMode: "local_only" | "explicit" | "handoff" | "candidate";
   applyAt: "manual" | "turn_boundary" | "session_start";
 }
 
@@ -256,7 +256,7 @@ export interface MindCapsule {
   taskGraphId?: string;
   baseSnapshotId?: string;
   memoryIds: string[];
-  checkpointId?: string;
+  handoffId?: string;
   syncProfile: SyncProfile;
   bootContext: string;
   sourceEventIds: string[];
@@ -299,7 +299,7 @@ export interface EventEnvelope {
   actor: EventActor;
   causality: EventCausality;
   runtimeContext: EventRuntimeContext;
-  payload: MemoryPayload | CheckpointPayload | RuntimePayload | Record<string, unknown>;
+  payload: MemoryPayload | HandoffPayload | RuntimePayload | Record<string, unknown>;
   createdAt: string;
   idempotencyKey: string;
 }
@@ -431,7 +431,7 @@ export interface ProjectSnapshot {
   disputes?: MemoryDispute[];
   superseded?: MemoryRecord[];
   deleted?: MemoryRecord[];
-  checkpoints?: ProjectCheckpoint[];
+  handoffs?: ProjectHandoff[];
   runtimeEntities?: RuntimeEntity[];
 }
 

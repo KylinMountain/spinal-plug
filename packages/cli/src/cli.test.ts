@@ -206,6 +206,8 @@ test("rebinding an already bound directory keeps the original Space", () => {
 
 test("the merged commands replaced their predecessors rather than aliasing them", () => {
   const workspace = linkedWorkspace();
+  // These are retired command names, not the renamed concept: `handoff` is
+  // the surviving verb, so `checkpoint` and `checkpoints` must be gone.
   for (const retired of ["general", "archive", "link", "checkpoint", "checkpoints", "apply-claude", "apply-codex", "sync-codex", "share-claude", "mind-core", "capsule"]) {
     const result = runCli(workspace, [retired, workspace.db, workspace.project]);
     assert.equal(result.status, 1, `${retired} should no longer be a command`);
@@ -292,24 +294,24 @@ test("update rewrites a statement and forget retires it from the active list", (
 
 test("handoff writes work state that --latest and --list both read back", () => {
   const workspace = linkedWorkspace();
-  const checkpoint = {
+  const handoff = {
     title: "Payments migration handoff",
     completed: ["Ported the ledger writer"],
     openTasks: ["Backfill historical rows"],
     nextAction: "Run the backfill in staging"
   };
-  expectSuccess(runCli(workspace, ["handoff", workspace.db, workspace.project, JSON.stringify(checkpoint)]));
+  expectSuccess(runCli(workspace, ["handoff", workspace.db, workspace.project, JSON.stringify(handoff)]));
 
   const latest = parseJson<{ title: string; nextAction?: string }>(
     runCli(workspace, ["handoff", workspace.db, workspace.project, "--latest"])
   );
-  assert.equal(latest.title, checkpoint.title);
-  assert.equal(latest.nextAction, checkpoint.nextAction);
+  assert.equal(latest.title, handoff.title);
+  assert.equal(latest.nextAction, handoff.nextAction);
 
   const all = parseJson<Array<{ title: string }>>(
     runCli(workspace, ["handoff", workspace.db, workspace.project, "--list"])
   );
-  assert.deepEqual(all.map(entry => entry.title), [checkpoint.title]);
+  assert.deepEqual(all.map(entry => entry.title), [handoff.title]);
 
   // The next session boots with the handoff attached to the projection.
   const boot = expectSuccess(runCli(workspace, ["boot", workspace.db, workspace.project]));

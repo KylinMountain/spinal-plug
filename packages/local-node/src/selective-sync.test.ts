@@ -154,7 +154,7 @@ class CheckpointTransport implements SyncTransport {
       events: [{
         schemaVersion: 1,
         eventId: "evt_checkpoint_remote",
-        eventType: "checkpoint.created",
+        eventType: "handoff.created",
         eventVersion: 1,
         accountId: "local",
         personaId: "persona_default",
@@ -169,9 +169,9 @@ class CheckpointTransport implements SyncTransport {
         causality: { parentEventIds: [] },
         runtimeContext: { branchId: "claude-linux" },
         payload: {
-          checkpoint: {
-            schema: "spinal-plug.project-checkpoint/v0.1",
-            checkpointId: "chk_remote",
+          handoff: {
+            schema: "spinal-plug.project-handoff/v0.1",
+            handoffId: "chk_remote",
             spaceId: space.spaceId,
             title: "Remote handoff",
             completed: ["Created schema"],
@@ -199,12 +199,12 @@ class CheckpointTransport implements SyncTransport {
   }
 }
 
-test("fetch materializes remote work-state checkpoints for the next Agent boot", async () => {
+test("fetch materializes remote work-state handoffs for the next Agent boot", async () => {
   const database = testDatabase();
   const client = new SpinalPlugSyncClient(database, new CheckpointTransport());
   const fetched = await client.fetch(space.spaceId, "device_local");
 
   assert.equal(fetched.checkpointsStored, 1);
-  assert.equal(database.latestCheckpoint(space.spaceId)?.nextAction, "Open PaymentConsumer");
+  assert.equal(database.latestHandoff(space.spaceId)?.nextAction, "Open PaymentConsumer");
   assert.equal(database.listPendingOutboxForSpace(space.spaceId).length, 0);
 });

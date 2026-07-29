@@ -276,26 +276,26 @@ export class ProjectMemoryService {
   createBootProjection(space: ProjectSpace, limit = 10): ProjectMemoryProjection {
     const memories = this.list(space).slice(0, limit);
     const projection = this.createProjection("project_boot", space, memories);
-    const checkpoint = this.database.latestCheckpoint(space.spaceId);
-    if (!checkpoint || valueContainsLikelySecret(checkpoint)) return projection;
+    const handoff = this.database.latestHandoff(space.spaceId);
+    if (!handoff || valueContainsLikelySecret(handoff)) return projection;
     const section = (name: string, values: string[]) => values.length
       ? `\n${name}:\n${values.map(value => `- ${escapeXml(value)}`).join("\n")}`
       : "";
-    const handoff = [
-      `<spinal-plug_handoff checkpoint="${escapeXml(checkpoint.checkpointId)}">`,
-      `Title: ${escapeXml(checkpoint.title)}`,
-      checkpoint.summary ? `Summary: ${escapeXml(checkpoint.summary)}` : "",
-      section("Completed", checkpoint.completed),
-      section("Decisions", checkpoint.decisions),
-      section("Open tasks", checkpoint.openTasks),
-      section("Blockers", checkpoint.blockers),
-      checkpoint.nextAction ? `\nNext action: ${escapeXml(checkpoint.nextAction)}` : "",
-      section("Artifacts", checkpoint.artifactRefs),
+    const block = [
+      `<spinal-plug_handoff id="${escapeXml(handoff.handoffId)}">`,
+      `Title: ${escapeXml(handoff.title)}`,
+      handoff.summary ? `Summary: ${escapeXml(handoff.summary)}` : "",
+      section("Completed", handoff.completed),
+      section("Decisions", handoff.decisions),
+      section("Open tasks", handoff.openTasks),
+      section("Blockers", handoff.blockers),
+      handoff.nextAction ? `\nNext action: ${escapeXml(handoff.nextAction)}` : "",
+      section("Artifacts", handoff.artifactRefs),
       "</spinal-plug_handoff>"
     ].filter(Boolean).join("\n");
     return {
       ...projection,
-      content: projection.content.replace("</spinal-plug_project_context>", `${handoff}\n</spinal-plug_project_context>`)
+      content: projection.content.replace("</spinal-plug_project_context>", `${block}\n</spinal-plug_project_context>`)
     };
   }
 

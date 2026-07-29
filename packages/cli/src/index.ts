@@ -108,9 +108,9 @@ Selective sync (requires a configured endpoint):
   space-register <db-path> <project-dir> <url>     Register this Space on an authenticated Control Plane
 
 Work handoff:
-  handoff <db-path> <project-dir> <json>           Save a work-state checkpoint for Agent handoff
+  handoff <db-path> <project-dir> <json>           Save work state for another Agent to pick up
   handoff <db-path> <project-dir> --latest         Show the newest work-state handoff
-  handoff <db-path> <project-dir> --list           List work-state checkpoints
+  handoff <db-path> <project-dir> --list           List work-state handoffs
 
 Mind runtime (reserved extension surface; no plugin or skill drives it yet):
   runtime <db-path> <project-dir> [list]           List runtime entities in this Space
@@ -1137,7 +1137,7 @@ async function main(): Promise<void> {
     const strings = (key: string) => Array.isArray(input[key])
       ? input[key].filter((value): value is string => typeof value === "string")
       : undefined;
-    const checkpoint = handoffs.checkpoint({
+    const handoff = handoffs.record({
       space,
       title: input.title,
       summary: typeof input.summary === "string" ? input.summary : undefined,
@@ -1147,14 +1147,14 @@ async function main(): Promise<void> {
       blockers: strings("blockers"),
       nextAction: typeof input.nextAction === "string" ? input.nextAction : undefined,
       artifactRefs: strings("artifactRefs"),
-      parentCheckpointId: typeof input.parentCheckpointId === "string" ? input.parentCheckpointId : undefined,
+      parentHandoffId: typeof input.parentHandoffId === "string" ? input.parentHandoffId : undefined,
       actor: { agentInstallationId: "spinal-plug-cli-handoff", host: "spinal-plug", sessionId: "handoff" },
       runtimeContext: {
         missionId: typeof input.missionId === "string" ? input.missionId : null,
         branchId: typeof input.branchId === "string" ? input.branchId : null
       }
     });
-    console.log(JSON.stringify({ checkpoint, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
+    console.log(JSON.stringify({ handoff, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
     return;
   }
   if (command === "update") {

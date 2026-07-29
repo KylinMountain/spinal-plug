@@ -1,11 +1,11 @@
 import { DatabaseSync } from "node:sqlite";
 import type {
   CanonicalMemoryUpdate,
-  CheckpointPayload,
+  HandoffPayload,
   EventEnvelope,
   MemoryPayload,
   MemoryRecord,
-  ProjectCheckpoint,
+  ProjectHandoff,
   RuntimeEntity,
   RuntimePayload,
   RuntimeEntityType,
@@ -56,13 +56,13 @@ function parseCandidateExtractionJob(row: Record<string, unknown>): CandidateExt
   };
 }
 
-function isCheckpointPayload(payload: EventEnvelope["payload"]): payload is CheckpointPayload {
-  const candidate = payload as Partial<CheckpointPayload>;
-  return Boolean(candidate.checkpoint?.checkpointId && candidate.checkpoint?.spaceId);
+function isCheckpointPayload(payload: EventEnvelope["payload"]): payload is HandoffPayload {
+  const candidate = payload as Partial<HandoffPayload>;
+  return Boolean(candidate.handoff?.handoffId && candidate.handoff?.spaceId);
 }
 
-function parseCheckpoint(row: Record<string, unknown>): ProjectCheckpoint {
-  return JSON.parse(String(row.payload_json)) as ProjectCheckpoint;
+function parseCheckpoint(row: Record<string, unknown>): ProjectHandoff {
+  return JSON.parse(String(row.payload_json)) as ProjectHandoff;
 }
 
 function runtimeEntityId(entity: RuntimeEntity): string {
@@ -237,24 +237,24 @@ export class SpinalPlugDatabase {
     });
   }
 
-  upsertCheckpoint(checkpoint: ProjectCheckpoint): void {
+  upsertCheckpoint(handoff: ProjectHandoff): void {
     this.db.prepare(`
-      INSERT INTO project_checkpoints (
-        checkpoint_id, space_id, status, branch_id, updated_at, payload_json
+      INSERT INTO project_handoffs (
+        handoff_id, space_id, status, branch_id, updated_at, payload_json
       ) VALUES (
-        @checkpointId, @spaceId, @status, @branchId, @updatedAt, @payloadJson
-      ) ON CONFLICT(checkpoint_id) DO UPDATE SET
+        @handoffId, @spaceId, @status, @branchId, @updatedAt, @payloadJson
+      ) ON CONFLICT(handoff_id) DO UPDATE SET
         status = excluded.status,
         branch_id = excluded.branch_id,
         updated_at = excluded.updated_at,
         payload_json = excluded.payload_json
     `).run({
-      checkpointId: checkpoint.checkpointId,
-      spaceId: checkpoint.spaceId,
-      status: checkpoint.status,
-      branchId: checkpoint.branchId ?? null,
-      updatedAt: checkpoint.updatedAt,
-      payloadJson: JSON.stringify(checkpoint)
+      handoffId: handoff.handoffId,
+      spaceId: handoff.spaceId,
+      status: handoff.status,
+      branchId: handoff.branchId ?? null,
+      updatedAt: handoff.updatedAt,
+      payloadJson: JSON.stringify(handoff)
     });
   }
 
@@ -293,15 +293,15 @@ export class SpinalPlugDatabase {
     return rows.map(parseRuntimeEntity);
   }
 
-  listCheckpoints(spaceId: string, includeInactive = false): ProjectCheckpoint[] {
+  listCheckpoints(spaceId: string, includeInactive = false): ProjectHandoff[] {
     return (this.db.prepare(`
-      SELECT payload_json FROM project_checkpoints
+      SELECT payload_json FROM project_handoffs
       WHERE space_id = ? ${includeInactive ? "" : "AND status = 'active'"}
-      ORDER BY updated_at DESC, checkpoint_id ASC
+      ORDER BY updated_at DESC, handoff_id ASC
     `).all(spaceId) as Record<string, unknown>[]).map(parseCheckpoint);
   }
 
-  latestCheckpoint(spaceId: string): ProjectCheckpoint | null {
+  latestHandoff(spaceId: string): ProjectHandoff | null {
     return this.listCheckpoints(spaceId)[0] ?? null;
   }
 
@@ -330,11 +330,11 @@ export class SpinalPlugDatabase {
     }
   }
 
-  recordCheckpointMutation(event: EventEnvelope, checkpoint: ProjectCheckpoint): void {
+  recordCheckpointMutation(event: EventEnvelope, handoff: ProjectHandoff): void {
     try {
       this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
       this.appendEventWithoutTransaction(event);
-      this.upsertCheckpoint(checkpoint);
+      this.upsertCheckpoint(handoff);
       this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");
@@ -713,14 +713,14 @@ export class SpinalPlugDatabase {
     try {
       this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
       for (const event of events) {
-        if (!event.eventType.startsWith("checkpoint.") || this.hasEvent(event.eventId)) continue;
+        if (!event.eventType.startsWith("handoff.") || this.hasEvent(event.eventId)) continue;
         if (!isCheckpointPayload(event.payload)) continue;
-        const checkpoint = event.payload.checkpoint;
-        if (checkpoint.spaceId !== event.spaceId) {
-          throw new Error(`Checkpoint ${checkpoint.checkpointId} does not belong to event Space.`);
+        const handoff = event.payload.handoff;
+        if (handoff.spaceId !== event.spaceId) {
+          throw new Error(`Handoff ${handoff.handoffId} does not belong to event Space.`);
         }
         this.insertRemoteEventWithoutOutbox(event);
-        this.upsertCheckpoint(checkpoint);
+        this.upsertCheckpoint(handoff);
         applied += 1;
       }
       this.db.exec("COMMIT;");
@@ -941,7 +941,7 @@ export type {
   RememberMemoryInput,
   UpdateMemoryInput
 } from "./project-memory-service.js";
-export type { CreateCheckpointInput } from "./project-handoff-service.js";
+export type { CreateHandoffInput } from "./project-handoff-service.js";
 export type {
   CompileCapsuleInput,
   CreateMindCoreInput,

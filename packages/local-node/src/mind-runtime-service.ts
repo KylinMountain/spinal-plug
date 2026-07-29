@@ -22,7 +22,7 @@ import { memoryContainsLikelySecret, valueContainsLikelySecret } from "./sensiti
 
 const defaultSyncProfile: SyncProfile = {
   pullMode: "notify",
-  pushMode: "checkpoint",
+  pushMode: "handoff",
   applyAt: "turn_boundary"
 };
 
@@ -233,12 +233,12 @@ export class MindRuntimeService {
     }
     const memories = this.database.listActiveMemories(input.space.spaceId)
       .filter(memory => !memoryContainsLikelySecret(memory));
-    // The capsule references the checkpoint by id only, but a legacy
-    // secret-shaped checkpoint is excluded like the handoff service does —
+    // The capsule references the handoff by id only, but a legacy
+    // secret-shaped handoff is excluded like the handoff service does —
     // read-time filtering stays consistent across all consumers.
-    const latestCheckpoint = this.database.latestCheckpoint(input.space.spaceId);
-    const checkpoint = latestCheckpoint && !valueContainsLikelySecret(latestCheckpoint)
-      ? latestCheckpoint
+    const latestHandoff = this.database.latestHandoff(input.space.spaceId);
+    const handoff = latestHandoff && !valueContainsLikelySecret(latestHandoff)
+      ? latestHandoff
       : null;
     const timestamp = now();
     const capsule: MindCapsule = {
@@ -251,7 +251,7 @@ export class MindRuntimeService {
       taskGraphId: graph?.taskGraphId,
       baseSnapshotId: input.baseSnapshotId,
       memoryIds: memories.map(memory => memory.memoryId),
-      checkpointId: checkpoint?.checkpointId,
+      handoffId: handoff?.handoffId,
       syncProfile: core.syncProfile,
       bootContext: this.renderCapsule(core, role, mission, graph, input.space),
       sourceEventIds: [],
