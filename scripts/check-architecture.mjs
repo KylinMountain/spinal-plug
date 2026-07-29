@@ -15,7 +15,6 @@ const allowedDependencies = new Map([
     "@spinal-plug/cli",
     new Set([
       "@spinal-plug/protocol",
-      "@spinal-plug/sync-server",
       "@spinal-plug/local-node",
       "@spinal-plug/adapter-sdk",
       "@spinal-plug/adapter-claude-code",

@@ -12,7 +12,6 @@
     "check": "pnpm check:repository && pnpm check:architecture",
     "check:architecture": "node scripts/check-architecture.mjs",
     "check:repository": "node scripts/check-repository.mjs",
-    "dev:server": "pnpm build && node scripts/dev-server.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm build && pnpm -r --if-present test",
     "verify": "pnpm check && pnpm typecheck && pnpm test"
