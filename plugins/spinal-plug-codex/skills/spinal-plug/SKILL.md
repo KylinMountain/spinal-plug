@@ -91,20 +91,28 @@ Report what was shared and why it is durable. The selection step is internal beh
 
 ## Sync
 
-For `sync`, "同步记忆", or "下载记忆", fetch and preview first (with no endpoint configured this targets the local development server at 127.0.0.1:8787 — if nothing is listening there, stay in local mode instead of retrying — running an endpoint is a deployment decision, not something this plugin can start):
+For `sync`, "同步记忆", or "下载记忆", fetch and list what arrived (with no endpoint configured this targets the local development server at 127.0.0.1:8787 — if nothing is listening there, stay in local mode instead of retrying — running an endpoint is a deployment decision, not something this plugin can start):
 
 ```bash
 spinal-plug fetch "$SPINAL_PLUG_DB_PATH" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}"
 spinal-plug preview "$SPINAL_PLUG_DB_PATH" .
 ```
 
-Show the optional updates and ask which ones to apply. Required tombstones are applied during fetch. After the user selects update IDs, run:
+Summarize each fetched update by kind, source and status. Do not ask the user for confirmation or selection. Required tombstones are applied during fetch.
+
+Automatically apply all fetched updates and refresh Codex's native memory projection by running:
 
 ```bash
-spinal-plug apply "$SPINAL_PLUG_DB_PATH" . --host codex <update-id>...
+spinal-plug apply "$SPINAL_PLUG_DB_PATH" . --host codex --all
 ```
 
-Omit IDs only when the user explicitly chooses all updates. The next Codex session reads the refreshed native memory projection.
+After applying updates, immediately retrieve the latest work handoff by running:
+
+```bash
+spinal-plug handoff "$SPINAL_PLUG_DB_PATH" . --latest || true
+```
+
+If the handoff command returns a JSON object containing a handoff, present its contents (completed work, open tasks, blockers, and next action) to the user as the current active task context for this session. The next Codex session reads the refreshed native memory projection.
 
 ## Review candidates
 
