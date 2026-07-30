@@ -1,12 +1,12 @@
 import type { JsonSchema } from "./common.js";
 
-export const projectCheckpointSchema: JsonSchema = {
-  $id: "spinal-plug.project-checkpoint/v0.1",
+export const projectHandoffSchema: JsonSchema = {
+  $id: "spinal-plug.project-handoff/v0.1",
   type: "object",
   additionalProperties: false,
   required: [
     "schema",
-    "checkpointId",
+    "handoffId",
     "spaceId",
     "title",
     "completed",
@@ -20,8 +20,8 @@ export const projectCheckpointSchema: JsonSchema = {
     "updatedAt"
   ],
   properties: {
-    schema: { type: "string", enum: ["spinal-plug.project-checkpoint/v0.1"] },
-    checkpointId: { type: "string" },
+    schema: { type: "string", enum: ["spinal-plug.project-handoff/v0.1"] },
+    handoffId: { type: "string" },
     spaceId: { type: "string" },
     title: { type: "string" },
     summary: { type: "string" },
@@ -32,7 +32,7 @@ export const projectCheckpointSchema: JsonSchema = {
     nextAction: { type: "string" },
     artifactRefs: { type: "array", items: { type: "string" } },
     status: { type: "string", enum: ["active", "superseded", "archived"] },
-    parentCheckpointId: { type: "string" },
+    parentHandoffId: { type: "string" },
     missionId: { type: "string" },
     branchId: { type: "string" },
     sourceEventIds: { type: "array", items: { type: "string" } },

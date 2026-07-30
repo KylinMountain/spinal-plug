@@ -78,7 +78,7 @@ M E M O R Y   C O R E   B O O T   S E Q U E N C E
 - 必须重新从代码、Git 或外部系统核实的事实
 ```
 
-当前工作的接力不应污染长期记忆。它应作为 **checkpoint / handoff** 独立保存：已完成什么、还缺什么、下一步是什么、有哪些阻塞。
+当前工作的接力不应污染长期记忆。它应作为 **handoff（工作交接）** 独立保存：已完成什么、还缺什么、下一步是什么、有哪些阻塞。
 
 ## 不是强制同步，是可控装载
 
@@ -132,8 +132,9 @@ spinal-plug boot "$HOME/.spinal-plug/spinal-plug.db" .
 
 ```bash
 export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
-export SPINAL_PLUG_DEVICE_ID="device-local"
 ```
+
+只需要配置端点。设备身份来自 `~/.spinal-plug/device.env`（由认证端点签发）；手工设置 `SPINAL_PLUG_DEVICE_ID` 会覆盖该凭据，请求将被端点拒绝。
 
 公开客户端**不包含** Control Plane 服务。请接入或部署兼容同步端点。
 
@@ -143,8 +144,10 @@ Codex 与 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可
 
 ```text
 /spinal-plug:connect
+/spinal-plug:status
 /spinal-plug:share
 /spinal-plug:sync
+/spinal-plug:handoff
 /spinal-plug:boot
 ```
 

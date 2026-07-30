@@ -8,7 +8,7 @@
     "spinal-plug": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && chmod +x dist/index.js",
     "typecheck": "tsc -b --pretty false",
     "test": "node --test dist/*.test.js"
   },

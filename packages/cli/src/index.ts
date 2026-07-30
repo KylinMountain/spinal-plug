@@ -20,6 +20,14 @@ import {
 import type { MindCapsule, MemoryKind, ProjectSpace } from "@spinal-plug/protocol";
 
 const MEMORY_KINDS: ReadonlySet<string> = new Set(["directive", "decision", "context", "reference"]);
+const RUNTIME_ENTITIES: ReadonlySet<string> = new Set([
+  "mind-core",
+  "role",
+  "mission",
+  "task-graph",
+  "capsule",
+  "incarnate"
+]);
 const HOOK_EVENTS: ReadonlySet<string> = new Set([
   "session.start",
   "prompt.submit",
@@ -36,14 +44,18 @@ const HOOK_EVENTS: ReadonlySet<string> = new Set([
  * environment variables always win.
  */
 function loadDeviceEnvFile(): void {
+  const home = process.env.SPINAL_PLUG_HOME?.trim() || homedir();
   const path = process.env.SPINAL_PLUG_ENV_FILE
-    ?? resolve(homedir(), ".spinal-plug", "device.env");
+    ?? resolve(home, ".spinal-plug", "device.env");
   if (!existsSync(path)) return;
   for (const line of readFileSync(path, "utf8").split("\n")) {
     const match = /^\s*(?:export\s+)?(SPINAL_PLUG_[A-Z_]+)\s*=\s*(.*)\s*$/.exec(line);
     if (!match) continue;
     const key = match[1];
-    if (process.env[key] !== undefined) continue;
+    // A blank variable is an unset one that passed through a shell expansion,
+    // not a deliberate value. Treating it as set would let an empty
+    // `SPINAL_PLUG_DEVICE_ID=` shadow the real credential in this file.
+    if (process.env[key]?.trim()) continue;
     let value = match[2];
     if (
       (value.startsWith('"') && value.endsWith('"'))
@@ -64,63 +76,54 @@ Endpoint resolution is three-tier: SPINAL_PLUG_SYNC_URL if set, otherwise
 the local sync server (127.0.0.1:8787), otherwise silent local mode —
 the outbox retains everything for a later retry, no authentication needed.
 
-Binding:
-  connect <db-path> <project-dir>                  Create a project or archive binding for this directory
-  archive <db-path> <project-dir> [name]           Create a named non-Git workspace archive
-  general <db-path> <project-dir>                  Bind this directory to General Space
-  link <db-path> <project-dir> <space-id> [name]   Bind this directory to an existing archive
+Commands are grouped by who runs them. If you are a person at a terminal,
+the first group is the whole tool, and a host plugin usually runs it for you.
+
+For you:
+  connect <db-path> <project-dir> [mode]           Bind this directory; without a mode a Git repository
+                                                     becomes a project and anything else an archive.
+                                                     Modes: general | archive [name] | link <space-id> [name]
   status <db-path> [project-dir]                   Show user-facing status for the current Space
   boot <db-path> <project-dir>                     Show the Spinal Plug neural-link loading sequence
-
-Memory:
   share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>
-                                                     Share a durable memory; publishes when --url or
-                                                     SPINAL_PLUG_SYNC_URL is set, local-only otherwise
-  share-claude <db-path> <project-dir> [url] [device-id]
-                                                     Share current Claude Code project memory
-                                                     (default: local sync server, local mode if unreachable)
-  candidates <db-path> <project-dir>               List reviewable inferred memory candidates
+                                                     Write one durable memory and publish it; publishes when
+                                                     --url or SPINAL_PLUG_SYNC_URL is set, local-only otherwise
+  handoff <db-path> <project-dir> <json>           Save work state for another Agent to pick up
+  handoff <db-path> <project-dir> --latest|--list  Show the newest handoff, or list them
+
+For your Agent (driven by the plugin skill and lifecycle hooks):
+  remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
+                                                     Local staging; --candidate stages for review
+  list <db-path> <project-dir> [--all | --candidates | --match <prompt>]
+                                                     List active memories; --candidates shows the review
+                                                     queue, --match ranks by relevance to a prompt
+  keys <db-path> <project-dir>                     List this Space's semantic-key registry
   promote <db-path> <project-dir> <memory-id>      Accept a candidate as active project memory
   update <db-path> <project-dir> <memory-id> <text> Update active memory
   forget <db-path> <project-dir> <memory-id>       Tombstone active memory
-  list <db-path> <project-dir> [--all]             List project memories
-  recall <db-path> <project-dir> <prompt>          Print relevant active memories
-  keys <db-path> <project-dir>                     List this Space's semantic-key registry
+  import <db-path> <project-dir> <host> [url] [device-id]
+                                                     Import what the host already recorded natively, then
+                                                     publish (claude-code only; local mode if unreachable)
+  project <db-path> <project-dir> <host>           Refresh a host's native memory from local state (no network)
+  hook-stdin <host> <db-path>                      Read a host Hook payload from stdin
 
-Selective sync (requires a configured endpoint):
-  fetch <db-path> <project-dir> <url> <device-id>  Fetch updates without applying optional changes
+Only with a configured sync endpoint:
+  fetch <db-path> <project-dir> <url> [device-id]  Fetch updates without applying optional changes.
+                                                     Without an id, the credential from
+                                                     ~/.spinal-plug/device.env identifies this device
   preview <db-path> <project-dir>                  Preview fetched canonical updates
-  apply <db-path> <project-dir> [update-id...]     Apply selected updates; no IDs applies all
-  apply-claude <db-path> <project-dir> [update-id...]
-                                                     Apply selection and refresh Claude native memory
-  apply-codex <db-path> <project-dir> [update-id...]
-                                                     Apply selection and refresh Codex native memory
-  sync-codex <db-path> <project-dir>               Refresh Codex native memory from local state (no network)
-  republish <db-path> <project-dir> <url> <device-id>
+  apply <db-path> <project-dir> [--host <host>] [--all | update-id...]
+                                                     Apply selected updates; no IDs applies all.
+                                                     --host also refreshes that host's native memory
+  republish <db-path> <project-dir> <url> [device-id]
                                                      Re-send delivered events after switching servers
   space-register <db-path> <project-dir> <url>     Register this Space on an authenticated Control Plane
 
-Work handoff:
-  checkpoint <db-path> <project-dir> <json>        Save a work-state checkpoint for Agent handoff
-  handoff <db-path> <project-dir>                  Show the newest work-state handoff
-  checkpoints <db-path> <project-dir>              List work-state checkpoints
-
-Mind runtime:
-  mind-core <db-path> <project-dir> <json>         Create a Mind Core runtime entity
-  role <db-path> <project-dir> <json>              Create a Role Profile runtime entity
-  mission <db-path> <project-dir> <json>           Create a Mission runtime entity
-  task-graph <db-path> <project-dir> <json>        Create or update a Task Graph
-  capsule <db-path> <project-dir> <json>           Compile a Mind Capsule boot package
-  incarnate <db-path> <project-dir> <json>         Spawn an Incarnation from a Capsule
-  runtime <db-path> <project-dir>                  List runtime entities in this Space
-
-Internal (used by plugins and hooks — not user-facing):
-  remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
-                                                     Local staging; --candidate stages for review
-  hook <host> <event> <db-path> <project-dir> [prompt]
-                                                     Emit Claude Code / Codex hook context as JSON
-  hook-stdin <host> <db-path>                      Read a host Hook payload from stdin
-  init-db <db-path>                                Initialize the local cache database
+Reserved extension surface (nothing drives it yet):
+  runtime <db-path> <project-dir> [list]           List runtime entities in this Space
+  runtime <db-path> <project-dir> <entity> <json>  Create or compile a runtime entity.
+                                                     Entities: mind-core | role | mission | task-graph |
+                                                     capsule | incarnate
 
 Hosts: claude-code, codex
 Kinds: directive, decision, context, reference
@@ -149,6 +152,18 @@ function createMemoryService(database: SpinalPlugDatabase): ProjectMemoryService
 
 function createSyncTransport(url: string): HttpSyncTransport {
   return new HttpSyncTransport(url, process.env.SPINAL_PLUG_DEVICE_TOKEN);
+}
+
+/**
+ * The device id stays addressable so a caller can target one device on
+ * purpose, but hook and skill call sites run without the user's shell profile
+ * and would otherwise have to invent a placeholder to fill the slot. That
+ * placeholder overrides the credential device.env just supplied, and an
+ * authenticated Control Plane rejects the request for a device that does not
+ * match the token. An absent or blank id therefore defers to the environment.
+ */
+function resolveDeviceId(argument?: string, fallback = "device-local"): string {
+  return argument?.trim() || process.env.SPINAL_PLUG_DEVICE_ID?.trim() || fallback;
 }
 
 function digest(value: string): string {
@@ -192,7 +207,10 @@ function takeLeadingFlags(
 ): { flags: Record<string, string | boolean>; rest: string[] } {
   const flags: Record<string, string | boolean> = {};
   let index = 0;
-  while (index < args.length && args[index] in spec) {
+  // Object.hasOwn, not `in`: `in` walks the prototype chain, so a statement or
+  // recall prompt beginning with "constructor", "toString", "valueOf" and the
+  // like would be swallowed as a flag and its next word eaten as the value.
+  while (index < args.length && Object.hasOwn(spec, args[index])) {
     const flag = args[index];
     if (spec[flag] === "boolean") {
       flags[flag] = true;
@@ -436,6 +454,41 @@ function drainCodexCandidateJobs(
   return created;
 }
 
+/**
+ * Refresh a host's native memory from local state. Claude's projection skips
+ * memories that were imported from its own topic files, so a fact the host
+ * already owns is never written back to it as a managed file.
+ */
+/** Rejects an unknown host before any caller commits state on its behalf. */
+function requireHost(host: string): string {
+  if (host !== "claude-code" && host !== "codex") {
+    throw new Error(`Unsupported host: ${host}. Use claude-code or codex.`);
+  }
+  return host;
+}
+
+function materializeHostProjection(
+  host: string,
+  space: ProjectSpace,
+  service: ProjectMemoryService,
+  projectPath: string
+): unknown {
+  requireHost(host);
+  if (host === "claude-code") {
+    const nativeMemoryIds = new Set(
+      new ClaudeAutoMemoryImporter().import(space, projectPath).candidates.map(candidate => candidate.memoryId)
+    );
+    return new ClaudeAutoMemoryMaterializer().materialize(
+      projectPath,
+      service.list(space).filter(memory => !nativeMemoryIds.has(memory.memoryId))
+    );
+  }
+  if (host === "codex") {
+    return new CodexNativeMemoryStore().materialize(space, service.list(space));
+  }
+  throw new Error(`Unsupported host: ${host}. Use claude-code or codex.`);
+}
+
 async function executeHook(
   host: string,
   rawEvent: string,
@@ -489,7 +542,7 @@ async function executeHook(
           space,
           payload.cwd,
           resolveSyncEndpoint().url,
-          process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+          resolveDeviceId()
         );
       } catch {
         // An unavailable development Control Plane must not delay host startup.
@@ -524,7 +577,7 @@ async function executeHook(
         space,
         capsuleId: capsule.capsuleId,
         host,
-        deviceId: process.env.SPINAL_PLUG_DEVICE_ID ?? `device-${host}`,
+        deviceId: resolveDeviceId(undefined, `device-${host}`),
         sessionId: payload.sessionId,
         compatibilityWarnings: []
       });
@@ -542,7 +595,7 @@ async function executeHook(
           space,
           payload.cwd,
           resolveSyncEndpoint().url,
-          process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+          resolveDeviceId()
         );
       } catch {
         // Keep the host prompt path available while the local development server is down.
@@ -557,7 +610,7 @@ async function executeHook(
     // A write inside the project's native memory directory means Claude's own
     // extractor (or the main agent) just persisted a topic file: import and
     // publish while it is hot instead of waiting for a session boundary. The
-    // importer is idempotent and skips the managed projection file, so this
+    // importer is idempotent and skips the managed projection files, so this
     // cannot re-trigger itself.
     if (host === "claude-code" && toolFilePath) {
       const memoryDir = new ClaudeAutoMemoryImporter().memoryDirectory(payload.cwd);
@@ -570,7 +623,7 @@ async function executeHook(
             space,
             payload.cwd,
             resolveSyncEndpoint().url,
-            process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+            resolveDeviceId()
           );
         } catch {
           // A failed hot-sync is retried at the next session boundary.
@@ -589,7 +642,7 @@ async function executeHook(
         space,
         payload.cwd,
         resolveSyncEndpoint().url,
-        process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"
+        resolveDeviceId()
       );
     } catch {
       // The next session boundary retries idempotently from the local cache.
@@ -629,7 +682,7 @@ async function executeHook(
       await new SpinalPlugSyncClient(
         database,
         createSyncTransport(resolveSyncEndpoint().url)
-      ).publish(space.spaceId, process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local");
+      ).publish(space.spaceId, resolveDeviceId());
     } catch {
       // The local WAL/outbox retries on a later lifecycle boundary.
     }
@@ -683,17 +736,9 @@ function buildMemoryNudge(dbPath: string, projectDir: string): string {
     `  spinal-plug keys "${dbPath}" "${projectDir}"`,
     "Reuse a listed key when one fits (pass --key <semantic-key>); only mint a new kebab-case key when none does. Then stage each fact as a reviewable candidate:",
     `  spinal-plug remember "${dbPath}" "${projectDir}" <kind> --candidate [--key <semantic-key>] "<concise statement>"`,
-    "Then tell the user the candidates are ready for review (spinal-plug candidates / promote).",
+    "Then tell the user the candidates are ready for review (spinal-plug list --candidates / promote).",
     "</spinal-plug_memory_nudge>"
   ].join("\n");
-}
-
-async function runHook(args: string[]): Promise<void> {
-  const [host, rawEvent, rawDbPath, projectDir, ...promptParts] = args;
-  if (!host || !rawEvent || !rawDbPath || !projectDir) {
-    throw new Error("Usage: spinal-plug hook <host> <event> <db-path> <project-dir> [prompt]");
-  }
-  await executeHook(host, rawEvent, rawDbPath, projectDir, promptParts.join(" ") || undefined);
 }
 
 function mapHostEvent(host: string, hookEventName: unknown): HookEventName | null {
@@ -755,10 +800,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === "hook") {
-    await runHook(args);
-    return;
-  }
   if (command === "hook-stdin") {
     await runStdinHook(args);
     return;
@@ -766,11 +807,6 @@ async function main(): Promise<void> {
   const [rawDbPath, projectDir, ...rest] = args;
   if (!rawDbPath) {
     throw new Error("Missing <db-path> argument.");
-  }
-  if (command === "init-db") {
-    const { dbPath } = openDatabase(rawDbPath);
-    console.log(`Initialized Spinal Plug local cache at ${dbPath}`);
-    return;
   }
   if (command === "status") {
     if (!projectDir) {
@@ -815,22 +851,29 @@ async function main(): Promise<void> {
 
   const resolver = new ProjectSpaceResolver();
   const projectPath = resolve(process.cwd(), projectDir);
-  if (command === "connect" || command === "archive" || command === "general" || command === "link") {
+  if (command === "connect") {
+    // Binding a directory is one decision with four answers, so it is one
+    // command with an optional mode rather than four near-identical verbs.
     // The database is a private device cache and outbox, not a synced project artifact.
     openDatabase(rawDbPath);
+    const [mode, ...modeArgs] = rest;
     let result;
-    if (command === "general") {
+    if (!mode) {
+      result = resolver.isGitWorkspace(projectPath)
+        ? resolver.initialize(projectPath)
+        : resolver.initializeArchive(projectPath);
+    } else if (mode === "general") {
       result = resolver.initializeGeneral(projectPath);
-    } else if (command === "archive") {
-      result = resolver.initializeArchive(projectPath, rest.join(" ") || undefined);
-    } else if (command === "link") {
-      const [spaceId, ...nameParts] = rest;
-      if (!spaceId) throw new Error("Usage: spinal-plug link <db-path> <project-dir> <space-id> [name]");
+    } else if (mode === "archive") {
+      result = resolver.initializeArchive(projectPath, modeArgs.join(" ") || undefined);
+    } else if (mode === "link") {
+      const [spaceId, ...nameParts] = modeArgs;
+      if (!spaceId) {
+        throw new Error("Usage: spinal-plug connect <db-path> <project-dir> link <space-id> [name]");
+      }
       result = resolver.linkExisting(projectPath, spaceId, nameParts.join(" ") || spaceId);
-    } else if (resolver.isGitWorkspace(projectPath)) {
-      result = resolver.initialize(projectPath);
     } else {
-      result = resolver.initializeArchive(projectPath);
+      throw new Error(`Unsupported connect mode: ${mode}. Use general, archive, or link.`);
     }
     console.log(`Linked ${result.space.type} Space: ${result.space.displayName}`);
     console.log(`Space ID: ${result.space.spaceId}`);
@@ -867,16 +910,32 @@ async function main(): Promise<void> {
     accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
     personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
   });
-  if (["mind-core", "role", "mission", "task-graph", "capsule", "incarnate"].includes(command)) {
-    const rawInput = rest.join(" ");
-    if (!rawInput) throw new Error(`Usage: spinal-plug ${command} <db-path> <project-dir> <json>`);
+  if (command === "runtime") {
+    // The Mind runtime is a reserved extension surface, not a supported
+    // workflow: it takes hand-written JSON and no plugin or skill drives it.
+    // Keeping it behind one namespace stops six speculative verbs from
+    // reading as peers of `remember` in the top-level command list.
+    const [entity, ...entityArgs] = rest;
+    if (!entity || entity === "list") {
+      console.log(JSON.stringify(database.listRuntimeEntities(space.spaceId), null, 2));
+      return;
+    }
+    if (!RUNTIME_ENTITIES.has(entity)) {
+      throw new Error(
+        `Unsupported runtime entity: ${entity}. Use list, ${[...RUNTIME_ENTITIES].join(", ")}.`
+      );
+    }
+    const rawInput = entityArgs.join(" ");
+    if (!rawInput) {
+      throw new Error(`Usage: spinal-plug runtime <db-path> <project-dir> ${entity} <json>`);
+    }
     let input: Record<string, unknown>;
     try {
       input = JSON.parse(rawInput) as Record<string, unknown>;
     } catch {
-      throw new Error(`${command} input must be valid JSON.`);
+      throw new Error(`runtime ${entity} input must be valid JSON.`);
     }
-    const result = command === "mind-core"
+    const result = entity === "mind-core"
       ? runtime.createMindCore({
         space,
         displayName: String(input.displayName ?? ""),
@@ -885,7 +944,7 @@ async function main(): Promise<void> {
           ? input.syncProfile as never
           : undefined
       })
-      : command === "role"
+      : entity === "role"
         ? runtime.createRoleProfile({
           space,
           mindId: String(input.mindId ?? ""),
@@ -893,7 +952,7 @@ async function main(): Promise<void> {
           directives: Array.isArray(input.directives) ? input.directives.map(String) : [],
           requiredCapabilities: Array.isArray(input.requiredCapabilities) ? input.requiredCapabilities.map(String) : []
         })
-        : command === "mission"
+        : entity === "mission"
           ? runtime.createMission({
             space,
             mindId: String(input.mindId ?? ""),
@@ -901,7 +960,7 @@ async function main(): Promise<void> {
             objective: String(input.objective ?? ""),
             successCriteria: Array.isArray(input.successCriteria) ? input.successCriteria.map(String) : []
           })
-          : command === "task-graph"
+          : entity === "task-graph"
             ? runtime.upsertTaskGraph({
               space,
               mindId: String(input.mindId ?? ""),
@@ -909,7 +968,7 @@ async function main(): Promise<void> {
               taskGraphId: typeof input.taskGraphId === "string" ? input.taskGraphId : undefined,
               tasks: Array.isArray(input.tasks) ? input.tasks as never : []
             })
-            : command === "capsule"
+            : entity === "capsule"
               ? runtime.compileCapsule({
                 space,
                 mindId: String(input.mindId ?? ""),
@@ -922,7 +981,7 @@ async function main(): Promise<void> {
                 space,
                 capsuleId: String(input.capsuleId ?? ""),
                 host: String(input.host ?? ""),
-                deviceId: String(input.deviceId ?? process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local"),
+                deviceId: resolveDeviceId(typeof input.deviceId === "string" ? input.deviceId : undefined),
                 sessionId: String(input.sessionId ?? "runtime-session"),
                 compatibilityWarnings: Array.isArray(input.compatibilityWarnings)
                   ? input.compatibilityWarnings.map(String)
@@ -931,12 +990,16 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  if (command === "runtime") {
-    console.log(JSON.stringify(database.listRuntimeEntities(space.spaceId), null, 2));
-    return;
-  }
-  if (command === "share-claude") {
-    const [url, deviceId] = rest;
+  if (command === "import") {
+    // Distinct from `share`, which writes one new fact: this pulls what the
+    // host already recorded natively. Only Claude Code exposes readable
+    // per-project memory files; Codex's store is write-only to us.
+    const [host, url, deviceId] = rest;
+    if (host !== "claude-code") {
+      throw new Error(
+        `Unsupported import host: ${host || "(none)"}. Only claude-code exposes readable native memory.`
+      );
+    }
     const endpoint = url?.trim() ? { url: url.trim(), explicit: true } : resolveSyncEndpoint();
     console.log(JSON.stringify(
       await shareClaudeAutoMemory(
@@ -945,7 +1008,7 @@ async function main(): Promise<void> {
         space,
         projectPath,
         endpoint.url,
-        deviceId || process.env.SPINAL_PLUG_DEVICE_ID || "device-local",
+        resolveDeviceId(deviceId),
         endpoint.explicit
       ),
       null,
@@ -972,7 +1035,7 @@ async function main(): Promise<void> {
       : resolveSyncEndpoint();
     const deviceId = typeof flags["--device-id"] === "string" && flags["--device-id"]
       ? flags["--device-id"] as string
-      : process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local";
+      : resolveDeviceId();
     const statement = statementParts.join(" ");
     if (!kind || !statement) {
       throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>");
@@ -1026,14 +1089,6 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(memory, null, 2));
     return;
   }
-  if (command === "candidates") {
-    console.log(JSON.stringify(
-      service.list(space, true).filter(memory => memory.status === "candidate"),
-      null,
-      2
-    ));
-    return;
-  }
   if (command === "promote") {
     const [memoryId] = rest;
     if (!memoryId) throw new Error("Usage: spinal-plug promote <db-path> <project-dir> <memory-id>");
@@ -1046,31 +1101,41 @@ async function main(): Promise<void> {
     const { result: published, mode } = await tryPublish(
       database,
       space.spaceId,
-      process.env.SPINAL_PLUG_DEVICE_ID ?? "device-local",
+      resolveDeviceId(),
       endpoint.url,
       endpoint.explicit
     );
     console.log(JSON.stringify({ memory, published, sync: mode, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
     return;
   }
-  if (command === "checkpoint") {
-    const rawCheckpoint = rest.join(" ");
-    if (!rawCheckpoint) {
-      throw new Error("Usage: spinal-plug checkpoint <db-path> <project-dir> <json>");
+  if (command === "handoff") {
+    // Reading work state is the same concept as writing it, so it stays on
+    // this command as a flag instead of becoming separate verbs.
+    if (rest[0] === "--latest") {
+      console.log(JSON.stringify(handoffs.latest(space), null, 2));
+      return;
+    }
+    if (rest[0] === "--list") {
+      console.log(JSON.stringify(handoffs.list(space, true), null, 2));
+      return;
+    }
+    const rawHandoff = rest.join(" ");
+    if (!rawHandoff) {
+      throw new Error("Usage: spinal-plug handoff <db-path> <project-dir> <json> | --latest | --list");
     }
     let input: Record<string, unknown>;
     try {
-      input = JSON.parse(rawCheckpoint) as Record<string, unknown>;
+      input = JSON.parse(rawHandoff) as Record<string, unknown>;
     } catch {
-      throw new Error("checkpoint input must be a JSON object.");
+      throw new Error("handoff input must be a JSON object.");
     }
     if (typeof input.title !== "string" || !input.title.trim()) {
-      throw new Error("checkpoint input requires a non-empty title.");
+      throw new Error("handoff input requires a non-empty title.");
     }
     const strings = (key: string) => Array.isArray(input[key])
       ? input[key].filter((value): value is string => typeof value === "string")
       : undefined;
-    const checkpoint = handoffs.checkpoint({
+    const handoff = handoffs.record({
       space,
       title: input.title,
       summary: typeof input.summary === "string" ? input.summary : undefined,
@@ -1080,22 +1145,14 @@ async function main(): Promise<void> {
       blockers: strings("blockers"),
       nextAction: typeof input.nextAction === "string" ? input.nextAction : undefined,
       artifactRefs: strings("artifactRefs"),
-      parentCheckpointId: typeof input.parentCheckpointId === "string" ? input.parentCheckpointId : undefined,
+      parentHandoffId: typeof input.parentHandoffId === "string" ? input.parentHandoffId : undefined,
       actor: { agentInstallationId: "spinal-plug-cli-handoff", host: "spinal-plug", sessionId: "handoff" },
       runtimeContext: {
         missionId: typeof input.missionId === "string" ? input.missionId : null,
         branchId: typeof input.branchId === "string" ? input.branchId : null
       }
     });
-    console.log(JSON.stringify({ checkpoint, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
-    return;
-  }
-  if (command === "handoff") {
-    console.log(JSON.stringify(handoffs.latest(space), null, 2));
-    return;
-  }
-  if (command === "checkpoints") {
-    console.log(JSON.stringify(handoffs.list(space, true), null, 2));
+    console.log(JSON.stringify({ handoff, pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length }, null, 2));
     return;
   }
   if (command === "update") {
@@ -1113,12 +1170,35 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "list") {
-    console.log(JSON.stringify(service.list(space, rest.includes("--all")), null, 2));
-    return;
-  }
-  if (command === "recall") {
-    if (rest.length === 0) throw new Error("Usage: spinal-plug recall <db-path> <project-dir> <prompt>");
-    console.log(JSON.stringify(service.recall(space, rest.join(" ")), null, 2));
+    // One reader for project memory, three views of it: the active set, the
+    // review queue, and prompt-relevant recall.
+    const { flags, rest: matchParts } = takeLeadingFlags(rest, {
+      "--all": "boolean",
+      "--candidates": "boolean",
+      "--match": "value"
+    });
+    if (flags["--candidates"] === true) {
+      console.log(JSON.stringify(
+        service.list(space, true).filter(memory => memory.status === "candidate"),
+        null,
+        2
+      ));
+      return;
+    }
+    // An explicit but empty --match is a caller bug (an unset shell variable
+    // in a plugin snippet), not a request for everything. Refuse it rather
+    // than dumping the whole Space as though it were relevant recall.
+    if (typeof flags["--match"] === "string" && !flags["--match"].trim()) {
+      throw new Error("Usage: spinal-plug list <db-path> <project-dir> --match <prompt> (the prompt cannot be empty)");
+    }
+    const match = typeof flags["--match"] === "string"
+      ? flags["--match"]
+      : matchParts.join(" ").trim();
+    if (match) {
+      console.log(JSON.stringify(service.recall(space, match), null, 2));
+      return;
+    }
+    console.log(JSON.stringify(service.list(space, flags["--all"] === true), null, 2));
     return;
   }
   if (command === "keys") {
@@ -1135,6 +1215,7 @@ async function main(): Promise<void> {
       .filter(memory => memory.status === "disputed").length;
     const pending = database.listPendingOutboxForSpace(space.spaceId).length;
     const fidelity = memories.length === 0 ? "BASELINE ONLY" : `${memories.length} DURABLE MEMORY REFERENCES`;
+    
     const lines = [
       "SPINAL-PLUG // NEURAL MEMORY INITIALIZATION v0.2",
       "[01/05] Memory Spinal Plug ....... LOCKED",
@@ -1147,12 +1228,37 @@ async function main(): Promise<void> {
         : []),
       "STATUS: SPINAL PLUG LOCKED // MEMORY CHANNEL ONLINE"
     ];
+
+    const latestHandoff = handoffs.latest(space);
+    if (latestHandoff) {
+      lines.push("");
+      lines.push("--- ACTIVE PROJECT HANDOFF ---");
+      lines.push(`Title: ${latestHandoff.title}`);
+      if (latestHandoff.completed.length) {
+        lines.push("Completed:");
+        latestHandoff.completed.forEach(c => lines.push(`  - ${c}`));
+      }
+      if (latestHandoff.openTasks.length) {
+        lines.push("Open Tasks:");
+        latestHandoff.openTasks.forEach(t => lines.push(`  - ${t}`));
+      }
+      if (latestHandoff.blockers.length) {
+        lines.push("Blockers:");
+        latestHandoff.blockers.forEach(b => lines.push(`  - ${b}`));
+      }
+      if (latestHandoff.nextAction) {
+        lines.push(`Next Action: ${latestHandoff.nextAction}`);
+      }
+      lines.push("------------------------------");
+    }
+
     console.log(lines.join("\n"));
     return;
   }
   if (command === "republish") {
-    const [url, deviceId] = rest;
-    if (!url || !deviceId) throw new Error("Usage: spinal-plug republish <db-path> <project-dir> <url> <device-id>");
+    const [url, deviceIdArgument] = rest;
+    if (!url) throw new Error("Usage: spinal-plug republish <db-path> <project-dir> <url> [device-id]");
+    const deviceId = resolveDeviceId(deviceIdArgument);
     const transport = createSyncTransport(url);
     // Migrating onto an authenticated Control Plane: local events were minted
     // with the unauthenticated runtime's identity and would be rejected, so
@@ -1184,14 +1290,14 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "fetch") {
-    const [url, deviceId] = rest;
-    if (!url || !deviceId) {
-      throw new Error("Usage: spinal-plug fetch <db-path> <project-dir> <url> <device-id>");
+    const [url, deviceIdArgument] = rest;
+    if (!url) {
+      throw new Error("Usage: spinal-plug fetch <db-path> <project-dir> <url> [device-id]");
     }
     const result = await new SpinalPlugSyncClient(
       database,
       createSyncTransport(url)
-    ).fetch(space.spaceId, deviceId);
+    ).fetch(space.spaceId, resolveDeviceId(deviceIdArgument));
     console.log(JSON.stringify(result, null, 2));
     return;
   }
@@ -1201,48 +1307,52 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "apply") {
-    const selected = rest.filter(value => value !== "--all");
-    const result = database.applyCanonicalUpdates(
-      space.spaceId,
-      rest.includes("--all") || selected.length === 0 ? undefined : selected
-    );
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  if (command === "apply-claude") {
-    const selected = rest.filter(value => value !== "--all");
+    // Which host to refresh afterwards is an option, not a separate command:
+    // the selection semantics below must stay identical across hosts.
+    const hostIndex = rest.indexOf("--host");
+    const host = hostIndex === -1 ? undefined : rest[hostIndex + 1];
+    // Validate the host before anything is committed. Applying first and
+    // checking after would turn `apply --host <typo>` into an irreversible
+    // apply-everything: the typo is swallowed as the host name, the
+    // selection empties, and the whole review queue merges before the error.
+    if (hostIndex !== -1 && (!host || host.startsWith("--"))) {
+      throw new Error("Usage: spinal-plug apply <db-path> <project-dir> [--host <host>] [--all | update-id...]");
+    }
+    if (host !== undefined) requireHost(host);
+    // Guard on hostIndex: without --host it is -1, and dropping index
+    // hostIndex + 1 would silently eat the first update id, turning a
+    // one-update apply into apply-everything.
+    const selected = rest.filter((value, index) =>
+      value !== "--all"
+      && (hostIndex === -1 || (index !== hostIndex && index !== hostIndex + 1)));
+    // An empty id is an unset shell variable, not a selection. Left in, it
+    // matches no pending update, so the command would apply nothing and still
+    // report success — the same silent no-op as an empty --match.
+    if (selected.some(value => !value.trim())) {
+      throw new Error("Usage: spinal-plug apply <db-path> <project-dir> [--host <host>] [--all | update-id...] (an update id cannot be empty)");
+    }
     const applied = database.applyCanonicalUpdates(
       space.spaceId,
       rest.includes("--all") || selected.length === 0 ? undefined : selected
     );
-    const importer = new ClaudeAutoMemoryImporter();
-    const localNativeMemoryIds = new Set(
-      importer.import(space, projectPath).candidates.map(candidate => candidate.memoryId)
-    );
-    const allMemories = service.list(space);
-    const projectedMemories = allMemories.filter(memory => !localNativeMemoryIds.has(memory.memoryId));
-    const materialized = new ClaudeAutoMemoryMaterializer().materialize(
-      projectPath,
-      projectedMemories
-    );
+    if (!host) {
+      console.log(JSON.stringify(applied, null, 2));
+      return;
+    }
+    const materialized = materializeHostProjection(host, space, service, projectPath);
     console.log(JSON.stringify({ applied, materialized }, null, 2));
     return;
   }
-  if (command === "apply-codex") {
-    const selected = rest.filter(value => value !== "--all");
-    const applied = database.applyCanonicalUpdates(
-      space.spaceId,
-      rest.includes("--all") || selected.length === 0 ? undefined : selected
-    );
-    const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
-    console.log(JSON.stringify({ applied, materialized }, null, 2));
-    return;
-  }
-  if (command === "sync-codex") {
-    // Local projection refresh only: network sync goes through the selective
-    // fetch → preview → apply flow, never through this command.
-    const materialized = new CodexNativeMemoryStore().materialize(space, service.list(space));
-    console.log(JSON.stringify({ materialized }, null, 2));
+  if (command === "project") {
+    // Local projection refresh only: network sync goes through the
+    // fetch → apply flow, never through this command.
+    const [host] = rest;
+    if (!host) throw new Error("Usage: spinal-plug project <db-path> <project-dir> <host>");
+    console.log(JSON.stringify(
+      { materialized: materializeHostProjection(host, space, service, projectPath) },
+      null,
+      2
+    ));
     return;
   }
 

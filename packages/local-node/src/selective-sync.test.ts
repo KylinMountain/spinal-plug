@@ -140,7 +140,7 @@ test("required tombstones apply during fetch and cannot remain pending", async (
   assert.equal(client.preview(space.spaceId).requiredUpdateIds.length, 0);
 });
 
-class CheckpointTransport implements SyncTransport {
+class HandoffTransport implements SyncTransport {
   private delivered = false;
 
   async push(_request: SyncPushRequest): Promise<SyncPushResponse> {
@@ -153,8 +153,8 @@ class CheckpointTransport implements SyncTransport {
     return {
       events: [{
         schemaVersion: 1,
-        eventId: "evt_checkpoint_remote",
-        eventType: "checkpoint.created",
+        eventId: "evt_handoff_remote",
+        eventType: "handoff.created",
         eventVersion: 1,
         accountId: "local",
         personaId: "persona_default",
@@ -169,9 +169,9 @@ class CheckpointTransport implements SyncTransport {
         causality: { parentEventIds: [] },
         runtimeContext: { branchId: "claude-linux" },
         payload: {
-          checkpoint: {
-            schema: "spinal-plug.project-checkpoint/v0.1",
-            checkpointId: "chk_remote",
+          handoff: {
+            schema: "spinal-plug.project-handoff/v0.1",
+            handoffId: "hnd_remote",
             spaceId: space.spaceId,
             title: "Remote handoff",
             completed: ["Created schema"],
@@ -181,13 +181,13 @@ class CheckpointTransport implements SyncTransport {
             nextAction: "Open PaymentConsumer",
             artifactRefs: [],
             status: "active",
-            sourceEventIds: ["evt_checkpoint_remote"],
+            sourceEventIds: ["evt_handoff_remote"],
             createdAt: "2026-07-24T12:00:00Z",
             updatedAt: "2026-07-24T12:00:00Z"
           }
         },
         createdAt: "2026-07-24T12:00:00Z",
-        idempotencyKey: "evt_checkpoint_remote"
+        idempotencyKey: "evt_handoff_remote"
       }],
       nextCursor: "cur:1",
       hasMore: false
@@ -199,12 +199,12 @@ class CheckpointTransport implements SyncTransport {
   }
 }
 
-test("fetch materializes remote work-state checkpoints for the next Agent boot", async () => {
+test("fetch materializes remote work-state handoffs for the next Agent boot", async () => {
   const database = testDatabase();
-  const client = new SpinalPlugSyncClient(database, new CheckpointTransport());
+  const client = new SpinalPlugSyncClient(database, new HandoffTransport());
   const fetched = await client.fetch(space.spaceId, "device_local");
 
-  assert.equal(fetched.checkpointsStored, 1);
-  assert.equal(database.latestCheckpoint(space.spaceId)?.nextAction, "Open PaymentConsumer");
+  assert.equal(fetched.handoffsStored, 1);
+  assert.equal(database.latestHandoff(space.spaceId)?.nextAction, "Open PaymentConsumer");
   assert.equal(database.listPendingOutboxForSpace(space.spaceId).length, 0);
 });

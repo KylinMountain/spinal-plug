@@ -5,8 +5,10 @@ description: Share the current Claude Code project's Auto Memory with Spinal Plu
 Share the current project's Claude Code Auto Memory topic files with Spinal Plug:
 
 ```bash
-spinal-plug share-claude "$HOME/.spinal-plug/spinal-plug.db" . "${SPINAL_PLUG_SYNC_URL:-}" "${SPINAL_PLUG_DEVICE_ID:-device-local}"
+spinal-plug import "$HOME/.spinal-plug/spinal-plug.db" . claude-code "${SPINAL_PLUG_SYNC_URL:-}"
 ```
+
+Do not pass a device id: without one the CLI uses the credential in `~/.spinal-plug/device.env`, which is the only identity an authenticated endpoint accepts.
 
 With no `SPINAL_PLUG_SYNC_URL` configured, publication tries the local development server at 127.0.0.1:8787 and silently stays local when nothing answers — no authentication either way. Set `SPINAL_PLUG_SYNC_URL` to publish to a different sync endpoint.
 

@@ -4,7 +4,7 @@
 set -uo pipefail
 
 event_name="${1:?expected a hook event name}"
-db_path="${SPINAL_PLUG_DB:-$HOME/.spinal-plug/spinal-plug.db}"
+db_path="${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}"
 spinal_plug_bin="${SPINAL_PLUG_BIN:-spinal-plug}"
 
 if ! command -v "$spinal_plug_bin" >/dev/null 2>&1; then

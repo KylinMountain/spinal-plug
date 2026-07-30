@@ -4,13 +4,13 @@ import type {
   EventActor,
   EventEnvelope,
   EventRuntimeContext,
-  ProjectCheckpoint,
+  ProjectHandoff,
   ProjectSpace
 } from "@spinal-plug/protocol";
 import { SpinalPlugDatabase } from "./index.js";
 import { valueContainsLikelySecret } from "./sensitive-data.js";
 
-export interface CreateCheckpointInput {
+export interface CreateHandoffInput {
   space: ProjectSpace;
   title: string;
   summary?: string;
@@ -20,7 +20,7 @@ export interface CreateCheckpointInput {
   blockers?: string[];
   nextAction?: string;
   artifactRefs?: string[];
-  parentCheckpointId?: string;
+  parentHandoffId?: string;
   actor?: Partial<EventActor>;
   runtimeContext?: Partial<EventRuntimeContext>;
 }
@@ -44,13 +44,13 @@ function actor(overrides: Partial<EventActor> = {}): EventActor {
   };
 }
 
-function assertCheckpointIsSafe(checkpoint: ProjectCheckpoint): void {
-  if (valueContainsLikelySecret(checkpoint)) {
-    throw new Error("Refusing to store likely secret material in a project checkpoint. Store a secret reference, not the secret value.");
+function assertHandoffIsSafe(handoff: ProjectHandoff): void {
+  if (valueContainsLikelySecret(handoff)) {
+    throw new Error("Refusing to store likely secret material in a project handoff. Store a secret reference, not the secret value.");
   }
 }
 
-/** Work-state service. Checkpoints are handoff artifacts, never canonical memory. */
+/** Work-state service. Handoffs are work-state artifacts, never canonical memory. */
 export class ProjectHandoffService {
   constructor(
     private readonly database: SpinalPlugDatabase,
@@ -58,13 +58,13 @@ export class ProjectHandoffService {
     private readonly actorDefaults: Partial<EventActor> = {}
   ) {}
 
-  checkpoint(input: CreateCheckpointInput): ProjectCheckpoint {
+  record(input: CreateHandoffInput): ProjectHandoff {
     const timestamp = now();
-    const checkpointId = `chk_${randomUUID()}`;
-    const previous = input.parentCheckpointId ?? this.database.latestCheckpoint(input.space.spaceId)?.checkpointId;
-    const checkpoint: ProjectCheckpoint = {
-      schema: "spinal-plug.project-checkpoint/v0.1",
-      checkpointId,
+    const handoffId = `hnd_${randomUUID()}`;
+    const previous = input.parentHandoffId ?? this.database.latestHandoff(input.space.spaceId)?.handoffId;
+    const handoff: ProjectHandoff = {
+      schema: "spinal-plug.project-handoff/v0.1",
+      handoffId,
       spaceId: input.space.spaceId,
       title: input.title.trim(),
       summary: input.summary?.trim() || undefined,
@@ -75,19 +75,19 @@ export class ProjectHandoffService {
       nextAction: input.nextAction?.trim() || undefined,
       artifactRefs: compact(input.artifactRefs),
       status: "active",
-      parentCheckpointId: previous,
+      parentHandoffId: previous,
       missionId: input.runtimeContext?.missionId ?? null,
       branchId: input.runtimeContext?.branchId ?? null,
       sourceEventIds: [],
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    assertCheckpointIsSafe(checkpoint);
+    assertHandoffIsSafe(handoff);
     const eventId = `evt_${randomUUID()}`;
     const event: EventEnvelope = {
       schemaVersion: 1,
       eventId,
-      eventType: "checkpoint.created",
+      eventType: "handoff.created",
       eventVersion: 1,
       accountId: this.identity.accountId,
       personaId: this.identity.personaId,
@@ -99,40 +99,40 @@ export class ProjectHandoffService {
         roleProfileId: input.runtimeContext?.roleProfileId ?? null,
         missionId: input.runtimeContext?.missionId ?? null,
         branchId: input.runtimeContext?.branchId ?? null,
-        taskCheckpointId: checkpointId
+        taskCheckpointId: handoffId
       },
-      payload: { checkpoint },
+      payload: { handoff },
       createdAt: timestamp,
       idempotencyKey: eventId
     };
-    checkpoint.sourceEventIds = [eventId];
-    this.database.recordCheckpointMutation(event, checkpoint);
-    return checkpoint;
+    handoff.sourceEventIds = [eventId];
+    this.database.recordHandoffMutation(event, handoff);
+    return handoff;
   }
 
-  latest(space: ProjectSpace): ProjectCheckpoint | null {
+  latest(space: ProjectSpace): ProjectHandoff | null {
     return this.list(space)[0] ?? null;
   }
 
-  list(space: ProjectSpace, includeInactive = false): ProjectCheckpoint[] {
-    return this.database.listCheckpoints(space.spaceId, includeInactive)
-      .filter(checkpoint => !valueContainsLikelySecret(checkpoint));
+  list(space: ProjectSpace, includeInactive = false): ProjectHandoff[] {
+    return this.database.listHandoffs(space.spaceId, includeInactive)
+      .filter(handoff => !valueContainsLikelySecret(handoff));
   }
 
   formatForBoot(space: ProjectSpace): string | null {
-    const checkpoint = this.latest(space);
-    if (!checkpoint) return null;
+    const handoff = this.latest(space);
+    if (!handoff) return null;
     const section = (name: string, values: string[]) => values.length ? `\n${name}:\n${values.map(value => `- ${value}`).join("\n")}` : "";
     return [
-      `<spinal-plug_handoff checkpoint="${checkpoint.checkpointId}">`,
-      `Title: ${checkpoint.title}`,
-      checkpoint.summary ? `Summary: ${checkpoint.summary}` : "",
-      section("Completed", checkpoint.completed),
-      section("Decisions", checkpoint.decisions),
-      section("Open tasks", checkpoint.openTasks),
-      section("Blockers", checkpoint.blockers),
-      checkpoint.nextAction ? `\nNext action: ${checkpoint.nextAction}` : "",
-      section("Artifacts", checkpoint.artifactRefs),
+      `<spinal-plug_handoff id="${handoff.handoffId}">`,
+      `Title: ${handoff.title}`,
+      handoff.summary ? `Summary: ${handoff.summary}` : "",
+      section("Completed", handoff.completed),
+      section("Decisions", handoff.decisions),
+      section("Open tasks", handoff.openTasks),
+      section("Blockers", handoff.blockers),
+      handoff.nextAction ? `\nNext action: ${handoff.nextAction}` : "",
+      section("Artifacts", handoff.artifactRefs),
       "</spinal-plug_handoff>"
     ].filter(Boolean).join("\n");
   }

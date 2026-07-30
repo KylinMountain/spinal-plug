@@ -103,7 +103,12 @@ export class ProjectSpaceResolver {
   private readonly bindingsDir: string;
 
   constructor(options: ProjectSpaceResolverOptions = {}) {
-    this.bindingsDir = join(options.homeDirectory ?? homedir(), ".spinal-plug", "projects");
+    // SPINAL_PLUG_HOME relocates every device-local binding as a unit, so a
+    // test run (or a second profile) never touches the real home directory.
+    // An explicit option still wins: callers that already know their root
+    // must not be overridden by ambient environment.
+    const home = options.homeDirectory ?? (process.env.SPINAL_PLUG_HOME?.trim() || homedir());
+    this.bindingsDir = join(home, ".spinal-plug", "projects");
   }
 
   resolve(cwd: string): ResolvedProjectSpace | null {
