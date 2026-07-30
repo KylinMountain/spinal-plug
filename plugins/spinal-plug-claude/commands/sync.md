@@ -2,7 +2,7 @@
 description: Synchronize the current project with the local Spinal Plug development server.
 ---
 
-Fetch new central Spinal Plug memory into the local inbox without applying optional changes:
+Fetch new central Spinal Plug memory into the local inbox and list what arrived; the updates are applied automatically below:
 
 ```bash
 spinal-plug fetch "$HOME/.spinal-plug/spinal-plug.db" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}"

@@ -43,6 +43,9 @@ function scanMarkdown(directory: string, root = directory): string[] {
       && entry.name.endsWith(".md")
       && entry.name !== "MEMORY.md"
       && !entry.name.startsWith("spinal-plug-")
+      // Legacy underscore naming from an early managed-projection scheme;
+      // never re-import our own projection as a native topic file.
+      && !entry.name.startsWith("spinal_plug_managed_")
     ) {
       files.push(relative(root, path));
     }
@@ -101,7 +104,16 @@ export class ClaudeAutoMemoryImporter {
 
 const MANAGED_START = "<!-- spinal-plug:managed:start -->";
 const MANAGED_END = "<!-- spinal-plug:managed:end -->";
-const MANAGED_FILE = "spinal-plug-synced.md";
+// Hyphen prefix keeps every managed file inside the importer's
+// "spinal-plug-" exclusion, so a projection can never be re-imported.
+const MANAGED_PREFIX = "spinal-plug-managed-";
+const LEGACY_MANAGED_PREFIX = "spinal_plug_managed_";
+const LEGACY_MANAGED_FILE = "spinal-plug-synced.md";
+
+/** Restricts a memory id to filename-safe characters before it touches a path. */
+function managedFilename(memoryId: string): string {
+  return `${MANAGED_PREFIX}${memoryId.replace(/[^a-zA-Z0-9_-]/g, "-")}.md`;
+}
 
 export interface ClaudeMemoryMaterializationResult {
   filePath: string; // The entrypoint (MEMORY.md)
@@ -122,11 +134,12 @@ export class ClaudeAutoMemoryMaterializer {
 
     mkdirSync(directory, { recursive: true });
 
-    // Clean up old managed files
+    // Clean up managed files from previous projections, including both
+    // legacy naming schemes that predate the current hyphen prefix.
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (entry.isFile() && (
-        (entry.name.startsWith("spinal_plug_managed_") && entry.name.endsWith(".md")) ||
-        entry.name === "spinal-plug-synced.md"
+        ((entry.name.startsWith(MANAGED_PREFIX) || entry.name.startsWith(LEGACY_MANAGED_PREFIX)) && entry.name.endsWith(".md")) ||
+        entry.name === LEGACY_MANAGED_FILE
       )) {
         const filePath = join(directory, entry.name);
         try {
@@ -141,7 +154,7 @@ export class ClaudeAutoMemoryMaterializer {
 
     // Write individual fine-grained memory files
     for (const memory of memories) {
-      const filename = `spinal_plug_managed_${memory.memoryId}.md`;
+      const filename = managedFilename(memory.memoryId);
       const filePath = join(directory, filename);
       const frontmatter = [
         "---",

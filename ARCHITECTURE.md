@@ -39,8 +39,10 @@ allowed internal imports and declared workspace dependencies.
    transaction, then places the event in the outbox.
 3. The sync server (private `mind-palace` repository) accepts idempotent events, compiles canonical memory state,
    and exposes authenticated Control Plane APIs.
-4. A client fetches canonical updates, previews them, and applies selected
-   updates locally. Tombstones are mandatory updates.
+4. A client fetches canonical updates and applies them locally: host sync
+   commands apply everything fetched and report the result, while the CLI
+   also supports previewing and applying a selected subset. Tombstones are
+   mandatory updates.
 5. `/console` and `/palace` visualize authorized Control Plane data; they do
    not read a user's local SQLite cache.
 

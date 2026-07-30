@@ -457,7 +457,7 @@ function drainCodexCandidateJobs(
 /**
  * Refresh a host's native memory from local state. Claude's projection skips
  * memories that were imported from its own topic files, so a fact the host
- * already owns is never written back to it as a managed block.
+ * already owns is never written back to it as a managed file.
  */
 /** Rejects an unknown host before any caller commits state on its behalf. */
 function requireHost(host: string): string {
@@ -610,7 +610,7 @@ async function executeHook(
     // A write inside the project's native memory directory means Claude's own
     // extractor (or the main agent) just persisted a topic file: import and
     // publish while it is hot instead of waiting for a session boundary. The
-    // importer is idempotent and skips the managed projection file, so this
+    // importer is idempotent and skips the managed projection files, so this
     // cannot re-trigger itself.
     if (host === "claude-code" && toolFilePath) {
       const memoryDir = new ClaudeAutoMemoryImporter().memoryDirectory(payload.cwd);
@@ -1344,8 +1344,8 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "project") {
-    // Local projection refresh only: network sync goes through the selective
-    // fetch → preview → apply flow, never through this command.
+    // Local projection refresh only: network sync goes through the
+    // fetch → apply flow, never through this command.
     const [host] = rest;
     if (!host) throw new Error("Usage: spinal-plug project <db-path> <project-dir> <host>");
     console.log(JSON.stringify(
