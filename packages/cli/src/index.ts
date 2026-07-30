@@ -1215,6 +1215,7 @@ async function main(): Promise<void> {
       .filter(memory => memory.status === "disputed").length;
     const pending = database.listPendingOutboxForSpace(space.spaceId).length;
     const fidelity = memories.length === 0 ? "BASELINE ONLY" : `${memories.length} DURABLE MEMORY REFERENCES`;
+    
     const lines = [
       "SPINAL-PLUG // NEURAL MEMORY INITIALIZATION v0.2",
       "[01/05] Memory Spinal Plug ....... LOCKED",
@@ -1227,6 +1228,30 @@ async function main(): Promise<void> {
         : []),
       "STATUS: SPINAL PLUG LOCKED // MEMORY CHANNEL ONLINE"
     ];
+
+    const latestHandoff = handoffs.latest(space);
+    if (latestHandoff) {
+      lines.push("");
+      lines.push("--- ACTIVE PROJECT HANDOFF ---");
+      lines.push(`Title: ${latestHandoff.title}`);
+      if (latestHandoff.completed.length) {
+        lines.push("Completed:");
+        latestHandoff.completed.forEach(c => lines.push(`  - ${c}`));
+      }
+      if (latestHandoff.openTasks.length) {
+        lines.push("Open Tasks:");
+        latestHandoff.openTasks.forEach(t => lines.push(`  - ${t}`));
+      }
+      if (latestHandoff.blockers.length) {
+        lines.push("Blockers:");
+        latestHandoff.blockers.forEach(b => lines.push(`  - ${b}`));
+      }
+      if (latestHandoff.nextAction) {
+        lines.push(`Next Action: ${latestHandoff.nextAction}`);
+      }
+      lines.push("------------------------------");
+    }
+
     console.log(lines.join("\n"));
     return;
   }
