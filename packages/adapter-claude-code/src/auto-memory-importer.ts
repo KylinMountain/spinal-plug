@@ -110,9 +110,15 @@ const MANAGED_PREFIX = "spinal-plug-managed-";
 const LEGACY_MANAGED_PREFIX = "spinal_plug_managed_";
 const LEGACY_MANAGED_FILE = "spinal-plug-synced.md";
 
-/** Restricts a memory id to filename-safe characters before it touches a path. */
+/**
+ * Restricts a memory id to filename-safe characters before it touches a path.
+ * An id that needed sanitizing gets a short digest of the original, so two
+ * distinct ids can never fold into the same managed file.
+ */
 function managedFilename(memoryId: string): string {
-  return `${MANAGED_PREFIX}${memoryId.replace(/[^a-zA-Z0-9_-]/g, "-")}.md`;
+  const safe = memoryId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const suffix = safe === memoryId ? "" : `-${createHash("sha256").update(memoryId).digest("hex").slice(0, 8)}`;
+  return `${MANAGED_PREFIX}${safe}${suffix}.md`;
 }
 
 export interface ClaudeMemoryMaterializationResult {

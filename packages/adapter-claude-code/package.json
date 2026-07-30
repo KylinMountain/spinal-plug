@@ -4,10 +4,14 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "!dist/*.test.*"
+  ],
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
-    "test": "node --test dist/*.test.js"
+    "test": "tsc -b && node --test dist/*.test.js"
   },
   "dependencies": {
     "@spinal-plug/adapter-sdk": "workspace:*",
