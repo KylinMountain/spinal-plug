@@ -1,6 +1,6 @@
 {
   "name": "@spinal-plug/cli",
-  "version": "0.1.0-rc1",
+  "version": "0.0.0-dev",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

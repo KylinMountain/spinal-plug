@@ -1,9 +1,11 @@
 name: Release
 
-# A tag is the release trigger: v0.1.1 publishes @spinal-plug/cli@0.1.1 and
-# attaches the same bundle to the GitHub Release. The tag must match the version
-# in packages/cli/package.json, so a forgotten version bump fails here instead of
-# publishing the previous build under a new number.
+# The tag is the version, and nothing in the repository records it. `v0.2.0`
+# publishes @spinal-plug/cli@0.2.0 and attaches the same bundle to the GitHub
+# Release: no version is edited by hand, no pull request bumps one, and no commit
+# goes back to a branch. npm reads the version from the tarball this job builds,
+# and both plugin hosts version a plugin by the commit they fetched — so a tag is
+# the only thing a release needs.
 on:
   push:
     tags: ["v*"]
@@ -27,36 +29,30 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+
+      - name: Take the version from the tag
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - run: pnpm verify
       - run: pnpm build:release
-      - name: Check the tag against the repository version
-        # `pnpm check:plugins` already holds the CLI and both plugins to one
-        # version, so comparing the tag against the built manifest pins all three:
-        # a tag names one release of the whole client, not of one artifact.
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          version="$(node -p "require('./release/npm/package.json').version")"
-          if [ "$tag" != "$version" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match version $version" >&2
-            exit 1
-          fi
+        env:
+          SPINAL_PLUG_RELEASE_VERSION: ${{ steps.version.outputs.value }}
+
       # Trusted publishing (OIDC), not a token. npm is retiring 2FA-bypass
       # tokens: they lose account management in August 2026 and direct publishing
       # around January 2027. OIDC needs no stored credential at all — the runner
       # exchanges a short-lived, workflow-scoped identity — and it requires npm
       # >= 11.5.1, which Node 22 does not ship.
       - run: npm install -g npm@latest
-      # The first release of a new package is published by hand — trusted
-      # publishing can only be configured on a package that exists — so the tag
-      # for it would otherwise fail here on a version npm already has. Skipping is
-      # also what makes re-running a release job safe.
+      # A version npm already has is not an error: the first release of a package
+      # is published by hand, because trusted publishing can only be configured on
+      # a package that exists. Skipping is also what makes a re-run safe.
       - name: Check whether npm already has this version
         id: published
         run: |
           name="$(node -p "require('./release/npm/package.json').name")"
-          version="$(node -p "require('./release/npm/package.json').version")"
-          if npm view "$name@$version" version >/dev/null 2>&1; then
-            echo "$name@$version is already on npm; the publish step will be skipped."
+          if npm view "$name@${{ steps.version.outputs.value }}" version >/dev/null 2>&1; then
+            echo "$name@${{ steps.version.outputs.value }} is already on npm; the publish step will be skipped."
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -67,6 +63,7 @@ jobs:
       - name: Publish a prerelease to npm
         if: ${{ steps.published.outputs.exists == 'false' && contains(github.ref_name, '-') }}
         run: npm publish ./release/npm --access public --tag next
+
       - name: Attach the bundle to the GitHub Release
         run: gh release create "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --generate-notes --verify-tag || gh release upload "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --clobber
         env:

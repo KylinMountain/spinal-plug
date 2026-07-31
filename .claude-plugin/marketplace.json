@@ -9,7 +9,6 @@
     {
       "name": "spinal-plug",
       "description": "Lock, load and manage Spinal Plug project memory from Claude Code.",
-      "version": "0.1.0-rc1",
       "source": "./plugins/spinal-plug-claude",
       "category": "productivity"
     }

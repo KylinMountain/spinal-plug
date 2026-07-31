@@ -33,12 +33,14 @@ plus a generated manifest. Internal `@spinal-plug/*` packages stay unpublished �
 bundling resolves them, so the published package declares no runtime
 dependencies.
 
-A tag names one release of the whole client. The CLI and both plugins share a
-version (`pnpm check:plugins` enforces it), and pushing `v<that version>` runs
-the same build in `.github/workflows/release.yml`, publishes `@spinal-plug/cli`,
-and attaches the bundle to the GitHub Release; the plugins need no publish step
-because this repository is their marketplace. A tag that disagrees with the
-version fails before anything is published.
+A tag is the whole release, and nothing in the repository records a version.
+Pushing `v0.2.0` makes `release.yml` build the client at 0.2.0, publish
+`@spinal-plug/cli`, and attach the bundle to the GitHub Release — no file is
+edited, no pull request bumps anything, and no commit goes back to a branch. The
+plugins need no publish step because this repository is their marketplace, and no
+version because each host versions a plugin by the commit it fetched.
+`packages/cli/package.json` keeps a `0.0.0-dev` placeholder so a local
+`pnpm build:release` produces something honestly unreleasable.
 
 Publishing uses npm trusted publishing (OIDC): no stored credential, and none to
 rotate. npm is retiring 2FA-bypass tokens — account management in August 2026,
@@ -85,11 +87,11 @@ current worktree is never touched.
   When a CLI command or flag it drives changes, update it together with the
   plugin skills under `plugins/`; `pnpm check:repository` enforces the frontmatter,
   the command names, and the host-agnostic constraint.
-- Bump both plugin versions together when either plugin's content changes, then
-  run `pnpm stamp:plugins`. Each host caches a plugin under its version string, so
-  unchanged content-with-changed-version is harmless while changed-content-with-
-  unchanged-version silently serves the old copy forever. `pnpm check:plugins`
-  enforces it.
+- No version lives in a plugin manifest. The tag is the version and only npm
+  needs one, which travels in the tarball the release builds; both hosts serve a
+  plugin from this repository and version it by the commit they fetched. A number
+  written here would pin every host to the copy it first cached.
+  `pnpm check:plugins` fails if one reappears.
 - Do not restore historical documentation wholesale.
 - Local databases created before the first release are not migrated. The
   checkpoint→handoff rename left its predecessor table behind rather than copying

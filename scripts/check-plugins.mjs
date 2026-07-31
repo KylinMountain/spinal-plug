@@ -1,138 +1,66 @@
 /**
- * Plugin release guard.
+ * Keeps a version out of the plugin manifests.
  *
- * Both hosts cache a plugin under its version string — Claude Code in
- * `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`, Codex in
- * `~/.codex/plugins/cache/...` — so an unchanged version means the host keeps
- * serving the copy it already has however much this directory moved. That
- * happened: eleven commits of hook fixes, a new command and a rewritten handoff
- * prompt were invisible to both hosts until someone noticed by hand.
+ * A tag is the version, and only npm needs one — it travels in the tarball the
+ * release job builds. Both plugin hosts serve a plugin straight from this
+ * repository and version it by the commit they fetched, so a number written here
+ * buys nothing and costs something real: each host caches a plugin under its
+ * version string, so a hardcoded version pins every host to the copy it first
+ * cached, however much this directory moves afterwards. That is not theoretical —
+ * eleven commits of hook fixes, a new command and a rewritten handoff prompt once
+ * sat invisible behind an unchanged 0.2.0.
  *
- * A digest recorded beside each version turns that into a failed check. Run
- * `pnpm stamp:plugins` after bumping a version to re-record it; the stamp refuses
- * to record new content under a version that did not change.
+ * Claude Code accepts a manifest with no version (262 of the 276 plugins in the
+ * official marketplace omit it, and validation only warns); Codex installs one
+ * too. Both were checked before this rule was written.
  */
-import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const digestFile = resolve(repositoryRoot, "plugins/digests.json");
-const write = process.argv.includes("--write");
-
-const PLUGINS = [
-  {
-    directory: "plugins/spinal-plug-claude",
-    manifest: "plugins/spinal-plug-claude/.claude-plugin/plugin.json",
-    /** Claude reads the version from the enclosing marketplace entry as well. */
-    marketplace: { file: ".claude-plugin/marketplace.json", entry: "spinal-plug" }
-  },
-  {
-    directory: "plugins/spinal-plug-codex",
-    manifest: "plugins/spinal-plug-codex/.codex-plugin/plugin.json",
-    marketplace: null
-  }
-];
-
 const failures = [];
 
 function readJson(relativePath) {
   return JSON.parse(readFileSync(resolve(repositoryRoot, relativePath), "utf8"));
 }
 
-/** Content digest over every committed file in the plugin, path included so a rename counts. */
-function digestOf(directory) {
-  const files = [];
-  const walk = current => {
-    for (const entry of readdirSync(resolve(repositoryRoot, current), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      // Finder droppings are not part of the plugin and are gitignored.
-      if (entry.name === ".DS_Store") continue;
-      const child = join(current, entry.name);
-      if (entry.isDirectory()) walk(child);
-      else files.push(child);
-    }
-  };
-  walk(directory);
-  const hash = createHash("sha256");
-  for (const file of files) {
-    hash.update(relative(directory, file).split("\\").join("/"));
-    hash.update("\0");
-    hash.update(readFileSync(resolve(repositoryRoot, file)));
-    hash.update("\0");
-  }
-  return `sha256:${hash.digest("hex").slice(0, 32)}`;
-}
+const MANIFESTS = [
+  "plugins/spinal-plug-claude/.claude-plugin/plugin.json",
+  "plugins/spinal-plug-codex/.codex-plugin/plugin.json"
+];
 
-/** Build metadata (`+codex.<stamp>`) identifies a packaging run, not a different release. */
-function baseVersion(version) {
-  return version.split("+", 1)[0];
-}
-
-const recorded = existsSync(digestFile) ? JSON.parse(readFileSync(digestFile, "utf8")) : {};
-const current = {};
-
-for (const plugin of PLUGINS) {
-  const manifest = readJson(plugin.manifest);
-  const digest = digestOf(plugin.directory);
-  current[plugin.directory] = { version: manifest.version, digest };
-
-  if (plugin.marketplace) {
-    const entry = readJson(plugin.marketplace.file).plugins
-      .find(candidate => candidate.name === plugin.marketplace.entry);
-    if (!entry) {
-      failures.push(`${plugin.marketplace.file} has no entry named ${plugin.marketplace.entry}`);
-    } else if (entry.version !== manifest.version) {
-      failures.push(
-        `${plugin.marketplace.file} says ${plugin.marketplace.entry}@${entry.version}, ${plugin.manifest} says ${manifest.version}`
-      );
-    }
-  }
-
-  const previous = recorded[plugin.directory];
-  if (!previous) {
-    if (!write) failures.push(`${plugin.directory} has no recorded digest; run pnpm stamp:plugins`);
-    continue;
-  }
-  // A version that moves without its content is fine and often required: the two
-  // plugins share one version, so a change to either moves both.
-  if (previous.digest === digest) continue;
-  // Content moved. The version has to move with it, or every host keeps serving
-  // the copy it cached under the old one.
-  if (previous.version === manifest.version) {
-    failures.push(
-      `${plugin.directory} content changed but version is still ${manifest.version}; bump it, then run pnpm stamp:plugins`
-    );
-  } else if (!write) {
-    failures.push(`${plugin.directory} is at ${manifest.version} with unrecorded content; run pnpm stamp:plugins`);
+for (const file of MANIFESTS) {
+  const version = readJson(file).version;
+  if (version !== undefined) {
+    failures.push(`${file} declares version ${version}; a plugin is versioned by its commit, so remove the field`);
   }
 }
 
-/**
- * One version for the whole client, so a tag names a release rather than one
- * artifact: `v0.5.0` publishes the CLI at 0.5.0 and serves both plugins at 0.5.0.
- * They are not independently usable anyway — a plugin's skills invoke CLI
- * commands, so a plugin newer than the CLI a user installed calls commands that
- * do not exist yet.
- */
-const CLI_MANIFEST = "packages/cli/package.json";
-const versions = new Set([
-  ...PLUGINS.map(plugin => baseVersion(current[plugin.directory].version)),
-  baseVersion(readJson(CLI_MANIFEST).version)
-]);
-if (versions.size > 1) {
+const marketplace = readJson(".claude-plugin/marketplace.json");
+const entry = marketplace.plugins.find(candidate => candidate.name === "spinal-plug");
+if (!entry) {
+  failures.push(".claude-plugin/marketplace.json has no entry named spinal-plug");
+} else if (entry.version !== undefined) {
   failures.push(
-    `the CLI and both plugins must share one version; found ${[...versions].sort().join(", ")}`
+    `.claude-plugin/marketplace.json pins spinal-plug at ${entry.version}; the entry is served from this repository, so remove the field`
+  );
+}
+
+// The CLI manifest keeps a version because npm requires one to build with. It is
+// a placeholder: the release overrides it from the tag, and saying so out loud
+// beats a stale real-looking number that nobody publishes.
+const cliVersion = readJson("packages/cli/package.json").version;
+if (!/-dev$/.test(cliVersion)) {
+  failures.push(
+    `packages/cli/package.json is at ${cliVersion}; it holds a placeholder like 0.0.0-dev because the tag supplies the real version`
   );
 }
 
 if (failures.length > 0) {
-  console.error("Plugin release check failed:");
+  console.error("Plugin version check failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exitCode = 1;
-} else if (write) {
-  writeFileSync(digestFile, `${JSON.stringify(current, null, 2)}\n`);
-  console.log(`Stamped ${PLUGINS.length} plugins at version ${[...versions][0]}.`);
 } else {
-  console.log(`Release check passed: CLI and ${PLUGINS.length} plugins at version ${[...versions][0]}.`);
+  console.log(`Plugin version check passed: ${MANIFESTS.length} manifests and the marketplace entry carry no version.`);
 }
