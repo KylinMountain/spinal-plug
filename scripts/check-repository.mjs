@@ -69,9 +69,13 @@ function findSkillFiles(directory) {
 // do something their host cannot do. Prose may still explain why the flag is
 // absent, so only executable blocks are checked.
 const hostCoupledTokens = ["--host", "hook-stdin", "project "];
-// A command is only claimed as such when a db-path argument follows it, so prose
-// like "spinal-plug is not installed" is not mistaken for a verb.
-const commandInvocation = /\bspinal-plug (?!--)([a-z-]+) (?:"\$SPINAL_PLUG_DB_PATH"|"\$HOME\/|<db-path>|\.{3})/g;
+// Anchor on command position — start of line, a pipe, a chain operator, a
+// substitution, or an inline-code backtick — rather than on the argument that
+// follows. Whitelisting argument shapes silently skipped every other shape, so a
+// skill left on a retired command name passed the check. Quoted prose such as
+// `echo "spinal-plug is not installed"` is not in command position and is
+// therefore not read as a verb.
+const commandInvocation = /(?:^|[`|;]|&&|\$\()[ \t]*spinal-plug[ \t]+(-{0,2}[a-z][a-z-]*)/gm;
 
 for (const skillFile of [...findSkillFiles("skills"), ...findSkillFiles("plugins")]) {
   const source = readFileSync(resolve(repositoryRoot, skillFile), "utf8");
