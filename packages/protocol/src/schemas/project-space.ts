@@ -8,7 +8,10 @@ export const projectSpaceSchema: JsonSchema = {
   properties: {
     schema: { type: "string", enum: ["spinal-plug.project-space/v0.1"] },
     spaceId: { type: "string" },
-    type: { type: "string", enum: ["project"] },
+    // Every ProjectSpaceType, not just the first one: an archive or general
+    // Space is a legitimate object, and enumerating only "project" made the
+    // schema reject values the type system produces.
+    type: { type: "string", enum: ["project", "archive", "general"] },
     displayName: { type: "string" },
     repository: {
       type: "object",
