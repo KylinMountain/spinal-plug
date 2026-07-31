@@ -59,7 +59,9 @@ const publishManifest = {
   version: cliManifest.version,
   description: "Spinal Plug client: durable, project-scoped agent memory with local-first storage and selective sync.",
   type: "module",
-  bin: { "spinal-plug": `./${bundleName}` },
+  // No "./" prefix: npm normalizes it away and warns that the bin script name
+  // "was cleaned", which means the manifest published is not the one written.
+  bin: { "spinal-plug": bundleName },
   files: [bundleName],
   // Only the Node floor is a consumer constraint; the pnpm floor is a
   // development one and engine-strict installs would enforce it on users.
