@@ -729,6 +729,23 @@ test("the device id defers to the stored credential when a call site omits it", 
     const requested = new URL(request.url ?? "/", "http://127.0.0.1");
     const deviceId = requested.searchParams.get("device_id");
     if (deviceId !== null) seen.push(deviceId);
+    if (requested.pathname === "/v1/events:push") {
+      // A push carries its device in the body, not the query string.
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", chunk => { body += chunk; });
+      request.on("end", () => {
+        try {
+          const pushed = JSON.parse(body) as { deviceId?: string };
+          if (typeof pushed.deviceId === "string") seen.push(pushed.deviceId);
+        } catch {
+          // A malformed body is the test's problem, not the server's.
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ acceptedEventIds: [], duplicateEventIds: [] }));
+      });
+      return;
+    }
     response.writeHead(200, { "content-type": "application/json" });
     if (requested.pathname === "/v1/events:pull") {
       response.end(JSON.stringify({ events: [], nextCursor: "", hasMore: false }));
@@ -767,6 +784,17 @@ test("the device id defers to the stored credential when a call site omits it", 
   expectSuccess(await runCliAsync(workspace, ["fetch", workspace.db, workspace.project, url, "dev_explicit"]));
   assert.deepEqual(identities(), ["dev_explicit"], "an explicit id must still be honoured");
 
+  // `share --device-id` took a bare truthiness check instead of the shared
+  // resolver, so a blank flag value — an unexpanded variable in a plugin
+  // script — reached the endpoint verbatim and shadowed the credential.
+  seen.length = 0;
+  expectSuccess(await runCliAsync(workspace, [
+    "share", workspace.db, workspace.project, "decision",
+    "--url", url, "--device-id", "   ",
+    "A blank flag defers to the stored credential"
+  ]));
+  assert.deepEqual(identities(), ["dev_credential"], "a blank --device-id must not reach the endpoint");
+
   // republish shares the same slot and must not demand one either.
   expectSuccess(await runCliAsync(workspace, ["republish", workspace.db, workspace.project, url]));
 
@@ -776,7 +804,9 @@ test("the device id defers to the stored credential when a call site omits it", 
   assert.match(noUrl.stderr, /Usage: spinal-plug fetch/);
 });
 
-test("import reads host-native memory and refuses a host that has none to read", () => {
+// SPINAL_PLUG_SYNC_URL: "" resolves to 127.0.0.1:8787 like an unset variable,
+// so this test publishes into a locally running Control Plane unless skipped.
+test("import reads host-native memory and refuses a host that has none to read", { skip: localEndpointBusy() }, () => {
   const workspace = linkedWorkspace();
   const imported = parseJson<{ source: string; discovered: number; sync: string }>(
     runCli(workspace, ["import", workspace.db, workspace.project, "claude-code"], {
@@ -841,7 +871,7 @@ test("help documents the three-tier endpoint resolution", () => {
 test("help groups commands by who runs them", () => {
   const workspace = createWorkspace();
   const help = expectSuccess(runCli(workspace, ["--help"])).stdout;
-  for (const group of ["For you:", "For your Agent", "Only with a configured sync endpoint:", "Reserved extension surface"]) {
+  for (const group of ["For you:", "For your Agent", "Only with a configured sync endpoint", "Reserved extension surface"]) {
     assert.ok(help.includes(group), `help is missing the "${group}" group`);
   }
   // The five commands a person actually types must precede everything else,
@@ -869,4 +899,229 @@ test("missing positional arguments are reported, not ignored", () => {
   const noProject = runCli(workspace, ["boot", workspace.db]);
   assert.equal(noProject.status, 1);
   assert.match(noProject.stderr, /Missing <project-dir> argument/);
+});
+
+test("a flag written after the text is refused, not folded into it", () => {
+  // Regression: the parser reads leading flags only, so `--key` after the
+  // statement was stored as part of the statement and the semantic key was lost
+  // with no error at all — silently defeating the key classification every skill
+  // asks for.
+  const workspace = linkedWorkspace();
+
+  const misplaced = runCli(workspace, [
+    "share", workspace.db, workspace.project, "decision", "Adopt WAL mode", "--key", "decision:wal"
+  ]);
+  assert.equal(misplaced.status, 1);
+  assert.match(misplaced.stderr, /Flag --key must appear before the text argument/);
+
+  const ordered = parseJson<{ memory: { statement: string; semanticKey: string } }>(
+    runCli(workspace, [
+      "share", workspace.db, workspace.project, "decision", "--key", "decision:wal", "Adopt WAL mode"
+    ])
+  );
+  assert.equal(ordered.memory.statement, "Adopt WAL mode");
+  assert.equal(ordered.memory.semanticKey, "decision:wal");
+});
+
+test("sync stays in local mode without complaint when no endpoint answers", { skip: localEndpointBusy() }, () => {
+  // The skills spelled this out as fetch → preview → apply, and the fetch step
+  // exits non-zero when nothing is listening — which is the documented default
+  // for an unconfigured host, not a fault. One command owns that now.
+  const workspace = linkedWorkspace(["Kafka is the queue"]);
+
+  const result = runCli(workspace, ["sync", workspace.db, workspace.project]);
+  assert.equal(result.status, 0, result.stderr);
+
+  const synced = parseJson<{
+    sync: string;
+    fetch: string;
+    fetched: unknown;
+    fetchError?: string;
+    applied: { applied: number };
+    pendingOutboxEvents: number;
+  }>(result);
+  assert.equal(synced.sync, "local-fallback");
+  assert.equal(synced.fetch, "local-fallback");
+  assert.equal(synced.fetched, null, "nothing was fetched, and that is reported rather than thrown");
+  assert.ok(synced.fetchError, "why it fell back is reported, not swallowed");
+  assert.equal(synced.applied.applied, 0);
+  assert.ok(synced.pendingOutboxEvents >= 1, "the outbox keeps what it could not publish");
+});
+
+test("sync publishes what is queued, then fetches and applies", async t => {
+  // Publishing first is what makes the composite bidirectional: on a host with
+  // no lifecycle hooks nothing else ever flushes the outbox, so a handoff or a
+  // memory recorded locally would never leave the device.
+  const workspace = linkedWorkspace(["Kafka is the queue"]);
+  const pushed: string[] = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      response.writeHead(200, { "content-type": "application/json" });
+      if (requested.pathname === "/v1/events:pull") {
+        response.end(JSON.stringify({ events: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      if (requested.pathname === "/v1/updates:fetch") {
+        response.end(JSON.stringify({ updates: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      const events = (JSON.parse(body || "{}") as { events?: { eventId: string }[] }).events ?? [];
+      for (const event of events) pushed.push(event.eventId);
+      response.end(JSON.stringify({
+        acceptedEventIds: events.map(event => event.eventId),
+        duplicateEventIds: [],
+        serverCursor: "cur_1"
+      }));
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const synced = parseJson<{
+    sync: string;
+    published: { pushed: number };
+    fetched: { fetched: number };
+    pendingOutboxEvents: number;
+  }>(await runCliAsync(workspace, ["sync", workspace.db, workspace.project, "--url", url]));
+
+  assert.equal(synced.sync, "endpoint");
+  assert.equal(synced.published.pushed, 1);
+  assert.equal(pushed.length, 1, "the queued event actually reached the endpoint");
+  assert.equal(synced.fetched.fetched, 0);
+  assert.equal(synced.pendingOutboxEvents, 0, "a published event no longer waits in the outbox");
+});
+
+test("sync surfaces the failure of an endpoint the user chose", async () => {
+  // Silence is right for the local default and wrong for a named endpoint: there
+  // it would hide an outage behind a report of success.
+  const workspace = linkedWorkspace();
+
+  const result = await runCliAsync(workspace, [
+    "sync", workspace.db, workspace.project, "--url", "http://127.0.0.1:1"
+  ]);
+  assert.equal(result.status, 1);
+  assert.notEqual(result.stderr.trim(), "");
+});
+
+test("sync refuses a host it cannot project into", () => {
+  const workspace = linkedWorkspace();
+
+  const result = runCli(workspace, ["sync", workspace.db, workspace.project, "--host", "emacs"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unsupported host: emacs/);
+});
+
+test("sync drains an outbox larger than one publish batch", async t => {
+  // publish() returns after batchSize events, so a single call left a backlog
+  // behind with nothing saying so — in the command whose stated reason to publish
+  // is that nothing else ever drains the queue.
+  const workspace = linkedWorkspace();
+  for (let index = 0; index < 60; index += 1) {
+    expectSuccess(runCli(workspace, [
+      "remember", workspace.db, workspace.project, "context", `Fact number ${index} worth keeping`
+    ]));
+  }
+  let accepted = 0;
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      response.writeHead(200, { "content-type": "application/json" });
+      if (requested.pathname === "/v1/events:pull" ) {
+        response.end(JSON.stringify({ events: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      if (requested.pathname === "/v1/updates:fetch") {
+        response.end(JSON.stringify({ updates: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      const events = (JSON.parse(body || "{}") as { events?: { eventId: string }[] }).events ?? [];
+      accepted += events.length;
+      response.end(JSON.stringify({
+        acceptedEventIds: events.map(event => event.eventId),
+        duplicateEventIds: [],
+        serverCursor: "cur_1"
+      }));
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const synced = parseJson<{
+    published: { pushed: number };
+    outboxDrained: boolean;
+    pendingOutboxEvents: number;
+  }>(await runCliAsync(workspace, ["sync", workspace.db, workspace.project, "--url", url]));
+
+  assert.equal(synced.published.pushed, 60, "one run publishes past the batch size");
+  assert.equal(accepted, 60);
+  assert.equal(synced.outboxDrained, true);
+  assert.equal(synced.pendingOutboxEvents, 0);
+});
+
+test("sync reports each direction, so a partial run cannot claim to be local", { skip: localEndpointBusy() }, async t => {
+  // Publishing succeeded and the fetch failed: reporting one "local-fallback"
+  // for the pair printed `pushed: N` next to a claim that nothing left the
+  // device. Only the default endpoint can reach this state — a URL the user
+  // named fails loudly instead — so the test owns 127.0.0.1:8787, which the skip
+  // above has already confirmed is free.
+  const workspace = linkedWorkspace(["Kafka is the queue"]);
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      if (requested.pathname === "/v1/updates:fetch") {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "index rebuild in progress" }));
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json" });
+      const events = (JSON.parse(body || "{}") as { events?: { eventId: string }[] }).events ?? [];
+      response.end(JSON.stringify({
+        acceptedEventIds: events.map(event => event.eventId),
+        duplicateEventIds: [],
+        serverCursor: "cur_1"
+      }));
+    });
+  });
+  await new Promise<void>(resolve => server.listen(8787, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+
+  const synced = parseJson<{
+    sync: string;
+    publish: string;
+    published: { pushed: number };
+    fetch: string;
+    fetchError?: string;
+  }>(await runCliAsync(workspace, ["sync", workspace.db, workspace.project]));
+
+  assert.equal(synced.sync, "partial");
+  assert.equal(synced.publish, "endpoint");
+  assert.equal(synced.published.pushed, 1);
+  assert.equal(synced.fetch, "local-fallback");
+  assert.match(synced.fetchError ?? "", /index rebuild in progress/);
+});
+
+test("sync reports what arrived, not a queue it already drained", () => {
+  // The preview was computed one line before the apply, so an agent summarizing
+  // it told the user "these are waiting for review" about updates the same
+  // command had just merged.
+  const workspace = linkedWorkspace();
+
+  const synced = parseJson<{
+    arrived: { pending: unknown[] };
+    applied: { applied: number; remaining: number };
+  }>(runCli(workspace, ["sync", workspace.db, workspace.project]));
+
+  assert.equal(synced.arrived.pending.length, synced.applied.applied + synced.applied.remaining);
 });

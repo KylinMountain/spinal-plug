@@ -80,8 +80,15 @@ export class ClaudeAutoMemoryImporter {
       const sourcePath = join(directory, relativePath);
       const raw = readFileSync(sourcePath, "utf8");
       const statement = stripFrontmatter(raw);
-      if (!statement || containsLikelySecret(statement)) {
-        if (containsLikelySecret(statement)) skippedSecretFiles += 1;
+      if (!statement) return [];
+      // The detector has to see every field that becomes durable memory, not
+      // just the body. The title comes from frontmatter `name`, a heading, or
+      // the filename, and a secret there passed this filter only to be refused
+      // at the write — which aborted the whole import over one file instead of
+      // skipping it.
+      const title = topicTitle(relativePath, raw);
+      if (containsLikelySecret(statement) || containsLikelySecret(title)) {
+        skippedSecretFiles += 1;
         return [];
       }
       const sourceUri = `${this.sourceUriPrefix(space.spaceId)}${relativePath}`;
@@ -91,7 +98,7 @@ export class ClaudeAutoMemoryImporter {
         .slice(0, 32)}`;
       return [{
         memoryId,
-        title: topicTitle(relativePath, raw),
+        title,
         statement,
         sourceUri,
         semanticKey: `claude-topic:${relativePath.toLowerCase()}`
@@ -115,10 +122,33 @@ const LEGACY_MANAGED_FILE = "spinal-plug-synced.md";
  * An id that needed sanitizing gets a short digest of the original, so two
  * distinct ids can never fold into the same managed file.
  */
-function managedFilename(memoryId: string): string {
+function managedStem(memoryId: string): string {
   const safe = memoryId.replace(/[^a-zA-Z0-9_-]/g, "-");
   const suffix = safe === memoryId ? "" : `-${createHash("sha256").update(memoryId).digest("hex").slice(0, 8)}`;
-  return `${MANAGED_PREFIX}${safe}${suffix}.md`;
+  return `${safe}${suffix}`;
+}
+
+function managedFilename(memoryId: string): string {
+  return `${MANAGED_PREFIX}${managedStem(memoryId)}.md`;
+}
+
+/**
+ * The frontmatter name identifies the file to the host, so it needs the same
+ * injectivity as the filename. A truncated id gave neither: `mem_<uuid>` keeps
+ * only four hex characters, and every candidate id collapses to `mem_cand`.
+ * Sanitizing also keeps a remote-minted id from breaking the YAML block.
+ */
+function managedName(kind: string, memoryId: string): string {
+  return `spinal-plug-${kind.replace(/[^a-zA-Z0-9_-]/g, "-")}-${managedStem(memoryId)}`;
+}
+
+/**
+ * Every frontmatter value here comes from a record that may have been minted
+ * elsewhere. A double-quoted YAML scalar is JSON-compatible, so quoting keeps a
+ * newline in any of them from opening a key of the attacker's choosing.
+ */
+function yamlScalar(value: string): string {
+  return JSON.stringify(value);
 }
 
 export interface ClaudeMemoryMaterializationResult {
@@ -164,12 +194,12 @@ export class ClaudeAutoMemoryMaterializer {
       const filePath = join(directory, filename);
       const frontmatter = [
         "---",
-        `name: spinal-plug-${memory.kind}-${memory.memoryId.slice(0, 8)}`,
+        `name: ${managedName(memory.kind, memory.memoryId)}`,
         `description: "Managed by Spinal Plug; do not edit."`,
         "metadata:",
         "  node_type: memory",
-        `  type: ${memory.kind}`,
-        memory.updatedAt ? `  modified: ${memory.updatedAt}` : null,
+        `  type: ${yamlScalar(memory.kind)}`,
+        memory.updatedAt ? `  modified: ${yamlScalar(memory.updatedAt)}` : null,
         "---",
         ""
       ].filter(Boolean).join("\n");

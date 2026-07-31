@@ -99,6 +99,7 @@ FETCH                 PREVIEW                 APPLY                 PROJECT
 | --- | --- | --- |
 | **Claude Code** | `ONLINE` | 生命周期 Hook + 受管 Auto Memory 投影。 |
 | **Codex** | `ONLINE` | 生命周期 Hook + 有界候选提取 + 保留原生记忆投影。 |
+| **其他 Agent** | `ONLINE` | 宿主无关 Skill：无 Hook、无原生投影，记忆经 `boot` 输出注入。 |
 | **Future Hosts** | `STANDBY` | 通过 Adapter Contract 与 MCP Surface 扩展。 |
 
 Spinal Plug 不取代宿主记忆，也不覆盖用户自己写的内容。它只维护带受管标识的投影块。
@@ -109,12 +110,21 @@ Spinal Plug 不取代宿主记忆，也不覆盖用户自己写的内容。它�
 
 ## 快速接入
 
-### 01 / 构建客户端
+### 01 / 安装客户端
+
+已发布 tag 后，客户端是一个零依赖单文件：
+
+```bash
+npm install -g @spinal-plug/cli
+```
+
+从源码构建（首个 tag 之前唯一的方式，也是开发客户端时用的方式）：
 
 ```bash
 pnpm install
 pnpm build
 pnpm typecheck
+pnpm -C packages/cli link --global   # 把 spinal-plug 挂到 PATH
 ```
 
 ### 02 / 锁定当前项目
@@ -151,6 +161,16 @@ Codex 与 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可
 /spinal-plug:boot
 ```
 
+### 05 / 在没有插件的 Agent 中使用
+
+其他能加载 SKILL.md 并运行 shell 命令的 agent（Qoder、Gemini CLI、自研 agent）无需插件，直接接入 [`skills/spinal-plug/`](./skills/spinal-plug/SKILL.md)：
+
+```bash
+ln -s "$PWD/skills/spinal-plug" ~/.your-agent/skills/spinal-plug
+```
+
+这类宿主没有生命周期 Hook，也没有可写入的原生记忆面，因此记忆通过 `boot` 的输出注入上下文——同步之后需要重新 `boot`，会话结束前由 agent 主动提议 `share`。安装、验证与差异说明见 [`skills/README.md`](./skills/README.md)。
+
 ## 项目状态
 
 当前版本聚焦项目级持久记忆、宿主原生投影、本地优先存储和选择性同步。`Mind Core`、`Mind Capsule`、`Incarnation` 与更完整的工作交接已保留扩展方向，但不承诺不同模型会产生完全相同的行为。
@@ -167,6 +187,10 @@ Codex 与 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可
 pnpm test
 pnpm typecheck
 ```
+
+## 许可
+
+Apache License 2.0，见 [LICENSE](./LICENSE)。
 
 ---
 

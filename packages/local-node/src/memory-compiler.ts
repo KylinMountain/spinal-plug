@@ -29,6 +29,9 @@ const ORIGIN_PRIORITY: Record<MemoryOrigin, number> = {
   agent_inferred: 1
 };
 
+/** Stable stand-in when there is no event to take a watermark from. */
+const EMPTY_COMPILATION_WATERMARK = "1970-01-01T00:00:00.000Z";
+
 function normalize(value: string): string {
   return value
     .normalize("NFKC")
@@ -81,10 +84,33 @@ function isMemoryPayload(payload: EventEnvelope["payload"]): payload is MemoryPa
   );
 }
 
-function rank(record: CompiledRecord): number {
-  return (ORIGIN_PRIORITY[record.origin ?? "sync_import"] * 1_000_000)
-    + ((record.confidence ?? 0) * 10_000)
-    + record.sequence;
+// A record still under review must never outrank one the user already stands
+// behind, whatever its provenance or confidence.
+const STATUS_PRIORITY: Partial<Record<MemoryStatus, number>> = {
+  active: 3,
+  disputed: 2,
+  candidate: 1
+};
+
+/**
+ * Orders two records for the same statement, strongest first.
+ *
+ * This used to pack the three signals into one number —
+ * `origin * 1e6 + confidence * 1e4 + sequence` — where confidence occupied only
+ * the 1e4 band, so a Space's ten-thousandth event outweighed any confidence
+ * difference and its millionth outweighed provenance entirely: the winner then
+ * came down to arrival order. Comparing field by field cannot overflow, and
+ * status now takes part so a candidate cannot supersede an active record.
+ */
+function compareStrength(left: CompiledRecord, right: CompiledRecord): number {
+  const statusOf = (record: CompiledRecord) => STATUS_PRIORITY[record.status] ?? 0;
+  return statusOf(right) - statusOf(left)
+    || ORIGIN_PRIORITY[right.origin ?? "sync_import"] - ORIGIN_PRIORITY[left.origin ?? "sync_import"]
+    || (right.confidence ?? 0) - (left.confidence ?? 0)
+    // Later wins among equals, and the id breaks the last tie so the result
+    // never depends on input order.
+    || right.sequence - left.sequence
+    || left.memoryId.localeCompare(right.memoryId);
 }
 
 function unique(values: string[]): string[] {
@@ -201,7 +227,7 @@ export class MemoryCompiler {
 
       const deduplicated: CompiledRecord[] = [];
       for (const variants of byStatement.values()) {
-        const winner = [...variants].sort((left, right) => rank(right) - rank(left))[0];
+        const winner = [...variants].sort(compareStrength)[0];
         winner.sourceEventIds = unique(variants.flatMap(record => record.sourceEventIds ?? []));
         winner.references = unique(variants.flatMap(record => record.references));
         deduplicated.push(winner);
@@ -253,7 +279,18 @@ export class MemoryCompiler {
       right.updatedAt.localeCompare(left.updatedAt) || left.memoryId.localeCompare(right.memoryId);
     return {
       spaceId,
-      generatedAt: new Date().toISOString(),
+      // A wall clock here made the same input compile to a different output every
+      // time, which defeats comparing or caching a compilation and contradicts
+      // this class being deterministic. The watermark of the input says the same
+      // thing usefully: the newest event this result accounts for. Take the
+      // largest timestamp rather than the last position — events are ordered by
+      // sequence, and `createdAt` comes from whichever device minted the event,
+      // so a late import with an older clock would otherwise move the watermark
+      // backwards. An empty input has none, and the epoch keeps that stable.
+      generatedAt: events.reduce(
+        (newest, { event }) => (event.createdAt > newest ? event.createdAt : newest),
+        EMPTY_COMPILATION_WATERMARK
+      ),
       active: output.filter(record => record.status === "active").sort(byUpdatedAt),
       candidates: output.filter(record => record.status === "candidate").sort(byUpdatedAt),
       disputed: output.filter(record => record.status === "disputed").sort(byUpdatedAt),

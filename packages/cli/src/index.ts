@@ -18,8 +18,7 @@ import {
   SecretMaterialError
 } from "@spinal-plug/local-node";
 import type { MindCapsule, MemoryKind, ProjectSpace } from "@spinal-plug/protocol";
-
-const MEMORY_KINDS: ReadonlySet<string> = new Set(["directive", "decision", "context", "reference"]);
+import { MEMORY_KINDS } from "@spinal-plug/protocol";
 const RUNTIME_ENTITIES: ReadonlySet<string> = new Set([
   "mind-core",
   "role",
@@ -90,6 +89,11 @@ For you:
                                                      --url or SPINAL_PLUG_SYNC_URL is set, local-only otherwise
   handoff <db-path> <project-dir> <json>           Save work state for another Agent to pick up
   handoff <db-path> <project-dir> --latest|--list  Show the newest handoff, or list them
+  sync <db-path> <project-dir> [--host <host>] [--url <url>] [--device-id <id>]
+                                                     One turn of the whole loop: publish what is queued,
+                                                     fetch, preview and apply. Stays in local mode without
+                                                     complaint when no endpoint answers; --host also
+                                                     refreshes that host's native memory
 
 For your Agent (driven by the plugin skill and lifecycle hooks):
   remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
@@ -107,7 +111,7 @@ For your Agent (driven by the plugin skill and lifecycle hooks):
   project <db-path> <project-dir> <host>           Refresh a host's native memory from local state (no network)
   hook-stdin <host> <db-path>                      Read a host Hook payload from stdin
 
-Only with a configured sync endpoint:
+Only with a configured sync endpoint (sync above composes these three):
   fetch <db-path> <project-dir> <url> [device-id]  Fetch updates without applying optional changes.
                                                      Without an id, the credential from
                                                      ~/.spinal-plug/device.env identifies this device
@@ -171,7 +175,7 @@ function digest(value: string): string {
 }
 
 function requireMemoryKind(value: string): MemoryKind {
-  if (!MEMORY_KINDS.has(value)) {
+  if (!(MEMORY_KINDS as readonly string[]).includes(value)) {
     throw new Error(`Unsupported memory kind: ${value}`);
   }
   return value as MemoryKind;
@@ -224,7 +228,17 @@ function takeLeadingFlags(
       index += 2;
     }
   }
-  return { flags, rest: args.slice(index) };
+  const rest = args.slice(index);
+  // Keeping the text verbatim means a flag written after it was absorbed into
+  // the text and its intent lost without a word — `share <kind> "<text>" --key
+  // decision:queue` stored the flag as part of the statement and no semantic
+  // key at all. Refuse it instead: prose that genuinely needs to contain a flag
+  // token can say so in words, but a misplaced flag must never pass silently.
+  const misplaced = rest.find(argument => Object.hasOwn(spec, argument));
+  if (misplaced !== undefined) {
+    throw new Error(`Flag ${misplaced} must appear before the text argument, not after it.`);
+  }
+  return { flags, rest };
 }
 
 function resolveAdapter(host: string): SpinalPlugAdapter {
@@ -301,6 +315,14 @@ type PublishResult = Awaited<ReturnType<SpinalPlugSyncClient["publish"]>>;
  * compile here instead of drifting at each call site.
  */
 const LOCAL_ONLY_PUBLISH_RESULT: PublishResult = { pushed: 0, duplicates: 0 };
+
+/**
+ * Bounds one `sync` run's publication. `publish` sends a batch at a time, so
+ * draining needs a loop, and a loop over remote input needs a ceiling: 100
+ * batches is 5000 events, far past any real backlog, and hitting it is reported
+ * rather than hidden.
+ */
+const MAX_PUBLISH_BATCHES_PER_SYNC = 100;
 
 /**
  * Publish if the endpoint answers. Failures degrade to local mode — unless
@@ -1033,9 +1055,12 @@ async function main(): Promise<void> {
     const endpoint = typeof flags["--url"] === "string" && (flags["--url"] as string).trim()
       ? { url: (flags["--url"] as string).trim(), explicit: true }
       : resolveSyncEndpoint();
-    const deviceId = typeof flags["--device-id"] === "string" && flags["--device-id"]
-      ? flags["--device-id"] as string
-      : resolveDeviceId();
+    // Same trimming invariant as every other call site: a blank argument (an
+    // unexpanded shell variable in a plugin script) must not shadow the stored
+    // credential with an identity the endpoint will reject.
+    const deviceId = resolveDeviceId(
+      typeof flags["--device-id"] === "string" ? flags["--device-id"] as string : undefined
+    );
     const statement = statementParts.join(" ");
     if (!kind || !statement) {
       throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>");
@@ -1341,6 +1366,97 @@ async function main(): Promise<void> {
     }
     const materialized = materializeHostProjection(host, space, service, projectPath);
     console.log(JSON.stringify({ applied, materialized }, null, 2));
+    return;
+  }
+  if (command === "sync") {
+    // One turn of the whole loop, because that is the unit every caller wanted:
+    // the skills all spelled it out as fetch → preview → apply, and each step
+    // handled its own endpoint failure differently. Publishing comes first so a
+    // handoff or memory recorded locally actually leaves the device — "sync"
+    // means both directions everywhere else, and on a host with no lifecycle
+    // hooks nothing else would ever flush the outbox.
+    const { flags } = takeLeadingFlags(rest, {
+      "--host": "value",
+      "--url": "value",
+      "--device-id": "value"
+    });
+    const host = typeof flags["--host"] === "string" ? requireHost(flags["--host"]) : undefined;
+    const endpoint = typeof flags["--url"] === "string" && (flags["--url"] as string).trim()
+      ? { url: (flags["--url"] as string).trim(), explicit: true }
+      : resolveSyncEndpoint();
+    const deviceId = resolveDeviceId(
+      typeof flags["--device-id"] === "string" ? flags["--device-id"] as string : undefined
+    );
+
+    // Publish drains, rather than sending one batch: `publish` returns after
+    // `batchSize` events, so a device holding three hundred would have needed
+    // six invocations with nothing saying so — and draining the outbox is the
+    // reason this command publishes at all.
+    const published = { pushed: 0, duplicates: 0, skippedSecrets: 0 };
+    // "nothing-queued" is not the same as falling back: an empty outbox means
+    // publication was never attempted, and calling that local mode would make a
+    // healthy fetch-only run look half-broken.
+    let publishMode: "endpoint" | "local-fallback" | "nothing-queued" = "nothing-queued";
+    let outboxDrained = true;
+    for (let batch = 0; ; batch += 1) {
+      if (database.listPendingOutboxForSpace(space.spaceId, 1).length === 0) break;
+      if (batch >= MAX_PUBLISH_BATCHES_PER_SYNC) {
+        outboxDrained = false;
+        break;
+      }
+      const { result, mode } = await tryPublish(
+        database,
+        space.spaceId,
+        deviceId,
+        endpoint.url,
+        endpoint.explicit
+      );
+      publishMode = mode;
+      published.pushed += result.pushed;
+      published.duplicates += result.duplicates;
+      published.skippedSecrets += result.skippedSecrets ?? 0;
+      // In local mode the outbox keeps everything for a later run, and a batch
+      // that moved nothing would loop forever.
+      if (mode !== "endpoint") break;
+      if (result.pushed + result.duplicates + (result.skippedSecrets ?? 0) === 0) break;
+    }
+
+    // A fetch is the one step that cannot degrade on its own: it either reaches
+    // an endpoint or throws. In local mode that is the expected answer, not a
+    // fault — but the reason is still reported, because "nothing was listening"
+    // and "the endpoint answered 500 halfway through" are not the same news and
+    // the second one leaves a half-advanced cursor behind.
+    let fetched: Awaited<ReturnType<SpinalPlugSyncClient["fetch"]>> | null = null;
+    let fetchError: string | undefined;
+    try {
+      fetched = await new SpinalPlugSyncClient(database, createSyncTransport(endpoint.url))
+        .fetch(space.spaceId, deviceId);
+    } catch (error) {
+      if (endpoint.explicit) throw error;
+      fetchError = error instanceof Error ? error.message : String(error);
+    }
+
+    // Read the queue before applying it. Reporting the queue afterwards would
+    // describe updates this same command already merged as still awaiting review.
+    const arrived = database.previewCanonicalUpdates(space.spaceId);
+    const applied = database.applyCanonicalUpdates(space.spaceId);
+    const fetchMode = fetched ? "endpoint" : "local-fallback";
+    console.log(JSON.stringify({
+      // Each direction reports its own outcome, so a run that published and then
+      // failed to fetch cannot claim to have stayed local while showing a push.
+      sync: publishMode === "nothing-queued" || publishMode === fetchMode ? fetchMode : "partial",
+      endpoint: endpoint.url,
+      publish: publishMode,
+      published,
+      outboxDrained,
+      fetch: fetchMode,
+      fetched,
+      ...(fetchError ? { fetchError } : {}),
+      arrived,
+      applied,
+      ...(host ? { materialized: materializeHostProjection(host, space, service, projectPath) } : {}),
+      pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length
+    }, null, 2));
     return;
   }
   if (command === "project") {

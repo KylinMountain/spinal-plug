@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -71,4 +72,49 @@ test("rejects likely secret material in handoffs", () => {
     }),
     /Refusing to store likely secret material/
   );
+});
+
+/** A database as it looked before the checkpoint→handoff rename. */
+function databaseWithLegacyCheckpoints(rows: string[]): string {
+  const path = join(mkdtempSync(join(tmpdir(), "spinal-plug-legacy-")), "local.db");
+  const legacy = new DatabaseSync(path);
+  legacy.exec("CREATE TABLE project_checkpoints (checkpoint_id TEXT PRIMARY KEY)");
+  for (const row of rows) legacy.exec(`INSERT INTO project_checkpoints VALUES ('${row}')`);
+  legacy.close();
+  return path;
+}
+
+function tablesIn(path: string): string[] {
+  const inspector = new DatabaseSync(path, { readOnly: true });
+  const tables = (inspector.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
+    .map(row => row.name);
+  inspector.close();
+  return tables;
+}
+
+test("init clears an empty pre-rename checkpoint table", () => {
+  // The rename created a new table beside the old one instead of migrating it,
+  // and an orphaned table reads like a live one.
+  const path = databaseWithLegacyCheckpoints([]);
+
+  new SpinalPlugDatabase(path).init();
+
+  const tables = tablesIn(path);
+  assert.ok(!tables.includes("project_checkpoints"), "an empty legacy table must not survive init");
+  assert.ok(tables.includes("project_handoffs"));
+});
+
+test("init keeps a populated pre-rename checkpoint table", () => {
+  // Nothing reads these rows and no command exports them, which is exactly why
+  // deleting them would be unrecoverable. Tidying up is not worth destroying the
+  // only copy a source install has.
+  const path = databaseWithLegacyCheckpoints(["chk_old", "chk_older"]);
+
+  new SpinalPlugDatabase(path).init();
+
+  assert.ok(tablesIn(path).includes("project_checkpoints"), "rows must not be dropped silently");
+  const inspector = new DatabaseSync(path, { readOnly: true });
+  const remaining = inspector.prepare("SELECT count(*) AS count FROM project_checkpoints").get() as { count: number };
+  inspector.close();
+  assert.equal(remaining.count, 2);
 });

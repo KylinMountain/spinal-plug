@@ -99,6 +99,7 @@ You can see what another incarnation learned without immediately changing the cu
 | --- | --- | --- |
 | **Claude Code** | `ONLINE` | Lifecycle hooks plus a managed Auto Memory projection. |
 | **Codex** | `ONLINE` | Lifecycle hooks, bounded candidate extraction, and a reserved native-memory projection. |
+| **Any other agent** | `ONLINE` | Host-agnostic skill: no hooks, no native projection, memory arrives through `boot` output. |
 | **Future Hosts** | `STANDBY` | Extend through the Adapter Contract and MCP Surface. |
 
 Spinal Plug does not replace host memory or overwrite user-owned content. It only maintains its own managed projection blocks.
@@ -109,12 +110,22 @@ Spinal Plug does not replace host memory or overwrite user-owned content. It onl
 
 ## Quick Arm
 
-### 01 / Build the client
+### 01 / Install the client
+
+From a tagged release the client is a single dependency-free file:
+
+```bash
+npm install -g @spinal-plug/cli
+```
+
+From source — the only option before the first tag, and what to use while
+developing the client:
 
 ```bash
 pnpm install
 pnpm build
 pnpm typecheck
+pnpm -C packages/cli link --global   # exposes `spinal-plug` on PATH
 ```
 
 ### 02 / Lock the current project
@@ -151,6 +162,16 @@ Marketplace manifests for Codex and Claude Code are under `plugins/`. After inst
 /spinal-plug:boot
 ```
 
+### 05 / Use it in an agent without a plugin
+
+Any other agent that can load a SKILL.md and run shell commands (Qoder, Gemini CLI, an in-house agent) needs no plugin — point it at [`skills/spinal-plug/`](./skills/spinal-plug/SKILL.md):
+
+```bash
+ln -s "$PWD/skills/spinal-plug" ~/.your-agent/skills/spinal-plug
+```
+
+Such a host has no lifecycle hooks and no native memory surface to write into, so memory enters the context through `boot` output: re-boot after a sync, and the agent offers `share` before the work wraps up. Installation, verification, and the full list of differences are in [`skills/README.md`](./skills/README.md).
+
 ## Project Status
 
 The current release focuses on project-scoped durable memory, native host projections, local-first storage, and selective synchronization. `Mind Core`, `Mind Capsule`, `Incarnation`, and richer work-state handoff are modeled as extensible runtime concepts, not promises of identical behavior between models.
@@ -167,6 +188,10 @@ The current release focuses on project-scoped durable memory, native host projec
 pnpm test
 pnpm typecheck
 ```
+
+## License
+
+Apache License 2.0. See [LICENSE](./LICENSE).
 
 ---
 

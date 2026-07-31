@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ProjectSpace } from "@spinal-plug/protocol";
+import type { EventEnvelope, ProjectSpace } from "@spinal-plug/protocol";
 import { SpinalPlugDatabase } from "./index.js";
 import { ProjectMemoryService } from "./project-memory-service.js";
 
@@ -146,4 +146,88 @@ test("rejects new secret material and excludes legacy secret records from projec
   assert.equal(database.getMemory(legacyMemory.memoryId)?.memoryId, legacyMemory.memoryId);
   assert.equal(service.list(space).some(memory => memory.memoryId === legacyMemory.memoryId), false);
   assert.doesNotMatch(service.createBootProjection(space).content, /Legacy secret record/);
+});
+
+test("a remote memory event with an unsupported kind is refused", () => {
+  // The protocol schema declares kind as an enum, but the apply path only
+  // checked it for truthiness — and host projections interpolate it into their
+  // own formats, so a free string reaches YAML on another device.
+  const { database } = openTestDatabase();
+  const event = {
+    schemaVersion: 1,
+    eventId: "evt_hostile_kind",
+    eventType: "memory.created",
+    eventVersion: 1,
+    accountId: "local",
+    personaId: "persona_default",
+    spaceId: space.spaceId,
+    actor: {
+      deviceId: "device:other",
+      agentInstallationId: "other",
+      host: "spinal-plug",
+      sessionId: "remote",
+      adapterVersion: "0.1.0"
+    },
+    causality: { parentEventIds: [] },
+    runtimeContext: {
+      incarnationId: null,
+      roleProfileId: null,
+      missionId: null,
+      branchId: null,
+      taskCheckpointId: null
+    },
+    payload: {
+      memoryId: "mem_remote_hostile",
+      kind: "decision\ninjected: yes",
+      title: "Hostile",
+      statement: "Injected through the kind field"
+    },
+    createdAt: "2026-07-31T00:00:00.000Z",
+    idempotencyKey: "evt_hostile_kind"
+  } as unknown as EventEnvelope;
+
+  // Skipped, not thrown: a throw rolls the batch back and leaves the cursor
+  // unadvanced, so one bad event would block every good one behind it forever.
+  assert.equal(database.applyRemoteMemoryEvents([event]), 0);
+  assert.equal(database.getMemory("mem_remote_hostile"), null, "the rejected event must not be stored");
+});
+
+test("a canonical update with an unsupported kind is skipped, not applied", () => {
+  // This is the ingress that actually runs on a fetch: storeCanonicalUpdates →
+  // applyCanonicalUpdates → upsertMemory. Validating only the unused
+  // event-replay path would have left it open.
+  const { database } = openTestDatabase();
+  const stored = database.storeCanonicalUpdates([
+    {
+      schema: "spinal-plug.canonical-update/v0.1",
+      updateId: "upd_hostile_kind",
+      spaceId: space.spaceId,
+      memoryId: "mem_canonical_hostile",
+      kind: "activate",
+      required: false,
+      memory: {
+        schema: "spinal-plug.memory-record/v0.1",
+        memoryId: "mem_canonical_hostile",
+        spaceId: space.spaceId,
+        kind: "decision\ninjected: yes",
+        title: "Hostile",
+        statement: "Injected through the kind field",
+        references: [],
+        status: "active",
+        sourceEventIds: [],
+        createdFromEventId: "evt_x",
+        lastUpdatedFromEventId: "evt_x",
+        createdAt: "2026-07-31T00:00:00.000Z",
+        updatedAt: "2026-07-31T00:00:00.000Z"
+      },
+      generatedAt: "2026-07-31T00:00:00.000Z"
+    }
+  ] as unknown as Parameters<SpinalPlugDatabase["storeCanonicalUpdates"]>[0]);
+  assert.equal(stored, 1);
+
+  const result = database.applyCanonicalUpdates(space.spaceId);
+
+  assert.equal(result.applied, 0);
+  assert.equal(result.rejected, 1);
+  assert.equal(database.getMemory("mem_canonical_hostile"), null);
 });

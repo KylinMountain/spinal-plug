@@ -17,12 +17,18 @@ export interface SpinalPlugStatus {
  * Host-neutral tool implementation. Transport wiring stays outside M1 so the
  * same service can be exposed by each host's public MCP configuration.
  */
+export interface SpinalPlugMcpServerOptions {
+  /** Test seam; production resolves bindings from the real home directory. */
+  homeDirectory?: string;
+}
+
 export class SpinalPlugMcpServer {
   private readonly memories: ProjectMemoryService;
-  private readonly spaces = new ProjectSpaceResolver();
+  private readonly spaces: ProjectSpaceResolver;
 
-  constructor(private readonly database: SpinalPlugDatabase) {
+  constructor(private readonly database: SpinalPlugDatabase, options: SpinalPlugMcpServerOptions = {}) {
     this.memories = new ProjectMemoryService(database);
+    this.spaces = new ProjectSpaceResolver(options.homeDirectory ? { homeDirectory: options.homeDirectory } : {});
   }
 
   listTools(): McpToolDescriptor[] {

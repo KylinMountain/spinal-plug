@@ -13,6 +13,7 @@ import type {
   SyncCursor,
   SyncPreview
 } from "@spinal-plug/protocol";
+import { isMemoryKind } from "@spinal-plug/protocol";
 import { sqliteSchema } from "./schema.js";
 
 export interface CandidateMemoryDraft {
@@ -143,6 +144,7 @@ export class SpinalPlugDatabase {
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec(sqliteSchema);
     this.ensureMemoryColumns();
+    this.dropLegacyCheckpointTable();
   }
 
   appendEvent(event: EventEnvelope): void {
@@ -537,10 +539,21 @@ export class SpinalPlugDatabase {
     `);
     let applied = 0;
     let requiredApplied = 0;
+    let rejected = 0;
     const appliedUpdateIds: string[] = [];
     try {
       this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
       for (const update of updates) {
+        // This is the ingress that actually runs on a fetch, and host
+        // projections interpolate `kind` into their own formats. A kind outside
+        // the protocol enum is skipped and counted rather than thrown: a throw
+        // here would roll the batch back and leave the cursor unadvanced, so one
+        // unknown kind — a server that later adds a fifth — would wedge this
+        // device's sync permanently.
+        if (!isMemoryKind(update.memory.kind)) {
+          rejected += 1;
+          continue;
+        }
         this.upsertMemory(update.memory);
         const result = markApplied.run(new Date().toISOString(), update.updateId);
         if (Number(result.changes) === 0) continue;
@@ -554,7 +567,7 @@ export class SpinalPlugDatabase {
       throw error;
     }
     const remaining = this.previewCanonicalUpdates(spaceId).pending.length;
-    return { applied, requiredApplied, remaining, appliedUpdateIds };
+    return { applied, requiredApplied, remaining, appliedUpdateIds, ...(rejected ? { rejected } : {}) };
   }
 
   listPendingOutbox(limit = 50): EventEnvelope[] {
@@ -669,6 +682,12 @@ export class SpinalPlugDatabase {
         if (!payload.memoryId || !payload.kind || !payload.title || !payload.statement) {
           throw new Error(`Invalid remote memory event payload: ${event.eventId}`);
         }
+        // The kind is an enum in the protocol schema but arrives as a free
+        // string. Skip the event rather than throwing, the way the handoff path
+        // already does for a malformed payload: a throw rolls back the batch and
+        // leaves the cursor where it was, so one bad event blocks every good one
+        // behind it forever.
+        if (!isMemoryKind(payload.kind)) continue;
         const existing = this.getMemory(payload.memoryId);
         const memory: MemoryRecord = {
           schema: "spinal-plug.memory-record/v0.1",
@@ -921,6 +940,25 @@ export class SpinalPlugDatabase {
     for (const [name, definition] of additions) {
       if (!existing.has(name)) this.db.exec(`ALTER TABLE memories ADD COLUMN ${name} ${definition}`);
     }
+  }
+
+  /**
+   * The checkpoint→handoff rename created `project_handoffs` beside the old
+   * `project_checkpoints` rather than migrating it, and an orphaned table
+   * invites a future reader to mistake it for a live one. Clear it away only
+   * when it holds nothing: no client has been released, but source installs
+   * predate the rename, and rows no code reads are still the only copy those
+   * devices have. Dropping an empty table costs its owner nothing; dropping a
+   * populated one is a decision that belongs to whoever owns the data.
+   */
+  private dropLegacyCheckpointTable(): void {
+    const legacy = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_checkpoints'")
+      .get();
+    if (!legacy) return;
+    const rows = this.db.prepare("SELECT count(*) AS count FROM project_checkpoints").get() as { count: number };
+    if (rows.count > 0) return;
+    this.db.exec("DROP TABLE project_checkpoints");
   }
 }
 

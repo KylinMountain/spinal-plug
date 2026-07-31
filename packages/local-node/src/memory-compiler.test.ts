@@ -145,3 +145,78 @@ test("explicit resolution closes an existing conflict", () => {
   assert.equal(compilation.disputes.length, 0);
 });
 
+
+test("a high sequence number cannot outrank provenance or confidence", () => {
+  // Regression: rank packed the signals into one number, giving confidence only
+  // the 1e4 band and origin the 1e6 band. Past ten thousand events the sequence
+  // decided the winner; past a million, arrival order decided everything.
+  const compiler = new MemoryCompiler();
+  const weakButLate = memoryEvent({
+    id: "evt_late",
+    memoryId: "mem_inferred",
+    statement: "Kafka is the queue",
+    origin: "agent_inferred",
+    confidence: 1
+  });
+  const strongButEarly = memoryEvent({
+    id: "evt_early",
+    memoryId: "mem_user",
+    statement: "Kafka is the queue",
+    origin: "user_explicit",
+    confidence: 1
+  });
+
+  const compiled = compiler.compile(spaceId, [
+    { sequence: 1, event: strongButEarly },
+    { sequence: 5_000_000, event: weakButLate }
+  ]);
+
+  assert.deepEqual(compiled.active.map(record => record.memoryId), ["mem_user"]);
+  assert.equal(compiled.superseded[0]?.memoryId, "mem_inferred");
+  assert.equal(compiled.superseded[0]?.supersededByMemoryId, "mem_user");
+});
+
+test("a candidate never supersedes an active record", () => {
+  // Regression: grouping excluded only deleted and superseded records, and rank
+  // ignored status — so a candidate with stronger provenance took over an active
+  // record and marked it superseded.
+  const compiler = new MemoryCompiler();
+  const active = memoryEvent({
+    id: "evt_active",
+    memoryId: "mem_active",
+    statement: "Kafka is the queue",
+    origin: "sync_import",
+    confidence: 0.8
+  });
+  const candidate = memoryEvent({
+    id: "evt_candidate",
+    memoryId: "mem_candidate",
+    statement: "Kafka is the queue",
+    eventType: "memory.candidate.created",
+    origin: "user_explicit",
+    confidence: 1
+  });
+
+  const compiled = compiler.compile(spaceId, sequence(active, candidate));
+
+  assert.deepEqual(compiled.active.map(record => record.memoryId), ["mem_active"]);
+  assert.equal(compiled.candidates.length, 0, "the duplicate candidate is superseded, not promoted");
+  assert.equal(compiled.superseded[0]?.supersededByMemoryId, "mem_active");
+});
+
+test("compiling the same events twice produces the same result", () => {
+  // Regression: generatedAt was a wall clock, so no two compilations of one
+  // input were comparable — in a compiler whose whole contract is determinism.
+  const compiler = new MemoryCompiler();
+  const events = sequence(
+    memoryEvent({ id: "evt_01", memoryId: "mem_a", statement: "Kafka is the queue" }),
+    memoryEvent({ id: "evt_02", memoryId: "mem_b", statement: "Postgres holds the ledger", semanticKey: "decision:ledger" })
+  );
+
+  const first = compiler.compile(spaceId, events);
+  const second = compiler.compile(spaceId, events);
+
+  assert.equal(first.generatedAt, events.at(-1)?.event.createdAt, "the watermark is the newest input event");
+  assert.deepEqual(first, second);
+  assert.equal(compiler.compile(spaceId, []).generatedAt, "1970-01-01T00:00:00.000Z");
+});
