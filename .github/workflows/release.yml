@@ -1,0 +1,53 @@
+name: Release
+
+# A tag is the release trigger: v0.1.1 publishes @spinal-plug/cli@0.1.1 and
+# attaches the same bundle to the GitHub Release. The tag must match the version
+# in packages/cli/package.json, so a forgotten version bump fails here instead of
+# publishing the previous build under a new number.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+      - run: pnpm build:release
+      - name: Check the tag against the package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./release/npm/package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match @spinal-plug/cli@$version" >&2
+            exit 1
+          fi
+      - name: Publish to npm
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: npm publish ./release/npm --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish a prerelease to npm
+        if: ${{ contains(github.ref_name, '-') }}
+        run: npm publish ./release/npm --access public --provenance --tag next
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Attach the bundle to the GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --generate-notes --verify-tag || gh release upload "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
