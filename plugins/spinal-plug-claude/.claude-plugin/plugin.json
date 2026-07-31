@@ -1,6 +1,6 @@
 {
   "name": "spinal-plug",
-  "version": "0.5.0",
+  "version": "0.1.0-rc1",
   "description": "Spinal Plug neural-memory context, synchronization, candidate review, and project handoff for Claude Code.",
   "author": {
     "name": "KylinMountain"
