@@ -933,12 +933,21 @@ export class SpinalPlugDatabase {
 
   /**
    * The checkpoint→handoff rename created `project_handoffs` beside the old
-   * `project_checkpoints` rather than migrating it. No client has been released,
-   * so the pre-rename rows are development state, not user data — but leaving an
-   * orphaned table around invites a future reader to mistake it for a live one.
+   * `project_checkpoints` rather than migrating it, and an orphaned table
+   * invites a future reader to mistake it for a live one. Clear it away only
+   * when it holds nothing: no client has been released, but source installs
+   * predate the rename, and rows no code reads are still the only copy those
+   * devices have. Dropping an empty table costs its owner nothing; dropping a
+   * populated one is a decision that belongs to whoever owns the data.
    */
   private dropLegacyCheckpointTable(): void {
-    this.db.exec("DROP TABLE IF EXISTS project_checkpoints");
+    const legacy = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='project_checkpoints'")
+      .get();
+    if (!legacy) return;
+    const rows = this.db.prepare("SELECT count(*) AS count FROM project_checkpoints").get() as { count: number };
+    if (rows.count > 0) return;
+    this.db.exec("DROP TABLE project_checkpoints");
   }
 }
 

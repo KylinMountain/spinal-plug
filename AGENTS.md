@@ -74,9 +74,12 @@ current worktree is never touched.
   the command names, and the host-agnostic constraint.
 - Do not restore historical documentation wholesale.
 - Local databases created before the first release are not migrated. The
-  checkpoint→handoff rename dropped its predecessor table rather than copying it,
-  and `checkpoint.*` events are not read. Once a version is published, a schema
-  or event-type rename needs a migration and a compatibility window instead.
+  checkpoint→handoff rename left its predecessor table behind rather than copying
+  it — `init` clears that table only when it is empty — and `checkpoint.*` events
+  are not read. Never delete rows a rename orphaned: nothing reads them, so
+  nothing is gained, and they are the only copy their owner has. Once a version
+  is published, a schema or event-type rename needs a migration and a
+  compatibility window instead.
 - Reply to users in Chinese. This repository uses the KylinMountain
   GitHub account (`kose2livs@gmail.com`) for GitHub operations.
 
