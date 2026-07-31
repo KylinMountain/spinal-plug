@@ -6,6 +6,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const requiredFiles = [
   "AGENTS.md",
   "ARCHITECTURE.md",
+  "LICENSE",
   "README.md",
   "README.en.md",
   "skills/README.md",

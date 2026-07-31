@@ -189,6 +189,10 @@ pnpm test
 pnpm typecheck
 ```
 
+## License
+
+Apache License 2.0. See [LICENSE](./LICENSE).
+
 ---
 
 <p align="center">

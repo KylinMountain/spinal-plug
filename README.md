@@ -188,6 +188,10 @@ pnpm test
 pnpm typecheck
 ```
 
+## 许可
+
+Apache License 2.0，见 [LICENSE](./LICENSE)。
+
 ---
 
 <p align="center">
