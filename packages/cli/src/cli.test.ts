@@ -1125,3 +1125,67 @@ test("sync reports what arrived, not a queue it already drained", () => {
 
   assert.equal(synced.arrived.pending.length, synced.applied.applied + synced.applied.remaining);
 });
+
+test("a handoff is minted with the credential's device, so a push is not rejected", async t => {
+  // Regression: only the memory service received the credential's device id, so
+  // every handoff carried `device:<hostname>` instead. An authenticated Control
+  // Plane answers "Event device does not match credential." and rejects the whole
+  // batch, which wedges the outbox for the memories queued behind it — the
+  // cross-device handoff could never be published at all.
+  // The credential has to exist before anything is minted: an event created
+  // without one legitimately carries the hostname, and mixing the two would make
+  // this test pass or fail for the wrong reason.
+  const workspace = linkedWorkspace();
+  mkdirSync(join(workspace.home, ".spinal-plug"), { recursive: true });
+  writeFileSync(
+    join(workspace.home, ".spinal-plug", "device.env"),
+    "export SPINAL_PLUG_DEVICE_ID=dev_credential\n"
+  );
+  expectSuccess(runCli(workspace, [
+    "remember", workspace.db, workspace.project, "decision", "Kafka is the queue"
+  ]));
+  expectSuccess(runCli(workspace, [
+    "handoff", workspace.db, workspace.project, JSON.stringify({ title: "Hand this over" })
+  ]));
+
+  const devices = new Set<string>();
+  const types = new Set<string>();
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      response.writeHead(200, { "content-type": "application/json" });
+      if (requested.pathname === "/v1/events:pull") {
+        response.end(JSON.stringify({ events: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      if (requested.pathname === "/v1/updates:fetch") {
+        response.end(JSON.stringify({ updates: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      const events = (JSON.parse(body || "{}") as {
+        events?: { eventType: string; actor?: { deviceId?: string } }[];
+      }).events ?? [];
+      for (const event of events) {
+        types.add(event.eventType);
+        devices.add(event.actor?.deviceId ?? "(none)");
+      }
+      response.end(JSON.stringify({ acceptedEventIds: [], duplicateEventIds: [], serverCursor: "cur_1" }));
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  expectSuccess(await runCliAsync(workspace, ["sync", workspace.db, workspace.project, "--url", url]));
+
+  assert.ok(types.has("handoff.created"), "the handoff was part of the push");
+  assert.ok(types.has("memory.created"), "so was the memory queued beside it");
+  assert.deepEqual(
+    [...devices],
+    ["dev_credential"],
+    "every event names the credential's device, not the hostname"
+  );
+});

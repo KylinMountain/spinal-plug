@@ -146,12 +146,27 @@ function openDatabase(rawPath: string): { dbPath: string; database: SpinalPlugDa
   return { dbPath, database };
 }
 
-function createMemoryService(database: SpinalPlugDatabase): ProjectMemoryService {
-  const deviceId = process.env.SPINAL_PLUG_DEVICE_ID;
-  return new ProjectMemoryService(database, {
+function serviceIdentity(): { accountId: string; personaId: string } {
+  return {
     accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
     personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
-  }, deviceId ? { deviceId } : {});
+  };
+}
+
+/**
+ * Every event this device mints has to name the device the credential names.
+ * An authenticated Control Plane rejects a whole push with "Event device does
+ * not match credential." when one event disagrees, so a single service left
+ * without this stamps `device:<hostname>` and wedges the outbox for everything
+ * queued behind it.
+ */
+function serviceActorDefaults(): { deviceId?: string } {
+  const deviceId = process.env.SPINAL_PLUG_DEVICE_ID?.trim();
+  return deviceId ? { deviceId } : {};
+}
+
+function createMemoryService(database: SpinalPlugDatabase): ProjectMemoryService {
+  return new ProjectMemoryService(database, serviceIdentity(), serviceActorDefaults());
 }
 
 function createSyncTransport(url: string): HttpSyncTransport {
@@ -592,10 +607,7 @@ async function executeHook(
       }
       : baseProjection;
     if (capsule) {
-      new MindRuntimeService(database, {
-        accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
-        personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
-      }).spawn({
+      new MindRuntimeService(database, serviceIdentity(), serviceActorDefaults()).spawn({
         space,
         capsuleId: capsule.capsuleId,
         host,
@@ -924,14 +936,8 @@ async function main(): Promise<void> {
   const space = resolvedSpace.space;
   const { database } = openDatabase(rawDbPath);
   const service = createMemoryService(database);
-  const handoffs = new ProjectHandoffService(database, {
-    accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
-    personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
-  });
-  const runtime = new MindRuntimeService(database, {
-    accountId: process.env.SPINAL_PLUG_ACCOUNT_ID ?? "local",
-    personaId: process.env.SPINAL_PLUG_PERSONA_ID ?? "persona_default"
-  });
+  const handoffs = new ProjectHandoffService(database, serviceIdentity(), serviceActorDefaults());
+  const runtime = new MindRuntimeService(database, serviceIdentity(), serviceActorDefaults());
   if (command === "runtime") {
     // The Mind runtime is a reserved extension surface, not a supported
     // workflow: it takes hand-written JSON and no plugin or skill drives it.
