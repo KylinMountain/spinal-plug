@@ -223,7 +223,17 @@ function takeLeadingFlags(
       index += 2;
     }
   }
-  return { flags, rest: args.slice(index) };
+  const rest = args.slice(index);
+  // Keeping the text verbatim means a flag written after it was absorbed into
+  // the text and its intent lost without a word — `share <kind> "<text>" --key
+  // decision:queue` stored the flag as part of the statement and no semantic
+  // key at all. Refuse it instead: prose that genuinely needs to contain a flag
+  // token can say so in words, but a misplaced flag must never pass silently.
+  const misplaced = rest.find(argument => Object.hasOwn(spec, argument));
+  if (misplaced !== undefined) {
+    throw new Error(`Flag ${misplaced} must appear before the text argument, not after it.`);
+  }
+  return { flags, rest };
 }
 
 function resolveAdapter(host: string): SpinalPlugAdapter {

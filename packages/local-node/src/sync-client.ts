@@ -52,6 +52,14 @@ export interface FetchResult {
  * Transport-neutral M2 synchronizer. It makes a local write durable before
  * network activity, and only advances its cursor after remote events apply.
  */
+/**
+ * A paginating endpoint controls the loop: it can answer `hasMore: true` forever
+ * — or keep returning a cursor that never advances — and the client would fetch
+ * until it ran out of memory. A page budget turns that into an error after work
+ * already stored is safely committed; a healthy endpoint drains long before it.
+ */
+const MAX_PAGES_PER_RUN = 1_000;
+
 export class SpinalPlugSyncClient {
   constructor(
     private readonly database: SpinalPlugDatabase,
@@ -121,7 +129,11 @@ export class SpinalPlugSyncClient {
     let runtimeEntitiesStored = 0;
     let requiredApplied = 0;
     let hasMore = true;
+    let pages = 0;
     while (hasMore) {
+      if (++pages > MAX_PAGES_PER_RUN) {
+        throw new Error(`Sync fetch exceeded ${MAX_PAGES_PER_RUN} pages; the endpoint is not draining its cursor`);
+      }
       const result = await this.transport.fetchUpdates({
         spaceId,
         deviceId,
@@ -146,7 +158,11 @@ export class SpinalPlugSyncClient {
     const runtimeCursorOwner = `runtime:${deviceId}`;
     let runtimeCursor = this.database.getCursor("adapter", runtimeCursorOwner, spaceId)?.lastEventId;
     let runtimeHasMore = true;
+    let runtimePages = 0;
     while (runtimeHasMore) {
+      if (++runtimePages > MAX_PAGES_PER_RUN) {
+        throw new Error(`Sync pull exceeded ${MAX_PAGES_PER_RUN} pages; the endpoint is not draining its cursor`);
+      }
       const result = await this.transport.pull({
         spaceId,
         deviceId,

@@ -900,3 +900,25 @@ test("missing positional arguments are reported, not ignored", () => {
   assert.equal(noProject.status, 1);
   assert.match(noProject.stderr, /Missing <project-dir> argument/);
 });
+
+test("a flag written after the text is refused, not folded into it", () => {
+  // Regression: the parser reads leading flags only, so `--key` after the
+  // statement was stored as part of the statement and the semantic key was lost
+  // with no error at all — silently defeating the key classification every skill
+  // asks for.
+  const workspace = linkedWorkspace();
+
+  const misplaced = runCli(workspace, [
+    "share", workspace.db, workspace.project, "decision", "Adopt WAL mode", "--key", "decision:wal"
+  ]);
+  assert.equal(misplaced.status, 1);
+  assert.match(misplaced.stderr, /Flag --key must appear before the text argument/);
+
+  const ordered = parseJson<{ memory: { statement: string; semanticKey: string } }>(
+    runCli(workspace, [
+      "share", workspace.db, workspace.project, "decision", "--key", "decision:wal", "Adopt WAL mode"
+    ])
+  );
+  assert.equal(ordered.memory.statement, "Adopt WAL mode");
+  assert.equal(ordered.memory.semanticKey, "decision:wal");
+});

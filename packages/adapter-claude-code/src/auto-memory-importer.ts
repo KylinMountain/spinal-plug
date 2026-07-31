@@ -80,8 +80,15 @@ export class ClaudeAutoMemoryImporter {
       const sourcePath = join(directory, relativePath);
       const raw = readFileSync(sourcePath, "utf8");
       const statement = stripFrontmatter(raw);
-      if (!statement || containsLikelySecret(statement)) {
-        if (containsLikelySecret(statement)) skippedSecretFiles += 1;
+      if (!statement) return [];
+      // The detector has to see every field that becomes durable memory, not
+      // just the body. The title comes from frontmatter `name`, a heading, or
+      // the filename, and a secret there passed this filter only to be refused
+      // at the write — which aborted the whole import over one file instead of
+      // skipping it.
+      const title = topicTitle(relativePath, raw);
+      if (containsLikelySecret(statement) || containsLikelySecret(title)) {
+        skippedSecretFiles += 1;
         return [];
       }
       const sourceUri = `${this.sourceUriPrefix(space.spaceId)}${relativePath}`;
@@ -91,7 +98,7 @@ export class ClaudeAutoMemoryImporter {
         .slice(0, 32)}`;
       return [{
         memoryId,
-        title: topicTitle(relativePath, raw),
+        title,
         statement,
         sourceUri,
         semanticKey: `claude-topic:${relativePath.toLowerCase()}`

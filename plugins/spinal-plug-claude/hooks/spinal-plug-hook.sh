@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Keep host hooks non-fatal, as the Codex hook already is: Spinal Plug has its
+# own WAL/outbox, so a local failure must surface as "nothing to add" rather than
+# as a hook error on the user's turn. `-e` would have propagated any CLI exit.
+set -uo pipefail
 
 # The plugin does not read or write Claude Code's native auto-memory files.
 # It forwards the host Hook payload to Spinal Plug's independent local runtime.
@@ -32,4 +35,6 @@ if printf '%s' "$payload" | grep -q 'PostToolUse' \
   exit 0
 fi
 
-printf '%s' "$payload" | NODE_NO_WARNINGS=1 "$spinal_plug_bin" hook-stdin claude-code "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}"
+printf '%s' "$payload" | NODE_NO_WARNINGS=1 "$spinal_plug_bin" hook-stdin claude-code "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" || printf '{}\n'
+
+exit 0

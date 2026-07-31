@@ -174,3 +174,21 @@ test("distinct ids that sanitize alike still get distinct managed files", t => {
   assert.match(contents, /# First/);
   assert.match(contents, /# Second/);
 });
+
+test("a secret in a topic title skips that file instead of failing the import", t => {
+  // Regression: the filter read only the body, so a secret in frontmatter `name`
+  // reached `remember`, which refused it — aborting the whole import over one
+  // file rather than skipping it.
+  const fixture = createFixture(t);
+  writeFileSync(
+    join(fixture.memoryDir, "poisoned.md"),
+    "---\nname: AKIAIOSFODNN7EXAMPLE\n---\n\nThe deploy pipeline runs nightly.\n",
+    "utf8"
+  );
+  writeFileSync(join(fixture.memoryDir, "clean.md"), "# Retention\n\nLogs are kept for 30 days.\n", "utf8");
+
+  const result = new ClaudeAutoMemoryImporter({ homeDirectory: fixture.home }).import(space, fixture.project);
+
+  assert.equal(result.skippedSecretFiles, 1);
+  assert.deepEqual(result.candidates.map(candidate => candidate.title), ["Retention"]);
+});
