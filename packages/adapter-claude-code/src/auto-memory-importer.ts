@@ -115,10 +115,24 @@ const LEGACY_MANAGED_FILE = "spinal-plug-synced.md";
  * An id that needed sanitizing gets a short digest of the original, so two
  * distinct ids can never fold into the same managed file.
  */
-function managedFilename(memoryId: string): string {
+function managedStem(memoryId: string): string {
   const safe = memoryId.replace(/[^a-zA-Z0-9_-]/g, "-");
   const suffix = safe === memoryId ? "" : `-${createHash("sha256").update(memoryId).digest("hex").slice(0, 8)}`;
-  return `${MANAGED_PREFIX}${safe}${suffix}.md`;
+  return `${safe}${suffix}`;
+}
+
+function managedFilename(memoryId: string): string {
+  return `${MANAGED_PREFIX}${managedStem(memoryId)}.md`;
+}
+
+/**
+ * The frontmatter name identifies the file to the host, so it needs the same
+ * injectivity as the filename. A truncated id gave neither: `mem_<uuid>` keeps
+ * only four hex characters, and every candidate id collapses to `mem_cand`.
+ * Sanitizing also keeps a remote-minted id from breaking the YAML block.
+ */
+function managedName(kind: string, memoryId: string): string {
+  return `spinal-plug-${kind}-${managedStem(memoryId)}`;
 }
 
 export interface ClaudeMemoryMaterializationResult {
@@ -164,7 +178,7 @@ export class ClaudeAutoMemoryMaterializer {
       const filePath = join(directory, filename);
       const frontmatter = [
         "---",
-        `name: spinal-plug-${memory.kind}-${memory.memoryId.slice(0, 8)}`,
+        `name: ${managedName(memory.kind, memory.memoryId)}`,
         `description: "Managed by Spinal Plug; do not edit."`,
         "metadata:",
         "  node_type: memory",

@@ -115,6 +115,40 @@ test("a hostile memoryId cannot escape the memory directory", t => {
   assert.equal(managed.length, 1, "sanitized id must stay inside the memory directory");
 });
 
+test("the frontmatter name is as injective as the filename", t => {
+  const fixture = createFixture(t);
+  // Regression: the name truncated the id to 8 characters, so two `mem_<uuid>`
+  // ids agreeing on four hex digits — and every `mem_candidate_*` id — declared
+  // the same name in the same directory.
+  const memories = [
+    { ...baseMemory, memoryId: "mem_1234abcd-1111-4111-8111-111111111111", title: "First" },
+    { ...baseMemory, memoryId: "mem_1234abcd-2222-4222-8222-222222222222", title: "Second" },
+    { ...baseMemory, memoryId: "mem_candidate_aaaaaaaaaaaaaaaaaaaaaaaa", title: "Third" },
+    { ...baseMemory, memoryId: "mem_candidate_bbbbbbbbbbbbbbbbbbbbbbbb", title: "Fourth" }
+  ];
+
+  new ClaudeAutoMemoryMaterializer({ homeDirectory: fixture.home }).materialize(fixture.project, memories);
+
+  const names = readdirSync(fixture.memoryDir)
+    .filter(name => name.startsWith("spinal-plug-managed-"))
+    .map(name => /^name: (.+)$/m.exec(readFileSync(join(fixture.memoryDir, name), "utf8"))?.[1]);
+  assert.equal(names.length, memories.length);
+  assert.equal(new Set(names).size, memories.length, "each managed file must declare its own name");
+});
+
+test("a hostile memory id cannot break out of the frontmatter block", t => {
+  const fixture = createFixture(t);
+  const hostile = { ...baseMemory, memoryId: 'mem_x"\ndescription: injected\n', title: "Hostile" };
+
+  new ClaudeAutoMemoryMaterializer({ homeDirectory: fixture.home }).materialize(fixture.project, [hostile]);
+
+  const [file] = readdirSync(fixture.memoryDir).filter(name => name.startsWith("spinal-plug-managed-"));
+  const content = readFileSync(join(fixture.memoryDir, file), "utf8");
+  const frontmatter = content.slice(0, content.indexOf("\n---", 4));
+  assert.doesNotMatch(frontmatter, /\ndescription: injected/, "an id must not inject frontmatter keys");
+  assert.match(frontmatter, /\nname: spinal-plug-decision-[A-Za-z0-9_-]+$/m);
+});
+
 test("distinct ids that sanitize alike still get distinct managed files", t => {
   const fixture = createFixture(t);
   const first = { ...baseMemory, memoryId: "mem.a", title: "First" };

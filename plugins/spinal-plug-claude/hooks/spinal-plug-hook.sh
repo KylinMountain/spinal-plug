@@ -20,9 +20,14 @@ fi
 # The directory is derived from CLAUDE_CONFIG_DIR, which the CLI's importer
 # also honours; hardcoding "/.claude/" would disable hot import entirely for
 # anyone who relocated their Claude config.
+# Matching the projects directory alone matches every payload: `transcript_path`
+# is always <projects-dir>/<slug>/<session>.jsonl, so the guard never fired and
+# each edit paid for a CLI process. Require a path that is actually a managed
+# memory file — <projects-dir>/<slug>/memory/<name>.md.
 claude_projects_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+memory_file_pattern="$(printf '%s' "$claude_projects_dir" | sed 's/[][\.*^$(){}?+|]/\\&/g')/[^\"]*/memory/[^\"]*\.md"
 if printf '%s' "$payload" | grep -q 'PostToolUse' \
-  && ! printf '%s' "$payload" | grep -qF "$claude_projects_dir"; then
+  && ! printf '%s' "$payload" | grep -qE "$memory_file_pattern"; then
   printf '{}\n'
   exit 0
 fi

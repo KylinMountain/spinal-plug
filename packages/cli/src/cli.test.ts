@@ -729,6 +729,23 @@ test("the device id defers to the stored credential when a call site omits it", 
     const requested = new URL(request.url ?? "/", "http://127.0.0.1");
     const deviceId = requested.searchParams.get("device_id");
     if (deviceId !== null) seen.push(deviceId);
+    if (requested.pathname === "/v1/events:push") {
+      // A push carries its device in the body, not the query string.
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", chunk => { body += chunk; });
+      request.on("end", () => {
+        try {
+          const pushed = JSON.parse(body) as { deviceId?: string };
+          if (typeof pushed.deviceId === "string") seen.push(pushed.deviceId);
+        } catch {
+          // A malformed body is the test's problem, not the server's.
+        }
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ acceptedEventIds: [], duplicateEventIds: [] }));
+      });
+      return;
+    }
     response.writeHead(200, { "content-type": "application/json" });
     if (requested.pathname === "/v1/events:pull") {
       response.end(JSON.stringify({ events: [], nextCursor: "", hasMore: false }));
@@ -767,6 +784,17 @@ test("the device id defers to the stored credential when a call site omits it", 
   expectSuccess(await runCliAsync(workspace, ["fetch", workspace.db, workspace.project, url, "dev_explicit"]));
   assert.deepEqual(identities(), ["dev_explicit"], "an explicit id must still be honoured");
 
+  // `share --device-id` took a bare truthiness check instead of the shared
+  // resolver, so a blank flag value — an unexpanded variable in a plugin
+  // script — reached the endpoint verbatim and shadowed the credential.
+  seen.length = 0;
+  expectSuccess(await runCliAsync(workspace, [
+    "share", workspace.db, workspace.project, "decision",
+    "--url", url, "--device-id", "   ",
+    "A blank flag defers to the stored credential"
+  ]));
+  assert.deepEqual(identities(), ["dev_credential"], "a blank --device-id must not reach the endpoint");
+
   // republish shares the same slot and must not demand one either.
   expectSuccess(await runCliAsync(workspace, ["republish", workspace.db, workspace.project, url]));
 
@@ -776,7 +804,9 @@ test("the device id defers to the stored credential when a call site omits it", 
   assert.match(noUrl.stderr, /Usage: spinal-plug fetch/);
 });
 
-test("import reads host-native memory and refuses a host that has none to read", () => {
+// SPINAL_PLUG_SYNC_URL: "" resolves to 127.0.0.1:8787 like an unset variable,
+// so this test publishes into a locally running Control Plane unless skipped.
+test("import reads host-native memory and refuses a host that has none to read", { skip: localEndpointBusy() }, () => {
   const workspace = linkedWorkspace();
   const imported = parseJson<{ source: string; discovered: number; sync: string }>(
     runCli(workspace, ["import", workspace.db, workspace.project, "claude-code"], {

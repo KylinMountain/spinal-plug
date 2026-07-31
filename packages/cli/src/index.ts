@@ -1033,9 +1033,12 @@ async function main(): Promise<void> {
     const endpoint = typeof flags["--url"] === "string" && (flags["--url"] as string).trim()
       ? { url: (flags["--url"] as string).trim(), explicit: true }
       : resolveSyncEndpoint();
-    const deviceId = typeof flags["--device-id"] === "string" && flags["--device-id"]
-      ? flags["--device-id"] as string
-      : resolveDeviceId();
+    // Same trimming invariant as every other call site: a blank argument (an
+    // unexpanded shell variable in a plugin script) must not shadow the stored
+    // credential with an identity the endpoint will reject.
+    const deviceId = resolveDeviceId(
+      typeof flags["--device-id"] === "string" ? flags["--device-id"] as string : undefined
+    );
     const statement = statementParts.join(" ");
     if (!kind || !statement) {
       throw new Error("Usage: spinal-plug share <db-path> <project-dir> <kind> [--url <url>] [--device-id <id>] [--key <semantic-key>] <text>");
