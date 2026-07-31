@@ -11,9 +11,11 @@
   "scripts": {
     "build": "pnpm -r build",
     "build:release": "pnpm build && node scripts/build-release.mjs",
-    "check": "pnpm check:repository && pnpm check:architecture",
+    "check": "pnpm check:repository && pnpm check:architecture && pnpm check:plugins",
     "check:architecture": "node scripts/check-architecture.mjs",
+    "check:plugins": "node scripts/check-plugins.mjs",
     "check:repository": "node scripts/check-repository.mjs",
+    "stamp:plugins": "node scripts/check-plugins.mjs --write",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm build && pnpm -r --if-present test",
     "verify": "pnpm check && pnpm typecheck && pnpm test"
