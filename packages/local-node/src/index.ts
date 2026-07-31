@@ -539,10 +539,21 @@ export class SpinalPlugDatabase {
     `);
     let applied = 0;
     let requiredApplied = 0;
+    let rejected = 0;
     const appliedUpdateIds: string[] = [];
     try {
       this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
       for (const update of updates) {
+        // This is the ingress that actually runs on a fetch, and host
+        // projections interpolate `kind` into their own formats. A kind outside
+        // the protocol enum is skipped and counted rather than thrown: a throw
+        // here would roll the batch back and leave the cursor unadvanced, so one
+        // unknown kind — a server that later adds a fifth — would wedge this
+        // device's sync permanently.
+        if (!isMemoryKind(update.memory.kind)) {
+          rejected += 1;
+          continue;
+        }
         this.upsertMemory(update.memory);
         const result = markApplied.run(new Date().toISOString(), update.updateId);
         if (Number(result.changes) === 0) continue;
@@ -556,7 +567,7 @@ export class SpinalPlugDatabase {
       throw error;
     }
     const remaining = this.previewCanonicalUpdates(spaceId).pending.length;
-    return { applied, requiredApplied, remaining, appliedUpdateIds };
+    return { applied, requiredApplied, remaining, appliedUpdateIds, ...(rejected ? { rejected } : {}) };
   }
 
   listPendingOutbox(limit = 50): EventEnvelope[] {
@@ -671,12 +682,12 @@ export class SpinalPlugDatabase {
         if (!payload.memoryId || !payload.kind || !payload.title || !payload.statement) {
           throw new Error(`Invalid remote memory event payload: ${event.eventId}`);
         }
-        // The kind is an enum in the protocol schema but arrived as a free
-        // string here, and host projections interpolate it into their own
-        // formats. Reject it at the boundary rather than downstream.
-        if (!isMemoryKind(payload.kind)) {
-          throw new Error(`Unsupported memory kind in remote event ${event.eventId}: ${payload.kind}`);
-        }
+        // The kind is an enum in the protocol schema but arrives as a free
+        // string. Skip the event rather than throwing, the way the handoff path
+        // already does for a malformed payload: a throw rolls back the batch and
+        // leaves the cursor where it was, so one bad event blocks every good one
+        // behind it forever.
+        if (!isMemoryKind(payload.kind)) continue;
         const existing = this.getMemory(payload.memoryId);
         const memory: MemoryRecord = {
           schema: "spinal-plug.memory-record/v0.1",

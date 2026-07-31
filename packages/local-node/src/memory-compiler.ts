@@ -282,9 +282,15 @@ export class MemoryCompiler {
       // A wall clock here made the same input compile to a different output every
       // time, which defeats comparing or caching a compilation and contradicts
       // this class being deterministic. The watermark of the input says the same
-      // thing usefully: the newest event this result accounts for. An empty input
-      // has no watermark, and the epoch keeps even that answer stable.
-      generatedAt: events.at(-1)?.event.createdAt ?? EMPTY_COMPILATION_WATERMARK,
+      // thing usefully: the newest event this result accounts for. Take the
+      // largest timestamp rather than the last position — events are ordered by
+      // sequence, and `createdAt` comes from whichever device minted the event,
+      // so a late import with an older clock would otherwise move the watermark
+      // backwards. An empty input has none, and the epoch keeps that stable.
+      generatedAt: events.reduce(
+        (newest, { event }) => (event.createdAt > newest ? event.createdAt : newest),
+        EMPTY_COMPILATION_WATERMARK
+      ),
       active: output.filter(record => record.status === "active").sort(byUpdatedAt),
       candidates: output.filter(record => record.status === "candidate").sort(byUpdatedAt),
       disputed: output.filter(record => record.status === "disputed").sort(byUpdatedAt),

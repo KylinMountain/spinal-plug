@@ -75,20 +75,25 @@ export class HttpSyncTransport implements SyncTransport {
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const timeout = AbortSignal.timeout(this.requestTimeoutMs);
+    // Compose rather than replace: spreading `init` after would have dropped a
+    // caller's own signal, and the deadline has to cover draining the body too —
+    // a stalled body is a stalled request.
+    const signal = init?.signal ? AbortSignal.any([timeout, init.signal]) : timeout;
     let response: Response;
+    let body: T | { error?: string };
     try {
       response = await fetch(new URL(path, this.baseUrl), {
         ...init,
         headers: this.headers(init?.headers),
-        signal: timeout
+        signal
       });
+      body = await this.readJson<T | { error?: string }>(response, path);
     } catch (error) {
       if (timeout.aborted) {
         throw new Error(`Sync request to ${path} timed out after ${this.requestTimeoutMs}ms`);
       }
       throw error;
     }
-    const body = await this.readJson<T | { error?: string }>(response, path);
     if (!response.ok) {
       const message = typeof body === "object" && body !== null && "error" in body
         ? (body as { error?: string }).error
@@ -105,8 +110,16 @@ export class HttpSyncTransport implements SyncTransport {
    * the cap.
    */
   private async readJson<T>(response: Response, path: string): Promise<T> {
+    // An empty body is only tolerable on an error response, where the status is
+    // the message. Tolerating it on a 200 would hand the caller `{}` and crash it
+    // later on `result.updates.length` — further from the cause than a parse
+    // error at the source.
+    const empty = (): T => {
+      if (response.ok) throw new Error(`Sync response from ${path} was empty`);
+      return {} as T;
+    };
     const stream = response.body;
-    if (!stream) return {} as T;
+    if (!stream) return empty();
     const reader = stream.getReader();
     const chunks: Uint8Array[] = [];
     let size = 0;
@@ -122,7 +135,7 @@ export class HttpSyncTransport implements SyncTransport {
       await reader.cancel().catch(() => undefined);
     }
     const text = Buffer.concat(chunks).toString("utf8");
-    if (!text.trim()) return {} as T;
+    if (!text.trim()) return empty();
     try {
       return JSON.parse(text) as T;
     } catch {

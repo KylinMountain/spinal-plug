@@ -35,6 +35,12 @@ if printf '%s' "$payload" | grep -q 'PostToolUse' \
   exit 0
 fi
 
-printf '%s' "$payload" | NODE_NO_WARNINGS=1 "$spinal_plug_bin" hook-stdin claude-code "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" || printf '{}\n'
+# Capture, then print once. Streaming the CLI's stdout straight through and
+# appending `{}` on failure would hand the host `<partial>{}` if the CLI died
+# mid-write — invalid JSON is worse than no answer.
+if ! output="$(printf '%s' "$payload" | NODE_NO_WARNINGS=1 "$spinal_plug_bin" hook-stdin claude-code "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}")"; then
+  output='{}'
+fi
+printf '%s\n' "${output:-\{\}}"
 
 exit 0

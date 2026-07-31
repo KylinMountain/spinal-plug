@@ -102,9 +102,22 @@ test("AWS_SECRET_ACCESS_KEY is recognised as a label", () => {
   assert.equal(containsLikelySecret("an access key is required before deploy"), false);
 });
 
-test("an unlabelled high-entropy token is refused", () => {
-  assert.equal(containsLikelySecret("Zm9vYmFyQmF6UXV4MTIzNDU2Nzg5MEFiQ2REZUY="), true);
-  assert.equal(containsLikelySecret("wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY42"), true);
+test("random text that is not a credential is not refused", () => {
+  // An entropy heuristic was tried here and removed. These four are what killed
+  // it: the last two are word-structured and could have been excluded, but a
+  // Drive id and a package digest are *actually* random, so no threshold
+  // separates them from a key. Since `list` filters stored records through this
+  // function, a false positive silently removes a memory from recall, boot and
+  // every host projection — worse than missing an unlabelled key. Anyone adding
+  // an entropy rule has to keep these passing.
+  for (const value of [
+    "See https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit",
+    "integrity sha512-7X9Kk3Vb2dQwZzT1mLpQrs8AbCdEfGh0iJkLmNoPqRs=",
+    "renamed to previewCanonicalUpdatesForSpace2026",
+    "Base branch: feature/AddSupportForMultiTenantWorkspaces2026Rollout"
+  ]) {
+    assert.equal(containsLikelySecret(value), false, value.slice(0, 32));
+  }
 });
 
 test("this system's own identifiers are never read as credentials", () => {

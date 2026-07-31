@@ -317,6 +317,14 @@ type PublishResult = Awaited<ReturnType<SpinalPlugSyncClient["publish"]>>;
 const LOCAL_ONLY_PUBLISH_RESULT: PublishResult = { pushed: 0, duplicates: 0 };
 
 /**
+ * Bounds one `sync` run's publication. `publish` sends a batch at a time, so
+ * draining needs a loop, and a loop over remote input needs a ceiling: 100
+ * batches is 5000 events, far past any real backlog, and hitting it is reported
+ * rather than hidden.
+ */
+const MAX_PUBLISH_BATCHES_PER_SYNC = 100;
+
+/**
  * Publish if the endpoint answers. Failures degrade to local mode — unless
  * `strict` (an endpoint the user explicitly chose), where they surface.
  */
@@ -1380,36 +1388,71 @@ async function main(): Promise<void> {
       typeof flags["--device-id"] === "string" ? flags["--device-id"] as string : undefined
     );
 
-    const { result: published, mode } = await tryPublish(
-      database,
-      space.spaceId,
-      deviceId,
-      endpoint.url,
-      endpoint.explicit
-    );
+    // Publish drains, rather than sending one batch: `publish` returns after
+    // `batchSize` events, so a device holding three hundred would have needed
+    // six invocations with nothing saying so — and draining the outbox is the
+    // reason this command publishes at all.
+    const published = { pushed: 0, duplicates: 0, skippedSecrets: 0 };
+    // "nothing-queued" is not the same as falling back: an empty outbox means
+    // publication was never attempted, and calling that local mode would make a
+    // healthy fetch-only run look half-broken.
+    let publishMode: "endpoint" | "local-fallback" | "nothing-queued" = "nothing-queued";
+    let outboxDrained = true;
+    for (let batch = 0; ; batch += 1) {
+      if (database.listPendingOutboxForSpace(space.spaceId, 1).length === 0) break;
+      if (batch >= MAX_PUBLISH_BATCHES_PER_SYNC) {
+        outboxDrained = false;
+        break;
+      }
+      const { result, mode } = await tryPublish(
+        database,
+        space.spaceId,
+        deviceId,
+        endpoint.url,
+        endpoint.explicit
+      );
+      publishMode = mode;
+      published.pushed += result.pushed;
+      published.duplicates += result.duplicates;
+      published.skippedSecrets += result.skippedSecrets ?? 0;
+      // In local mode the outbox keeps everything for a later run, and a batch
+      // that moved nothing would loop forever.
+      if (mode !== "endpoint") break;
+      if (result.pushed + result.duplicates + (result.skippedSecrets ?? 0) === 0) break;
+    }
+
     // A fetch is the one step that cannot degrade on its own: it either reaches
     // an endpoint or throws. In local mode that is the expected answer, not a
-    // fault, so it is reported as such — unless the user named the endpoint,
-    // where silence would hide a real outage.
+    // fault — but the reason is still reported, because "nothing was listening"
+    // and "the endpoint answered 500 halfway through" are not the same news and
+    // the second one leaves a half-advanced cursor behind.
     let fetched: Awaited<ReturnType<SpinalPlugSyncClient["fetch"]>> | null = null;
-    let reachable = mode === "endpoint";
+    let fetchError: string | undefined;
     try {
       fetched = await new SpinalPlugSyncClient(database, createSyncTransport(endpoint.url))
         .fetch(space.spaceId, deviceId);
-      reachable = true;
     } catch (error) {
       if (endpoint.explicit) throw error;
-      reachable = false;
+      fetchError = error instanceof Error ? error.message : String(error);
     }
 
-    const preview = database.previewCanonicalUpdates(space.spaceId);
+    // Read the queue before applying it. Reporting the queue afterwards would
+    // describe updates this same command already merged as still awaiting review.
+    const arrived = database.previewCanonicalUpdates(space.spaceId);
     const applied = database.applyCanonicalUpdates(space.spaceId);
+    const fetchMode = fetched ? "endpoint" : "local-fallback";
     console.log(JSON.stringify({
-      sync: reachable ? "endpoint" : "local-fallback",
+      // Each direction reports its own outcome, so a run that published and then
+      // failed to fetch cannot claim to have stayed local while showing a push.
+      sync: publishMode === "nothing-queued" || publishMode === fetchMode ? fetchMode : "partial",
       endpoint: endpoint.url,
+      publish: publishMode,
       published,
+      outboxDrained,
+      fetch: fetchMode,
       fetched,
-      preview,
+      ...(fetchError ? { fetchError } : {}),
+      arrived,
       applied,
       ...(host ? { materialized: materializeHostProjection(host, space, service, projectPath) } : {}),
       pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length

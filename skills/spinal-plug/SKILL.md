@@ -112,7 +112,7 @@ spinal-plug sync "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .
 
 With no endpoint configured this targets the local development server at 127.0.0.1:8787, and when nothing answers there the command reports `"sync": "local-fallback"` and succeeds: that is the expected outcome in local mode, not a fault to report as one. Do not retry it, and do not offer to start an endpoint; running one is a deployment decision. An endpoint the user configured explicitly is different — a failure there surfaces, and it means what it says.
 
-Summarize what the result reports: `published` for what left this device, `fetched` and `applied` for what arrived, each update by kind, source and status. Do not ask the user for confirmation or selection. Required tombstones are applied during the fetch.
+Summarize what the result reports: `publish`/`published` for what left this device, `fetch`/`arrived`/`applied` for what came back, each update by kind, source and status. `sync: "partial"` means one direction worked and the other did not — say which, and `fetchError` says why. `outboxDrained: false` means a backlog remains: run it again. Do not ask the user for confirmation or selection. Required tombstones are applied during the fetch.
 
 After applying updates, immediately retrieve the latest work handoff by running:
 

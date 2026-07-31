@@ -186,6 +186,48 @@ test("a remote memory event with an unsupported kind is refused", () => {
     idempotencyKey: "evt_hostile_kind"
   } as unknown as EventEnvelope;
 
-  assert.throws(() => database.applyRemoteMemoryEvents([event]), /Unsupported memory kind/);
+  // Skipped, not thrown: a throw rolls the batch back and leaves the cursor
+  // unadvanced, so one bad event would block every good one behind it forever.
+  assert.equal(database.applyRemoteMemoryEvents([event]), 0);
   assert.equal(database.getMemory("mem_remote_hostile"), null, "the rejected event must not be stored");
+});
+
+test("a canonical update with an unsupported kind is skipped, not applied", () => {
+  // This is the ingress that actually runs on a fetch: storeCanonicalUpdates →
+  // applyCanonicalUpdates → upsertMemory. Validating only the unused
+  // event-replay path would have left it open.
+  const { database } = openTestDatabase();
+  const stored = database.storeCanonicalUpdates([
+    {
+      schema: "spinal-plug.canonical-update/v0.1",
+      updateId: "upd_hostile_kind",
+      spaceId: space.spaceId,
+      memoryId: "mem_canonical_hostile",
+      kind: "activate",
+      required: false,
+      memory: {
+        schema: "spinal-plug.memory-record/v0.1",
+        memoryId: "mem_canonical_hostile",
+        spaceId: space.spaceId,
+        kind: "decision\ninjected: yes",
+        title: "Hostile",
+        statement: "Injected through the kind field",
+        references: [],
+        status: "active",
+        sourceEventIds: [],
+        createdFromEventId: "evt_x",
+        lastUpdatedFromEventId: "evt_x",
+        createdAt: "2026-07-31T00:00:00.000Z",
+        updatedAt: "2026-07-31T00:00:00.000Z"
+      },
+      generatedAt: "2026-07-31T00:00:00.000Z"
+    }
+  ] as unknown as Parameters<SpinalPlugDatabase["storeCanonicalUpdates"]>[0]);
+  assert.equal(stored, 1);
+
+  const result = database.applyCanonicalUpdates(space.spaceId);
+
+  assert.equal(result.applied, 0);
+  assert.equal(result.rejected, 1);
+  assert.equal(database.getMemory("mem_canonical_hostile"), null);
 });

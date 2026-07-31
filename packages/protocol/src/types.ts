@@ -426,6 +426,8 @@ export interface SyncApplyResult {
   requiredApplied: number;
   remaining: number;
   appliedUpdateIds: string[];
+  /** Updates skipped because their memory kind is outside the protocol enum. Absent when none were. */
+  rejected?: number;
 }
 
 export interface ProjectSnapshot {

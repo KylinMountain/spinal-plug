@@ -934,12 +934,16 @@ test("sync stays in local mode without complaint when no endpoint answers", { sk
 
   const synced = parseJson<{
     sync: string;
+    fetch: string;
     fetched: unknown;
+    fetchError?: string;
     applied: { applied: number };
     pendingOutboxEvents: number;
   }>(result);
   assert.equal(synced.sync, "local-fallback");
+  assert.equal(synced.fetch, "local-fallback");
   assert.equal(synced.fetched, null, "nothing was fetched, and that is reported rather than thrown");
+  assert.ok(synced.fetchError, "why it fell back is reported, not swallowed");
   assert.equal(synced.applied.applied, 0);
   assert.ok(synced.pendingOutboxEvents >= 1, "the outbox keeps what it could not publish");
 });
@@ -1010,4 +1014,114 @@ test("sync refuses a host it cannot project into", () => {
   const result = runCli(workspace, ["sync", workspace.db, workspace.project, "--host", "emacs"]);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unsupported host: emacs/);
+});
+
+test("sync drains an outbox larger than one publish batch", async t => {
+  // publish() returns after batchSize events, so a single call left a backlog
+  // behind with nothing saying so — in the command whose stated reason to publish
+  // is that nothing else ever drains the queue.
+  const workspace = linkedWorkspace();
+  for (let index = 0; index < 60; index += 1) {
+    expectSuccess(runCli(workspace, [
+      "remember", workspace.db, workspace.project, "context", `Fact number ${index} worth keeping`
+    ]));
+  }
+  let accepted = 0;
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      response.writeHead(200, { "content-type": "application/json" });
+      if (requested.pathname === "/v1/events:pull" ) {
+        response.end(JSON.stringify({ events: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      if (requested.pathname === "/v1/updates:fetch") {
+        response.end(JSON.stringify({ updates: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      const events = (JSON.parse(body || "{}") as { events?: { eventId: string }[] }).events ?? [];
+      accepted += events.length;
+      response.end(JSON.stringify({
+        acceptedEventIds: events.map(event => event.eventId),
+        duplicateEventIds: [],
+        serverCursor: "cur_1"
+      }));
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const synced = parseJson<{
+    published: { pushed: number };
+    outboxDrained: boolean;
+    pendingOutboxEvents: number;
+  }>(await runCliAsync(workspace, ["sync", workspace.db, workspace.project, "--url", url]));
+
+  assert.equal(synced.published.pushed, 60, "one run publishes past the batch size");
+  assert.equal(accepted, 60);
+  assert.equal(synced.outboxDrained, true);
+  assert.equal(synced.pendingOutboxEvents, 0);
+});
+
+test("sync reports each direction, so a partial run cannot claim to be local", { skip: localEndpointBusy() }, async t => {
+  // Publishing succeeded and the fetch failed: reporting one "local-fallback"
+  // for the pair printed `pushed: N` next to a claim that nothing left the
+  // device. Only the default endpoint can reach this state — a URL the user
+  // named fails loudly instead — so the test owns 127.0.0.1:8787, which the skip
+  // above has already confirmed is free.
+  const workspace = linkedWorkspace(["Kafka is the queue"]);
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      if (requested.pathname === "/v1/updates:fetch") {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "index rebuild in progress" }));
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json" });
+      const events = (JSON.parse(body || "{}") as { events?: { eventId: string }[] }).events ?? [];
+      response.end(JSON.stringify({
+        acceptedEventIds: events.map(event => event.eventId),
+        duplicateEventIds: [],
+        serverCursor: "cur_1"
+      }));
+    });
+  });
+  await new Promise<void>(resolve => server.listen(8787, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+
+  const synced = parseJson<{
+    sync: string;
+    publish: string;
+    published: { pushed: number };
+    fetch: string;
+    fetchError?: string;
+  }>(await runCliAsync(workspace, ["sync", workspace.db, workspace.project]));
+
+  assert.equal(synced.sync, "partial");
+  assert.equal(synced.publish, "endpoint");
+  assert.equal(synced.published.pushed, 1);
+  assert.equal(synced.fetch, "local-fallback");
+  assert.match(synced.fetchError ?? "", /index rebuild in progress/);
+});
+
+test("sync reports what arrived, not a queue it already drained", () => {
+  // The preview was computed one line before the apply, so an agent summarizing
+  // it told the user "these are waiting for review" about updates the same
+  // command had just merged.
+  const workspace = linkedWorkspace();
+
+  const synced = parseJson<{
+    arrived: { pending: unknown[] };
+    applied: { applied: number; remaining: number };
+  }>(runCli(workspace, ["sync", workspace.db, workspace.project]));
+
+  assert.equal(synced.arrived.pending.length, synced.applied.applied + synced.applied.remaining);
 });
