@@ -46,11 +46,26 @@ jobs:
       # exchanges a short-lived, workflow-scoped identity — and it requires npm
       # >= 11.5.1, which Node 22 does not ship.
       - run: npm install -g npm@latest
+      # The first release of a new package is published by hand — trusted
+      # publishing can only be configured on a package that exists — so the tag
+      # for it would otherwise fail here on a version npm already has. Skipping is
+      # also what makes re-running a release job safe.
+      - name: Check whether npm already has this version
+        id: published
+        run: |
+          name="$(node -p "require('./release/npm/package.json').name")"
+          version="$(node -p "require('./release/npm/package.json').version")"
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already on npm; the publish step will be skipped."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish to npm
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ steps.published.outputs.exists == 'false' && !contains(github.ref_name, '-') }}
         run: npm publish ./release/npm --access public
       - name: Publish a prerelease to npm
-        if: ${{ contains(github.ref_name, '-') }}
+        if: ${{ steps.published.outputs.exists == 'false' && contains(github.ref_name, '-') }}
         run: npm publish ./release/npm --access public --tag next
       - name: Attach the bundle to the GitHub Release
         run: gh release create "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --generate-notes --verify-tag || gh release upload "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --clobber
