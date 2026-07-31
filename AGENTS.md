@@ -33,12 +33,18 @@ plus a generated manifest. Internal `@spinal-plug/*` packages stay unpublished �
 bundling resolves them, so the published package declares no runtime
 dependencies.
 
-A tag names one release of the whole client. The CLI and both plugins share a
-version (`pnpm check:plugins` enforces it), and pushing `v<that version>` runs
-the same build in `.github/workflows/release.yml`, publishes `@spinal-plug/cli`,
-and attaches the bundle to the GitHub Release; the plugins need no publish step
-because this repository is their marketplace. A tag that disagrees with the
-version fails before anything is published.
+A tag names one release of the whole client, and the tag *is* the version:
+pushing `v0.2.0` makes `release.yml` stamp 0.2.0 into the CLI, both plugins and
+the marketplace entry, verify, publish `@spinal-plug/cli`, commit the stamped
+manifests back to the default branch, and attach the bundle to the GitHub
+Release. The plugins need no publish step because this repository is their
+marketplace — but both hosts read a plugin's version from the default branch,
+which is why that commit is part of releasing and not an afterthought.
+
+Between releases the default branch can carry plugin content newer than the
+version recorded there. Anyone installing mid-cycle gets that content under the
+last released version, and a host that already cached it keeps the older copy.
+Releasing is what resolves it; a `v*` tag is cheap, so cut one.
 
 Publishing uses npm trusted publishing (OIDC): no stored credential, and none to
 rotate. npm is retiring 2FA-bypass tokens — account management in August 2026,
@@ -85,11 +91,11 @@ current worktree is never touched.
   When a CLI command or flag it drives changes, update it together with the
   plugin skills under `plugins/`; `pnpm check:repository` enforces the frontmatter,
   the command names, and the host-agnostic constraint.
-- Bump both plugin versions together when either plugin's content changes, then
-  run `pnpm stamp:plugins`. Each host caches a plugin under its version string, so
-  unchanged content-with-changed-version is harmless while changed-content-with-
-  unchanged-version silently serves the old copy forever. `pnpm check:plugins`
-  enforces it.
+- Never edit a version by hand. The tag is the version: `release.yml` writes it
+  into the CLI, both plugins and the marketplace entry with
+  `pnpm set-version <version>` and commits the result back, so those files record
+  the last release rather than declaring the next one. `pnpm check:plugins` fails
+  when they disagree.
 - Do not restore historical documentation wholesale.
 - Local databases created before the first release are not migrated. The
   checkpoint→handoff rename left its predecessor table behind rather than copying

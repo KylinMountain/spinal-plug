@@ -1,9 +1,10 @@
 name: Release
 
-# A tag is the release trigger: v0.1.1 publishes @spinal-plug/cli@0.1.1 and
-# attaches the same bundle to the GitHub Release. The tag must match the version
-# in packages/cli/package.json, so a forgotten version bump fails here instead of
-# publishing the previous build under a new number.
+# The tag is the version. `v0.2.0` publishes @spinal-plug/cli@0.2.0, serves both
+# plugins at 0.2.0, and attaches the same bundle to the GitHub Release — nobody
+# edits a version by hand and no pull request exists to bump one. The manifests
+# are written from the tag here and committed back, so they record what was
+# released rather than declaring what will be.
 on:
   push:
     tags: ["v*"]
@@ -18,6 +19,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The version commit goes back to a branch, so the history has to be
+          # there to commit onto.
+          fetch-depth: 0
       # No version here: action-setup reads packageManager from package.json,
       # and a hardcoded copy that drifts from it fails the run outright.
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
@@ -27,36 +32,31 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+
+      - name: Take the version from the tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node scripts/set-version.mjs "$version"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
       - run: pnpm verify
       - run: pnpm build:release
-      - name: Check the tag against the repository version
-        # `pnpm check:plugins` already holds the CLI and both plugins to one
-        # version, so comparing the tag against the built manifest pins all three:
-        # a tag names one release of the whole client, not of one artifact.
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          version="$(node -p "require('./release/npm/package.json').version")"
-          if [ "$tag" != "$version" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match version $version" >&2
-            exit 1
-          fi
+
       # Trusted publishing (OIDC), not a token. npm is retiring 2FA-bypass
       # tokens: they lose account management in August 2026 and direct publishing
       # around January 2027. OIDC needs no stored credential at all — the runner
       # exchanges a short-lived, workflow-scoped identity — and it requires npm
       # >= 11.5.1, which Node 22 does not ship.
       - run: npm install -g npm@latest
-      # The first release of a new package is published by hand — trusted
-      # publishing can only be configured on a package that exists — so the tag
-      # for it would otherwise fail here on a version npm already has. Skipping is
-      # also what makes re-running a release job safe.
+      # A version npm already has is not an error: the first release of a package
+      # is published by hand, because trusted publishing can only be configured on
+      # a package that exists. Skipping is also what makes a re-run safe.
       - name: Check whether npm already has this version
         id: published
         run: |
           name="$(node -p "require('./release/npm/package.json').name")"
-          version="$(node -p "require('./release/npm/package.json').version")"
-          if npm view "$name@$version" version >/dev/null 2>&1; then
-            echo "$name@$version is already on npm; the publish step will be skipped."
+          if npm view "$name@${{ steps.version.outputs.value }}" version >/dev/null 2>&1; then
+            echo "$name@${{ steps.version.outputs.value }} is already on npm; the publish step will be skipped."
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -67,6 +67,30 @@ jobs:
       - name: Publish a prerelease to npm
         if: ${{ steps.published.outputs.exists == 'false' && contains(github.ref_name, '-') }}
         run: npm publish ./release/npm --access public --tag next
+
+      # Both hosts read a plugin's version from the default branch, so a release
+      # is only visible to them once the manifests there say so. This is that
+      # commit. It runs after publishing because a failed publish should leave no
+      # trace of a release that did not happen.
+      - name: Record the released version on ${{ github.event.repository.default_branch }}
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$DEFAULT_BRANCH"
+          git switch --force-create release-version "origin/$DEFAULT_BRANCH"
+          node scripts/set-version.mjs "${{ steps.version.outputs.value }}"
+          if git diff --quiet; then
+            echo "$DEFAULT_BRANCH already records ${{ steps.version.outputs.value }}."
+            exit 0
+          fi
+          git commit -aqm "chore: record release ${GITHUB_REF_NAME}"
+          # A rejected push means the branch moved mid-release. The publish stands;
+          # failing here is deliberate, because a branch that does not record the
+          # release serves stale plugin versions to every host.
+          git push origin "HEAD:$DEFAULT_BRANCH"
+
       - name: Attach the bundle to the GitHub Release
         run: gh release create "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --generate-notes --verify-tag || gh release upload "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --clobber
         env:
