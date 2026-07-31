@@ -72,6 +72,11 @@ current worktree is never touched.
   When a CLI command or flag it drives changes, update it together with the
   plugin skills under `plugins/`; `pnpm check:repository` enforces the frontmatter,
   the command names, and the host-agnostic constraint.
+- Bump both plugin versions together when either plugin's content changes, then
+  run `pnpm stamp:plugins`. Each host caches a plugin under its version string, so
+  unchanged content-with-changed-version is harmless while changed-content-with-
+  unchanged-version silently serves the old copy forever. `pnpm check:plugins`
+  enforces it.
 - Do not restore historical documentation wholesale.
 - Local databases created before the first release are not migrated. The
   checkpoint→handoff rename left its predecessor table behind rather than copying

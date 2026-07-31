@@ -1,11 +1,11 @@
 {
-  "name": "spinal-plug-local",
+  "name": "spinal-plug",
   "interface": {
     "displayName": "Spinal Plug Local"
   },
   "plugins": [
     {
-      "name": "spinal-plug-codex",
+      "name": "spinal-plug",
       "source": {
         "source": "local",
         "path": "./plugins/spinal-plug-codex"

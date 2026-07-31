@@ -151,7 +151,21 @@ The public client does **not** include a Control Plane service. Connect or deplo
 
 ### 04 / Use it in a host
 
-Marketplace manifests for Codex and Claude Code are under `plugins/`. After installation, use:
+This repository is the plugin marketplace for both hosts. Installing gives you slash commands over the whole loop:
+
+```bash
+# Claude Code
+claude plugin marketplace add KylinMountain/spinal-plug
+claude plugin install spinal-plug@spinal-plug
+
+# Codex
+codex plugin marketplace add KylinMountain/spinal-plug
+codex plugin add spinal-plug@spinal-plug
+```
+
+A plugin drives the CLI above rather than containing it — do `01` first, or the host's hooks will find no `spinal-plug` and silently do nothing. To pick up a newer plugin, use the host's own update path (`claude plugin update spinal-plug@spinal-plug`; on Codex, `codex plugin remove` then `add`).
+
+After installation, use:
 
 ```text
 /spinal-plug:connect

@@ -150,7 +150,21 @@ export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
 
 ### 04 / 在宿主中使用
 
-Codex 与 Claude Code 的 marketplace manifests 位于 `plugins/`。安装后可使用：
+这个仓库本身就是两家宿主的 plugin marketplace，装完即可用斜杠命令驱动整条链路：
+
+```bash
+# Claude Code
+claude plugin marketplace add KylinMountain/spinal-plug
+claude plugin install spinal-plug@spinal-plug
+
+# Codex
+codex plugin marketplace add KylinMountain/spinal-plug
+codex plugin add spinal-plug@spinal-plug
+```
+
+插件驱动的是上面那个 CLI，不含 CLI 本身——先完成 `01`，否则宿主 Hook 找不到 `spinal-plug` 会静默跳过。仓库更新后，用宿主自己的更新命令拿新版（`claude plugin update spinal-plug@spinal-plug`；Codex 侧 `codex plugin remove` 后再 `add`）。
+
+安装后可使用：
 
 ```text
 /spinal-plug:connect
