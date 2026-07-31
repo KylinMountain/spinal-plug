@@ -143,6 +143,7 @@ export class SpinalPlugDatabase {
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec(sqliteSchema);
     this.ensureMemoryColumns();
+    this.dropLegacyCheckpointTable();
   }
 
   appendEvent(event: EventEnvelope): void {
@@ -921,6 +922,16 @@ export class SpinalPlugDatabase {
     for (const [name, definition] of additions) {
       if (!existing.has(name)) this.db.exec(`ALTER TABLE memories ADD COLUMN ${name} ${definition}`);
     }
+  }
+
+  /**
+   * The checkpoint→handoff rename created `project_handoffs` beside the old
+   * `project_checkpoints` rather than migrating it. No client has been released,
+   * so the pre-rename rows are development state, not user data — but leaving an
+   * orphaned table around invites a future reader to mistake it for a live one.
+   */
+  private dropLegacyCheckpointTable(): void {
+    this.db.exec("DROP TABLE IF EXISTS project_checkpoints");
   }
 }
 

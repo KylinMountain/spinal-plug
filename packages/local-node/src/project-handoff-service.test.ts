@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -71,4 +72,26 @@ test("rejects likely secret material in handoffs", () => {
     }),
     /Refusing to store likely secret material/
   );
+});
+
+test("init removes the orphaned pre-rename checkpoint table", () => {
+  // The checkpoint→handoff rename created a new table beside the old one
+  // instead of migrating it. Nothing has been released, so those rows are
+  // development state — but an orphaned table reads like a live one.
+  const directory = mkdtempSync(join(tmpdir(), "spinal-plug-legacy-"));
+  const path = join(directory, "local.db");
+  const legacy = new DatabaseSync(path);
+  legacy.exec("CREATE TABLE project_checkpoints (checkpoint_id TEXT PRIMARY KEY)");
+  legacy.exec("INSERT INTO project_checkpoints VALUES ('chk_old')");
+  legacy.close();
+
+  const database = new SpinalPlugDatabase(path);
+  database.init();
+
+  const inspector = new DatabaseSync(path, { readOnly: true });
+  const tables = (inspector.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
+    .map(row => row.name);
+  inspector.close();
+  assert.ok(!tables.includes("project_checkpoints"), "the legacy table must not survive init");
+  assert.ok(tables.includes("project_handoffs"));
 });
