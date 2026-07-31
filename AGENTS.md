@@ -24,6 +24,17 @@ pnpm test
 pnpm verify
 ```
 
+```bash
+pnpm build:release
+```
+
+Builds the publishable client into `release/npm/`: one dependency-free bundle
+plus a generated manifest. Pushing a `v*` tag runs the same build in
+`.github/workflows/release.yml`, publishes `@spinal-plug/cli`, and attaches the
+bundle to the GitHub Release. The tag must match `packages/cli/package.json`'s
+version. Internal `@spinal-plug/*` packages stay unpublished: bundling resolves
+them, so the published package declares no runtime dependencies.
+
 `pnpm verify` is the default pre-PR gate. It validates repository knowledge,
 architecture boundaries, types, builds, and tests. Space bindings and server
 databases are device-local state and live under `~/.spinal-plug/` — the
@@ -40,6 +51,7 @@ current worktree is never touched.
 | `packages/cli` | User-facing command composition and service startup. |
 | `packages/mcp-server` | MCP surface over local project memory. |
 | `plugins/` | Claude Code and Codex marketplace plugins (hooks, skills, commands). |
+| `skills/` | Host-agnostic skill for agents without hooks or a native memory surface. |
 | `docs/` | Optional local notes. They are never required by CI. |
 | `scripts/` | Mechanical repository checks and local developer utilities. |
 
@@ -55,6 +67,11 @@ current worktree is never touched.
 - Update `README.md` or `ARCHITECTURE.md` when a committed contract or package
   boundary changes. Local `docs/` notes may be updated for personal context but
   must not be added to commits.
+- Keep `skills/spinal-plug/SKILL.md` runnable on a host with no hooks and no
+  native memory surface: its commands may only use flags every agent can honor.
+  When a CLI command or flag it drives changes, update it together with the
+  plugin skills under `plugins/`; `pnpm check:repository` enforces the frontmatter,
+  the command names, and the host-agnostic constraint.
 - Do not restore historical documentation wholesale.
 - Reply to users in Chinese. This repository uses the KylinMountain
   GitHub account (`kose2livs@gmail.com`) for GitHub operations.
