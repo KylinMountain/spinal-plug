@@ -871,7 +871,7 @@ test("help documents the three-tier endpoint resolution", () => {
 test("help groups commands by who runs them", () => {
   const workspace = createWorkspace();
   const help = expectSuccess(runCli(workspace, ["--help"])).stdout;
-  for (const group of ["For you:", "For your Agent", "Only with a configured sync endpoint:", "Reserved extension surface"]) {
+  for (const group of ["For you:", "For your Agent", "Only with a configured sync endpoint", "Reserved extension surface"]) {
     assert.ok(help.includes(group), `help is missing the "${group}" group`);
   }
   // The five commands a person actually types must precede everything else,
@@ -921,4 +921,93 @@ test("a flag written after the text is refused, not folded into it", () => {
   );
   assert.equal(ordered.memory.statement, "Adopt WAL mode");
   assert.equal(ordered.memory.semanticKey, "decision:wal");
+});
+
+test("sync stays in local mode without complaint when no endpoint answers", { skip: localEndpointBusy() }, () => {
+  // The skills spelled this out as fetch → preview → apply, and the fetch step
+  // exits non-zero when nothing is listening — which is the documented default
+  // for an unconfigured host, not a fault. One command owns that now.
+  const workspace = linkedWorkspace(["Kafka is the queue"]);
+
+  const result = runCli(workspace, ["sync", workspace.db, workspace.project]);
+  assert.equal(result.status, 0, result.stderr);
+
+  const synced = parseJson<{
+    sync: string;
+    fetched: unknown;
+    applied: { applied: number };
+    pendingOutboxEvents: number;
+  }>(result);
+  assert.equal(synced.sync, "local-fallback");
+  assert.equal(synced.fetched, null, "nothing was fetched, and that is reported rather than thrown");
+  assert.equal(synced.applied.applied, 0);
+  assert.ok(synced.pendingOutboxEvents >= 1, "the outbox keeps what it could not publish");
+});
+
+test("sync publishes what is queued, then fetches and applies", async t => {
+  // Publishing first is what makes the composite bidirectional: on a host with
+  // no lifecycle hooks nothing else ever flushes the outbox, so a handoff or a
+  // memory recorded locally would never leave the device.
+  const workspace = linkedWorkspace(["Kafka is the queue"]);
+  const pushed: string[] = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      const requested = new URL(request.url ?? "/", "http://127.0.0.1");
+      response.writeHead(200, { "content-type": "application/json" });
+      if (requested.pathname === "/v1/events:pull") {
+        response.end(JSON.stringify({ events: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      if (requested.pathname === "/v1/updates:fetch") {
+        response.end(JSON.stringify({ updates: [], nextCursor: "cur_1", hasMore: false }));
+        return;
+      }
+      const events = (JSON.parse(body || "{}") as { events?: { eventId: string }[] }).events ?? [];
+      for (const event of events) pushed.push(event.eventId);
+      response.end(JSON.stringify({
+        acceptedEventIds: events.map(event => event.eventId),
+        duplicateEventIds: [],
+        serverCursor: "cur_1"
+      }));
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const synced = parseJson<{
+    sync: string;
+    published: { pushed: number };
+    fetched: { fetched: number };
+    pendingOutboxEvents: number;
+  }>(await runCliAsync(workspace, ["sync", workspace.db, workspace.project, "--url", url]));
+
+  assert.equal(synced.sync, "endpoint");
+  assert.equal(synced.published.pushed, 1);
+  assert.equal(pushed.length, 1, "the queued event actually reached the endpoint");
+  assert.equal(synced.fetched.fetched, 0);
+  assert.equal(synced.pendingOutboxEvents, 0, "a published event no longer waits in the outbox");
+});
+
+test("sync surfaces the failure of an endpoint the user chose", async () => {
+  // Silence is right for the local default and wrong for a named endpoint: there
+  // it would hide an outage behind a report of success.
+  const workspace = linkedWorkspace();
+
+  const result = await runCliAsync(workspace, [
+    "sync", workspace.db, workspace.project, "--url", "http://127.0.0.1:1"
+  ]);
+  assert.equal(result.status, 1);
+  assert.notEqual(result.stderr.trim(), "");
+});
+
+test("sync refuses a host it cannot project into", () => {
+  const workspace = linkedWorkspace();
+
+  const result = runCli(workspace, ["sync", workspace.db, workspace.project, "--host", "emacs"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unsupported host: emacs/);
 });

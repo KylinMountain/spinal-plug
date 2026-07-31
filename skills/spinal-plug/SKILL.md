@@ -104,20 +104,15 @@ With `SPINAL_PLUG_SYNC_URL` unset the share is recorded locally only — that is
 
 ## Sync
 
-For `sync`, "同步记忆", or "下载记忆", fetch and list what arrived. With no endpoint configured this targets the local development server at 127.0.0.1:8787. Unlike publishing, a fetch does not degrade quietly: an unreachable endpoint exits non-zero with `fetch failed`, which in local mode is the expected outcome and not a fault to report as one — that is what the `||` below turns into a plain sentence. Do not retry it, and do not offer to start an endpoint; running one is a deployment decision:
+For `sync`, "同步记忆", or "下载记忆", run one turn of the whole loop. It publishes whatever is queued locally, fetches, previews and applies — no `--host` here, since this host has no native projection to refresh:
 
 ```bash
-spinal-plug fetch "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}" || echo "no endpoint answered; staying in local mode"
-spinal-plug preview "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .
+spinal-plug sync "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .
 ```
 
-Summarize each fetched update by kind, source and status. Do not ask the user for confirmation or selection. Required tombstones are applied during fetch.
+With no endpoint configured this targets the local development server at 127.0.0.1:8787, and when nothing answers there the command reports `"sync": "local-fallback"` and succeeds: that is the expected outcome in local mode, not a fault to report as one. Do not retry it, and do not offer to start an endpoint; running one is a deployment decision. An endpoint the user configured explicitly is different — a failure there surfaces, and it means what it says.
 
-Automatically apply all fetched updates (no `--host` here: this host has no native projection to refresh):
-
-```bash
-spinal-plug apply "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . --all
-```
+Summarize what the result reports: `published` for what left this device, `fetched` and `applied` for what arrived, each update by kind, source and status. Do not ask the user for confirmation or selection. Required tombstones are applied during the fetch.
 
 After applying updates, immediately retrieve the latest work handoff by running:
 
@@ -171,7 +166,7 @@ JSON
 )"
 ```
 
-Confirm what was handed off. A handoff is work-state context, never durable memory, but it still has to reach the shared endpoint before another device can fetch it: the command reports `pendingOutboxEvents`, meaning the handoff is durable here and queued. On this host nothing publishes on its own — the queue is flushed by the next command that publishes, and `share` publishes everything pending for the Space, not only the fact it just shared. In local mode there is no endpoint at all, so say plainly that the handoff stays on this device rather than implying it already travelled.
+Confirm what was handed off. A handoff is work-state context, never durable memory, but it still has to reach the shared endpoint before another device can fetch it: the command reports `pendingOutboxEvents`, meaning the handoff is durable here and queued. Nothing publishes on its own here — `sync` is what sends the queue, so run it when the user expects another device to pick the work up. In local mode there is no endpoint at all, so say plainly that the handoff stays on this device rather than implying it already travelled.
 
 ## Status
 

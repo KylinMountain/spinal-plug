@@ -93,20 +93,15 @@ Report what was shared and why it is durable. The selection step is internal beh
 
 ## Sync
 
-For `sync`, "同步记忆", or "下载记忆", fetch and list what arrived. With no endpoint configured this targets the local development server at 127.0.0.1:8787. Unlike publishing, a fetch does not degrade quietly: an unreachable endpoint exits non-zero with `fetch failed`, which in local mode is the expected outcome and not a fault to report as one — that is what the `||` below turns into a plain sentence. Do not retry it, and do not offer to start an endpoint; running one is a deployment decision:
+For `sync`, "同步记忆", or "下载记忆", run one turn of the whole loop — publish what is queued, fetch, preview, apply, and refresh Codex's native memory projection:
 
 ```bash
-spinal-plug fetch "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}" || echo "no endpoint answered; staying in local mode"
-spinal-plug preview "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .
+spinal-plug sync "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . --host codex
 ```
 
-Summarize each fetched update by kind, source and status. Do not ask the user for confirmation or selection. Required tombstones are applied during fetch.
+With no endpoint configured this targets the local development server at 127.0.0.1:8787, and when nothing answers there the command reports `"sync": "local-fallback"` and succeeds: that is the expected outcome in local mode, not a fault to report as one. Do not retry it, and do not offer to start an endpoint; running one is a deployment decision. A failure against an endpoint the user configured explicitly does surface, and means what it says.
 
-Automatically apply all fetched updates and refresh Codex's native memory projection by running:
-
-```bash
-spinal-plug apply "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . --host codex --all
-```
+Summarize what the result reports: `published` for what left this device, `fetched` and `applied` for what arrived, each update by kind, source and status. Do not ask the user for confirmation or selection. Required tombstones are applied during the fetch.
 
 After applying updates, immediately retrieve the latest work handoff by running:
 

@@ -89,6 +89,11 @@ For you:
                                                      --url or SPINAL_PLUG_SYNC_URL is set, local-only otherwise
   handoff <db-path> <project-dir> <json>           Save work state for another Agent to pick up
   handoff <db-path> <project-dir> --latest|--list  Show the newest handoff, or list them
+  sync <db-path> <project-dir> [--host <host>] [--url <url>] [--device-id <id>]
+                                                     One turn of the whole loop: publish what is queued,
+                                                     fetch, preview and apply. Stays in local mode without
+                                                     complaint when no endpoint answers; --host also
+                                                     refreshes that host's native memory
 
 For your Agent (driven by the plugin skill and lifecycle hooks):
   remember <db-path> <project-dir> <kind> [--candidate] [--key <semantic-key>] <text>
@@ -106,7 +111,7 @@ For your Agent (driven by the plugin skill and lifecycle hooks):
   project <db-path> <project-dir> <host>           Refresh a host's native memory from local state (no network)
   hook-stdin <host> <db-path>                      Read a host Hook payload from stdin
 
-Only with a configured sync endpoint:
+Only with a configured sync endpoint (sync above composes these three):
   fetch <db-path> <project-dir> <url> [device-id]  Fetch updates without applying optional changes.
                                                      Without an id, the credential from
                                                      ~/.spinal-plug/device.env identifies this device
@@ -1353,6 +1358,62 @@ async function main(): Promise<void> {
     }
     const materialized = materializeHostProjection(host, space, service, projectPath);
     console.log(JSON.stringify({ applied, materialized }, null, 2));
+    return;
+  }
+  if (command === "sync") {
+    // One turn of the whole loop, because that is the unit every caller wanted:
+    // the skills all spelled it out as fetch → preview → apply, and each step
+    // handled its own endpoint failure differently. Publishing comes first so a
+    // handoff or memory recorded locally actually leaves the device — "sync"
+    // means both directions everywhere else, and on a host with no lifecycle
+    // hooks nothing else would ever flush the outbox.
+    const { flags } = takeLeadingFlags(rest, {
+      "--host": "value",
+      "--url": "value",
+      "--device-id": "value"
+    });
+    const host = typeof flags["--host"] === "string" ? requireHost(flags["--host"]) : undefined;
+    const endpoint = typeof flags["--url"] === "string" && (flags["--url"] as string).trim()
+      ? { url: (flags["--url"] as string).trim(), explicit: true }
+      : resolveSyncEndpoint();
+    const deviceId = resolveDeviceId(
+      typeof flags["--device-id"] === "string" ? flags["--device-id"] as string : undefined
+    );
+
+    const { result: published, mode } = await tryPublish(
+      database,
+      space.spaceId,
+      deviceId,
+      endpoint.url,
+      endpoint.explicit
+    );
+    // A fetch is the one step that cannot degrade on its own: it either reaches
+    // an endpoint or throws. In local mode that is the expected answer, not a
+    // fault, so it is reported as such — unless the user named the endpoint,
+    // where silence would hide a real outage.
+    let fetched: Awaited<ReturnType<SpinalPlugSyncClient["fetch"]>> | null = null;
+    let reachable = mode === "endpoint";
+    try {
+      fetched = await new SpinalPlugSyncClient(database, createSyncTransport(endpoint.url))
+        .fetch(space.spaceId, deviceId);
+      reachable = true;
+    } catch (error) {
+      if (endpoint.explicit) throw error;
+      reachable = false;
+    }
+
+    const preview = database.previewCanonicalUpdates(space.spaceId);
+    const applied = database.applyCanonicalUpdates(space.spaceId);
+    console.log(JSON.stringify({
+      sync: reachable ? "endpoint" : "local-fallback",
+      endpoint: endpoint.url,
+      published,
+      fetched,
+      preview,
+      applied,
+      ...(host ? { materialized: materializeHostProjection(host, space, service, projectPath) } : {}),
+      pendingOutboxEvents: database.listPendingOutboxForSpace(space.spaceId).length
+    }, null, 2));
     return;
   }
   if (command === "project") {
