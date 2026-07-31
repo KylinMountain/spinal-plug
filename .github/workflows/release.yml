@@ -1,10 +1,11 @@
 name: Release
 
-# The tag is the version. `v0.2.0` publishes @spinal-plug/cli@0.2.0, serves both
-# plugins at 0.2.0, and attaches the same bundle to the GitHub Release — nobody
-# edits a version by hand and no pull request exists to bump one. The manifests
-# are written from the tag here and committed back, so they record what was
-# released rather than declaring what will be.
+# The tag is the version, and nothing in the repository records it. `v0.2.0`
+# publishes @spinal-plug/cli@0.2.0 and attaches the same bundle to the GitHub
+# Release: no version is edited by hand, no pull request bumps one, and no commit
+# goes back to a branch. npm reads the version from the tarball this job builds,
+# and both plugin hosts version a plugin by the commit they fetched — so a tag is
+# the only thing a release needs.
 on:
   push:
     tags: ["v*"]
@@ -19,10 +20,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          # The version commit goes back to a branch, so the history has to be
-          # there to commit onto.
-          fetch-depth: 0
       # No version here: action-setup reads packageManager from package.json,
       # and a hardcoded copy that drifts from it fails the run outright.
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
@@ -35,12 +32,11 @@ jobs:
 
       - name: Take the version from the tag
         id: version
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          node scripts/set-version.mjs "$version"
-          echo "value=$version" >> "$GITHUB_OUTPUT"
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - run: pnpm verify
       - run: pnpm build:release
+        env:
+          SPINAL_PLUG_RELEASE_VERSION: ${{ steps.version.outputs.value }}
 
       # Trusted publishing (OIDC), not a token. npm is retiring 2FA-bypass
       # tokens: they lose account management in August 2026 and direct publishing
@@ -67,29 +63,6 @@ jobs:
       - name: Publish a prerelease to npm
         if: ${{ steps.published.outputs.exists == 'false' && contains(github.ref_name, '-') }}
         run: npm publish ./release/npm --access public --tag next
-
-      # Both hosts read a plugin's version from the default branch, so a release
-      # is only visible to them once the manifests there say so. This is that
-      # commit. It runs after publishing because a failed publish should leave no
-      # trace of a release that did not happen.
-      - name: Record the released version on ${{ github.event.repository.default_branch }}
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin "$DEFAULT_BRANCH"
-          git switch --force-create release-version "origin/$DEFAULT_BRANCH"
-          node scripts/set-version.mjs "${{ steps.version.outputs.value }}"
-          if git diff --quiet; then
-            echo "$DEFAULT_BRANCH already records ${{ steps.version.outputs.value }}."
-            exit 0
-          fi
-          git commit -aqm "chore: record release ${GITHUB_REF_NAME}"
-          # A rejected push means the branch moved mid-release. The publish stands;
-          # failing here is deliberate, because a branch that does not record the
-          # release serves stale plugin versions to every host.
-          git push origin "HEAD:$DEFAULT_BRANCH"
 
       - name: Attach the bundle to the GitHub Release
         run: gh release create "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --generate-notes --verify-tag || gh release upload "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --clobber

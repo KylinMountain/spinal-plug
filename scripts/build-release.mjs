@@ -15,6 +15,20 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cliManifestPath = resolve(repositoryRoot, "packages/cli/package.json");
 const cliManifest = JSON.parse(readFileSync(cliManifestPath, "utf8"));
+/**
+ * The tag is the version. `release.yml` passes it in; nothing in the repository
+ * records it, because npm reads the version from the tarball and both plugin
+ * hosts version a plugin by the commit they fetched. A local build with no tag
+ * gets the placeholder in the CLI manifest, which says plainly that it is not a
+ * release.
+ */
+const releaseVersion = (process.env.SPINAL_PLUG_RELEASE_VERSION ?? process.argv[2] ?? "")
+  .trim()
+  .replace(/^v/, "") || cliManifest.version;
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(releaseVersion)) {
+  console.error(`Not a semver version: ${releaseVersion}`);
+  process.exit(1);
+}
 const entryPoint = resolve(repositoryRoot, "packages/cli/dist/index.js");
 const outputDirectory = resolve(repositoryRoot, "release/npm");
 const bundleName = "spinal-plug.mjs";
@@ -56,7 +70,7 @@ if (/from\s*["']@spinal-plug\//.test(bundle)) {
 const rootManifest = JSON.parse(readFileSync(resolve(repositoryRoot, "package.json"), "utf8"));
 const publishManifest = {
   name: cliManifest.name,
-  version: cliManifest.version,
+  version: releaseVersion,
   description: "Spinal Plug client: durable, project-scoped agent memory with local-first storage and selective sync.",
   type: "module",
   // No "./" prefix: npm normalizes it away and warns that the bin script name

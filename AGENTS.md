@@ -33,18 +33,14 @@ plus a generated manifest. Internal `@spinal-plug/*` packages stay unpublished �
 bundling resolves them, so the published package declares no runtime
 dependencies.
 
-A tag names one release of the whole client, and the tag *is* the version:
-pushing `v0.2.0` makes `release.yml` stamp 0.2.0 into the CLI, both plugins and
-the marketplace entry, verify, publish `@spinal-plug/cli`, commit the stamped
-manifests back to the default branch, and attach the bundle to the GitHub
-Release. The plugins need no publish step because this repository is their
-marketplace — but both hosts read a plugin's version from the default branch,
-which is why that commit is part of releasing and not an afterthought.
-
-Between releases the default branch can carry plugin content newer than the
-version recorded there. Anyone installing mid-cycle gets that content under the
-last released version, and a host that already cached it keeps the older copy.
-Releasing is what resolves it; a `v*` tag is cheap, so cut one.
+A tag is the whole release, and nothing in the repository records a version.
+Pushing `v0.2.0` makes `release.yml` build the client at 0.2.0, publish
+`@spinal-plug/cli`, and attach the bundle to the GitHub Release — no file is
+edited, no pull request bumps anything, and no commit goes back to a branch. The
+plugins need no publish step because this repository is their marketplace, and no
+version because each host versions a plugin by the commit it fetched.
+`packages/cli/package.json` keeps a `0.0.0-dev` placeholder so a local
+`pnpm build:release` produces something honestly unreleasable.
 
 Publishing uses npm trusted publishing (OIDC): no stored credential, and none to
 rotate. npm is retiring 2FA-bypass tokens — account management in August 2026,
@@ -91,11 +87,11 @@ current worktree is never touched.
   When a CLI command or flag it drives changes, update it together with the
   plugin skills under `plugins/`; `pnpm check:repository` enforces the frontmatter,
   the command names, and the host-agnostic constraint.
-- Never edit a version by hand. The tag is the version: `release.yml` writes it
-  into the CLI, both plugins and the marketplace entry with
-  `pnpm set-version <version>` and commits the result back, so those files record
-  the last release rather than declaring the next one. `pnpm check:plugins` fails
-  when they disagree.
+- No version lives in a plugin manifest. The tag is the version and only npm
+  needs one, which travels in the tarball the release builds; both hosts serve a
+  plugin from this repository and version it by the commit they fetched. A number
+  written here would pin every host to the copy it first cached.
+  `pnpm check:plugins` fails if one reappears.
 - Do not restore historical documentation wholesale.
 - Local databases created before the first release are not migrated. The
   checkpoint→handoff rename left its predecessor table behind rather than copying

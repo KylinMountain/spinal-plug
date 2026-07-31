@@ -15,7 +15,6 @@
     "check:architecture": "node scripts/check-architecture.mjs",
     "check:plugins": "node scripts/check-plugins.mjs",
     "check:repository": "node scripts/check-repository.mjs",
-    "set-version": "node scripts/set-version.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm build && pnpm -r --if-present test",
     "verify": "pnpm check && pnpm typecheck && pnpm test"
