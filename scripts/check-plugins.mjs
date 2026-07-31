@@ -108,9 +108,22 @@ for (const plugin of PLUGINS) {
   }
 }
 
-const versions = new Set(PLUGINS.map(plugin => baseVersion(current[plugin.directory].version)));
+/**
+ * One version for the whole client, so a tag names a release rather than one
+ * artifact: `v0.5.0` publishes the CLI at 0.5.0 and serves both plugins at 0.5.0.
+ * They are not independently usable anyway — a plugin's skills invoke CLI
+ * commands, so a plugin newer than the CLI a user installed calls commands that
+ * do not exist yet.
+ */
+const CLI_MANIFEST = "packages/cli/package.json";
+const versions = new Set([
+  ...PLUGINS.map(plugin => baseVersion(current[plugin.directory].version)),
+  baseVersion(readJson(CLI_MANIFEST).version)
+]);
 if (versions.size > 1) {
-  failures.push(`the plugins must share one version; found ${[...versions].sort().join(", ")}`);
+  failures.push(
+    `the CLI and both plugins must share one version; found ${[...versions].sort().join(", ")}`
+  );
 }
 
 if (failures.length > 0) {
@@ -121,5 +134,5 @@ if (failures.length > 0) {
   writeFileSync(digestFile, `${JSON.stringify(current, null, 2)}\n`);
   console.log(`Stamped ${PLUGINS.length} plugins at version ${[...versions][0]}.`);
 } else {
-  console.log(`Plugin release check passed for ${PLUGINS.length} plugins at version ${[...versions][0]}.`);
+  console.log(`Release check passed: CLI and ${PLUGINS.length} plugins at version ${[...versions][0]}.`);
 }

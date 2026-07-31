@@ -112,7 +112,7 @@ Spinal Plug 不取代宿主记忆，也不覆盖用户自己写的内容。它�
 
 ### 01 / 安装客户端
 
-已发布 tag 后，客户端是一个零依赖单文件：
+客户端是一个零依赖单文件（tag 发布后可用）：
 
 ```bash
 npm install -g @spinal-plug/cli

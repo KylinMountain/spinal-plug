@@ -29,24 +29,29 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
       - run: pnpm build:release
-      - name: Check the tag against the package version
+      - name: Check the tag against the repository version
+        # `pnpm check:plugins` already holds the CLI and both plugins to one
+        # version, so comparing the tag against the built manifest pins all three:
+        # a tag names one release of the whole client, not of one artifact.
         run: |
           tag="${GITHUB_REF_NAME#v}"
           version="$(node -p "require('./release/npm/package.json').version")"
           if [ "$tag" != "$version" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match @spinal-plug/cli@$version" >&2
+            echo "Tag $GITHUB_REF_NAME does not match version $version" >&2
             exit 1
           fi
+      # Trusted publishing (OIDC), not a token. npm is retiring 2FA-bypass
+      # tokens: they lose account management in August 2026 and direct publishing
+      # around January 2027. OIDC needs no stored credential at all — the runner
+      # exchanges a short-lived, workflow-scoped identity — and it requires npm
+      # >= 11.5.1, which Node 22 does not ship.
+      - run: npm install -g npm@latest
       - name: Publish to npm
         if: ${{ !contains(github.ref_name, '-') }}
-        run: npm publish ./release/npm --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish ./release/npm --access public
       - name: Publish a prerelease to npm
         if: ${{ contains(github.ref_name, '-') }}
-        run: npm publish ./release/npm --access public --provenance --tag next
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish ./release/npm --access public --tag next
       - name: Attach the bundle to the GitHub Release
         run: gh release create "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --generate-notes --verify-tag || gh release upload "$GITHUB_REF_NAME" ./release/npm/spinal-plug.mjs --clobber
         env:

@@ -29,11 +29,24 @@ pnpm build:release
 ```
 
 Builds the publishable client into `release/npm/`: one dependency-free bundle
-plus a generated manifest. Pushing a `v*` tag runs the same build in
-`.github/workflows/release.yml`, publishes `@spinal-plug/cli`, and attaches the
-bundle to the GitHub Release. The tag must match `packages/cli/package.json`'s
-version. Internal `@spinal-plug/*` packages stay unpublished: bundling resolves
-them, so the published package declares no runtime dependencies.
+plus a generated manifest. Internal `@spinal-plug/*` packages stay unpublished —
+bundling resolves them, so the published package declares no runtime
+dependencies.
+
+A tag names one release of the whole client. The CLI and both plugins share a
+version (`pnpm check:plugins` enforces it), and pushing `v<that version>` runs
+the same build in `.github/workflows/release.yml`, publishes `@spinal-plug/cli`,
+and attaches the bundle to the GitHub Release; the plugins need no publish step
+because this repository is their marketplace. A tag that disagrees with the
+version fails before anything is published.
+
+Publishing uses npm trusted publishing (OIDC): no stored credential, and none to
+rotate. npm is retiring 2FA-bypass tokens — account management in August 2026,
+direct publishing around January 2027 — so a token is the path that expires. OIDC
+needs npm >= 11.5.1, which the workflow installs because Node 22 does not ship
+it. The trust relationship lives in the package's npm settings and can only be
+configured on a package that exists, so the first release of a new package is
+published by hand with 2FA.
 
 `pnpm verify` is the default pre-PR gate. It validates repository knowledge,
 architecture boundaries, types, builds, and tests. Space bindings and server
