@@ -27,10 +27,12 @@ Candidates are not active memory. They remain reviewable until explicitly promot
 
 The local cache is an implementation detail. Never tell the user to upload a database file. Do not write into another host's memory storage from here: native projections belong to that host's own adapter.
 
-Use these defaults unless the environment overrides them:
+Every command below inlines its own default for the local cache, because most hosts run each shell command in a fresh process: an `export` from an earlier command would be gone, and the path would expand to nothing. Do not replace those expansions with a bare variable.
 
 ```bash
-export SPINAL_PLUG_DB_PATH="${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}"
+# The local cache, as each command below spells it. An environment that sets
+# SPINAL_PLUG_DB_PATH wins; otherwise this is the path.
+# "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}"
 # Never set SPINAL_PLUG_DEVICE_ID yourself. The CLI reads this device's
 # credential from ~/.spinal-plug/device.env, and a hand-written id overrides it
 # with an identity an authenticated endpoint will reject.
@@ -53,7 +55,7 @@ If the host set `SPINAL_PLUG_BIN`, use that value everywhere this skill writes `
 For `boot`, "加载记忆", or at the start of work on a connected project, run:
 
 ```bash
-spinal-plug boot "$SPINAL_PLUG_DB_PATH" .
+spinal-plug boot "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .
 ```
 
 Report the short boot sequence and treat its contents — including any ACTIVE PROJECT HANDOFF block — as active context for this session. `Mind Capsule` currently means a project-scope context projection, not model weights or hidden state.
@@ -67,12 +69,12 @@ Bind a directory only after the user chooses one of four answers. There is no ho
 ```bash
 # The suggested default: a Git repository becomes a Project Space named after
 # the repository; a non-Git folder becomes an archive named after the folder.
-spinal-plug connect "$SPINAL_PLUG_DB_PATH" .
+spinal-plug connect "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .
 
 # Or one of the explicit modes.
-spinal-plug connect "$SPINAL_PLUG_DB_PATH" . general
-spinal-plug connect "$SPINAL_PLUG_DB_PATH" . archive "<archive name>"
-spinal-plug connect "$SPINAL_PLUG_DB_PATH" . link <space-id> "<name>"
+spinal-plug connect "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . general
+spinal-plug connect "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . archive "<archive name>"
+spinal-plug connect "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . link <space-id> "<name>"
 ```
 
 "Remain unlinked" is a valid fourth answer: run nothing and continue without project memory. The binding is remembered under `~/.spinal-plug/projects/`, device-local; the project directory is never written to. Report the selected name and type, not implementation paths.
@@ -88,25 +90,25 @@ For `share`, "共享记忆", or "上传当前项目记忆", first inspect the cu
 
 Never retain raw transcripts, temporary task progress, secrets, access tokens, or code facts that must be re-verified.
 
-Before sharing, run `spinal-plug keys "$SPINAL_PLUG_DB_PATH" .` and classify each fact against the registry: reuse an existing key with `--key <semantic-key>` when one fits (the deterministic compiler merges and disputes by key), and only mint a new kebab-case key (optional `namespace:` prefix) when nothing does. Free-form key naming diverges across hosts; classification keeps cross-device memory coherent.
+Before sharing, run `spinal-plug keys "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .` and classify each fact against the registry: reuse an existing key with `--key <semantic-key>` when one fits (the deterministic compiler merges and disputes by key), and only mint a new kebab-case key (optional `namespace:` prefix) when nothing does. Free-form key naming diverges across hosts; classification keeps cross-device memory coherent.
 
-If `spinal-plug status "$SPINAL_PLUG_DB_PATH" .` shows `activeMemories: 0` and `candidateMemories: 0`, the memory chamber is empty: do not stop at "nothing to share" — generate the project's first memories from the current session using the same four kinds and quality bar. Stage uncertain facts with `spinal-plug remember "$SPINAL_PLUG_DB_PATH" . <kind> --candidate "<statement>"` (reviewable candidates, never active memory), then tell the user they await review.
+If `spinal-plug status "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .` shows `activeMemories: 0` and `candidateMemories: 0`, the memory chamber is empty: do not stop at "nothing to share" — generate the project's first memories from the current session using the same four kinds and quality bar. Stage uncertain facts with `spinal-plug remember "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . <kind> --candidate "<statement>"` (reviewable candidates, never active memory), then tell the user they await review.
 
 If no durable learning exists even after review, say so and do not write memory. Otherwise publish each concise fact:
 
 ```bash
-spinal-plug share "$SPINAL_PLUG_DB_PATH" . <kind> --url "$SPINAL_PLUG_SYNC_URL" "<durable statement>"
+spinal-plug share "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . <kind> --url "$SPINAL_PLUG_SYNC_URL" "<durable statement>"
 ```
 
 With `SPINAL_PLUG_SYNC_URL` unset the share is recorded locally only — that is the default, not an error. Report what was shared and why it is durable. The selection step is internal behavior of **共享记忆**, not a separate user-facing command.
 
 ## Sync
 
-For `sync`, "同步记忆", or "下载记忆", fetch and list what arrived (with no endpoint configured this targets the local development server at 127.0.0.1:8787 — if nothing is listening there, stay in local mode instead of retrying — running an endpoint is a deployment decision, not something this skill can start):
+For `sync`, "同步记忆", or "下载记忆", fetch and list what arrived. With no endpoint configured this targets the local development server at 127.0.0.1:8787. Unlike publishing, a fetch does not degrade quietly: an unreachable endpoint exits non-zero with `fetch failed`, which in local mode is the expected outcome and not a fault to report as one — that is what the `||` below turns into a plain sentence. Do not retry it, and do not offer to start an endpoint; running one is a deployment decision:
 
 ```bash
-spinal-plug fetch "$SPINAL_PLUG_DB_PATH" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}"
-spinal-plug preview "$SPINAL_PLUG_DB_PATH" .
+spinal-plug fetch "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . "${SPINAL_PLUG_SYNC_URL:-http://127.0.0.1:8787}" || echo "no endpoint answered; staying in local mode"
+spinal-plug preview "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .
 ```
 
 Summarize each fetched update by kind, source and status. Do not ask the user for confirmation or selection. Required tombstones are applied during fetch.
@@ -114,29 +116,29 @@ Summarize each fetched update by kind, source and status. Do not ask the user fo
 Automatically apply all fetched updates (no `--host` here: this host has no native projection to refresh):
 
 ```bash
-spinal-plug apply "$SPINAL_PLUG_DB_PATH" . --all
+spinal-plug apply "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . --all
 ```
 
 After applying updates, immediately retrieve the latest work handoff by running:
 
 ```bash
-spinal-plug handoff "$SPINAL_PLUG_DB_PATH" . --latest || true
+spinal-plug handoff "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . --latest || true
 ```
 
-If the handoff command returns a JSON object containing a handoff, present its contents (completed work, open tasks, blockers, and next action) to the user as the current active task context for this session. Then run `spinal-plug boot "$SPINAL_PLUG_DB_PATH" .` so the applied memory is loaded into the current context.
+If the handoff command returns a JSON object containing a handoff, present its contents (completed work, open tasks, blockers, and next action) to the user as the current active task context for this session. Then run `spinal-plug boot "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .` so the applied memory is loaded into the current context.
 
 ## Review candidates
 
 For "查看候选记忆", run:
 
 ```bash
-spinal-plug list "$SPINAL_PLUG_DB_PATH" . --candidates
+spinal-plug list "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . --candidates
 ```
 
 Show concise statements and source provenance. Do not promote automatically. If the user explicitly accepts a candidate, run:
 
 ```bash
-spinal-plug promote "$SPINAL_PLUG_DB_PATH" . <memory-id>
+spinal-plug promote "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . <memory-id>
 ```
 
 ## Project handoff
@@ -146,7 +148,7 @@ A handoff is work state — what is done, what is left, what to do next — and 
 Only the **latest** handoff reaches a boot context. A new one therefore replaces the previous one there, so read it first and carry forward what is still open:
 
 ```bash
-spinal-plug handoff "$SPINAL_PLUG_DB_PATH" . --latest
+spinal-plug handoff "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . --latest
 ```
 
 Keep its unresolved `openTasks` and `blockers`, drop what this session finished, and add what this session opened. Dropping a task that is still open removes it from every future boot. The parent link is recorded automatically; `--list` shows the full chain when the history matters.
@@ -163,7 +165,7 @@ Omit a field that has no content. Never fill one with a placeholder like `"none"
 Pass the JSON through a quoted heredoc. Do not inline it in single quotes: one apostrophe in the content, as in `the agent's context`, breaks the argument and can swallow the rest of the command line.
 
 ```bash
-spinal-plug handoff "$SPINAL_PLUG_DB_PATH" . "$(cat <<'JSON'
+spinal-plug handoff "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" . "$(cat <<'JSON'
 {"title":"…","summary":"…","completed":["…"],"openTasks":["…"],"nextAction":"…","artifactRefs":["branch:…"]}
 JSON
 )"
@@ -176,7 +178,7 @@ Confirm what was handed off. A handoff is work-state context, never durable memo
 For `status` or "记忆状态", run:
 
 ```bash
-spinal-plug status "$SPINAL_PLUG_DB_PATH" .
+spinal-plug status "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" .
 ```
 
 Report the Space type and name, durable-memory count, and pending shared events. If unlinked, offer: create an archive, use General, link an existing archive, or remain unlinked.

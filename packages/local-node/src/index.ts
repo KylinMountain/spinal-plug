@@ -13,6 +13,7 @@ import type {
   SyncCursor,
   SyncPreview
 } from "@spinal-plug/protocol";
+import { isMemoryKind } from "@spinal-plug/protocol";
 import { sqliteSchema } from "./schema.js";
 
 export interface CandidateMemoryDraft {
@@ -669,6 +670,12 @@ export class SpinalPlugDatabase {
         const payload = event.payload as Partial<MemoryPayload>;
         if (!payload.memoryId || !payload.kind || !payload.title || !payload.statement) {
           throw new Error(`Invalid remote memory event payload: ${event.eventId}`);
+        }
+        // The kind is an enum in the protocol schema but arrived as a free
+        // string here, and host projections interpolate it into their own
+        // formats. Reject it at the boundary rather than downstream.
+        if (!isMemoryKind(payload.kind)) {
+          throw new Error(`Unsupported memory kind in remote event ${event.eventId}: ${payload.kind}`);
         }
         const existing = this.getMemory(payload.memoryId);
         const memory: MemoryRecord = {

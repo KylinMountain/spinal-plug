@@ -14,9 +14,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      # No version here: action-setup reads packageManager from package.json,
+      # and a hardcoded copy that drifts from it fails the run outright.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22

@@ -52,7 +52,9 @@ test("materialize writes hyphen-prefixed managed files and index links", t => {
   const managed = readFileSync(managedPath, "utf8");
   assert.match(managed, /^---\n/);
   assert.match(managed, /name: spinal-plug-decision-mem_test/);
-  assert.match(managed, /modified: 2026-07-30T02:17:53\.512Z/);
+  // Values that come from a record are quoted so their content cannot open a key.
+  assert.match(managed, /modified: "2026-07-30T02:17:53\.512Z"/);
+  assert.match(managed, /type: "decision"/);
   assert.match(managed, /# Keep the CLI local-first/);
 
   const index = readFileSync(result.filePath, "utf8");
@@ -136,17 +138,27 @@ test("the frontmatter name is as injective as the filename", t => {
   assert.equal(new Set(names).size, memories.length, "each managed file must declare its own name");
 });
 
-test("a hostile memory id cannot break out of the frontmatter block", t => {
+test("no record field can break out of the frontmatter block", t => {
   const fixture = createFixture(t);
-  const hostile = { ...baseMemory, memoryId: 'mem_x"\ndescription: injected\n', title: "Hostile" };
+  // Every one of these reaches YAML, and a record can be minted on another
+  // device: the id and kind are interpolated into `name`, and kind and
+  // updatedAt are values of their own keys.
+  const hostile = [
+    { ...baseMemory, memoryId: 'mem_a"\ninjected: id\n', title: "Hostile id" },
+    { ...baseMemory, memoryId: "mem_b", kind: "decision\ninjected: kind\nfoo: bar", title: "Hostile kind" },
+    { ...baseMemory, memoryId: "mem_c", updatedAt: "2026-07-30\ninjected: modified", title: "Hostile timestamp" }
+  ];
 
-  new ClaudeAutoMemoryMaterializer({ homeDirectory: fixture.home }).materialize(fixture.project, [hostile]);
+  new ClaudeAutoMemoryMaterializer({ homeDirectory: fixture.home }).materialize(fixture.project, hostile);
 
-  const [file] = readdirSync(fixture.memoryDir).filter(name => name.startsWith("spinal-plug-managed-"));
-  const content = readFileSync(join(fixture.memoryDir, file), "utf8");
-  const frontmatter = content.slice(0, content.indexOf("\n---", 4));
-  assert.doesNotMatch(frontmatter, /\ndescription: injected/, "an id must not inject frontmatter keys");
-  assert.match(frontmatter, /\nname: spinal-plug-decision-[A-Za-z0-9_-]+$/m);
+  const files = readdirSync(fixture.memoryDir).filter(name => name.startsWith("spinal-plug-managed-"));
+  assert.equal(files.length, hostile.length);
+  for (const file of files) {
+    const content = readFileSync(join(fixture.memoryDir, file), "utf8");
+    const frontmatter = content.slice(0, content.indexOf("\n---", 4));
+    assert.doesNotMatch(frontmatter, /\n *injected:/, `${file} must not gain a key from record content`);
+    assert.doesNotMatch(frontmatter, /\n *foo:/, `${file} must not gain a key from record content`);
+  }
 });
 
 test("distinct ids that sanitize alike still get distinct managed files", t => {

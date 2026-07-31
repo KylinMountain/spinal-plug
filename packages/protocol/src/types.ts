@@ -6,7 +6,14 @@ export type DeviceStatus = "active" | "revoked";
 
 export type RepositoryProvider = "github" | "gitlab" | "generic-git";
 
-export type MemoryKind = "directive" | "decision" | "context" | "reference";
+/** The kinds a memory may take. Runtime-checkable so remote payloads can be validated, not just typed. */
+export const MEMORY_KINDS = ["directive", "decision", "context", "reference"] as const;
+
+export type MemoryKind = (typeof MEMORY_KINDS)[number];
+
+export function isMemoryKind(value: unknown): value is MemoryKind {
+  return typeof value === "string" && (MEMORY_KINDS as readonly string[]).includes(value);
+}
 
 export type MemoryStatus = "candidate" | "active" | "superseded" | "deleted" | "disputed";
 

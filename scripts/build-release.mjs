@@ -63,7 +63,10 @@ const publishManifest = {
   files: [bundleName],
   // Only the Node floor is a consumer constraint; the pnpm floor is a
   // development one and engine-strict installs would enforce it on users.
-  engines: { node: (cliManifest.engines ?? rootManifest.engines).node },
+  // Resolve the field, not the object: an `engines` block on the CLI manifest
+  // that omits `node` would otherwise drop the floor from the published package
+  // and let the install succeed on a Node without `node:sqlite`.
+  engines: { node: cliManifest.engines?.node ?? rootManifest.engines.node },
   keywords: ["agent", "memory", "claude-code", "codex", "skill", "mcp"],
   repository: { type: "git", url: "git+https://github.com/KylinMountain/spinal-plug.git" },
   homepage: "https://github.com/KylinMountain/spinal-plug#readme",

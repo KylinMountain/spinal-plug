@@ -132,7 +132,16 @@ function managedFilename(memoryId: string): string {
  * Sanitizing also keeps a remote-minted id from breaking the YAML block.
  */
 function managedName(kind: string, memoryId: string): string {
-  return `spinal-plug-${kind}-${managedStem(memoryId)}`;
+  return `spinal-plug-${kind.replace(/[^a-zA-Z0-9_-]/g, "-")}-${managedStem(memoryId)}`;
+}
+
+/**
+ * Every frontmatter value here comes from a record that may have been minted
+ * elsewhere. A double-quoted YAML scalar is JSON-compatible, so quoting keeps a
+ * newline in any of them from opening a key of the attacker's choosing.
+ */
+function yamlScalar(value: string): string {
+  return JSON.stringify(value);
 }
 
 export interface ClaudeMemoryMaterializationResult {
@@ -182,8 +191,8 @@ export class ClaudeAutoMemoryMaterializer {
         `description: "Managed by Spinal Plug; do not edit."`,
         "metadata:",
         "  node_type: memory",
-        `  type: ${memory.kind}`,
-        memory.updatedAt ? `  modified: ${memory.updatedAt}` : null,
+        `  type: ${yamlScalar(memory.kind)}`,
+        memory.updatedAt ? `  modified: ${yamlScalar(memory.updatedAt)}` : null,
         "---",
         ""
       ].filter(Boolean).join("\n");

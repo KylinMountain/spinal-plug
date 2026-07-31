@@ -18,8 +18,7 @@ import {
   SecretMaterialError
 } from "@spinal-plug/local-node";
 import type { MindCapsule, MemoryKind, ProjectSpace } from "@spinal-plug/protocol";
-
-const MEMORY_KINDS: ReadonlySet<string> = new Set(["directive", "decision", "context", "reference"]);
+import { MEMORY_KINDS } from "@spinal-plug/protocol";
 const RUNTIME_ENTITIES: ReadonlySet<string> = new Set([
   "mind-core",
   "role",
@@ -171,7 +170,7 @@ function digest(value: string): string {
 }
 
 function requireMemoryKind(value: string): MemoryKind {
-  if (!MEMORY_KINDS.has(value)) {
+  if (!(MEMORY_KINDS as readonly string[]).includes(value)) {
     throw new Error(`Unsupported memory kind: ${value}`);
   }
   return value as MemoryKind;
