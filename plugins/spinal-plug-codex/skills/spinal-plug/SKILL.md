@@ -130,10 +130,23 @@ spinal-plug promote "$SPINAL_PLUG_DB_PATH" . <memory-id>
 
 ## Project handoff
 
-When the user asks to hand off ongoing work, create a handoff with completed work, decisions, open tasks, blockers, next action, and artifact references. Do not place temporary progress into durable memory.
+When the user asks to hand off ongoing work, create a handoff with completed work, decisions, open tasks, blockers, next action, and artifact references. Do not place temporary progress into durable memory, and store a reference instead of any secret value.
+
+Only the latest handoff reaches a boot context, so read it first and carry forward what is still open:
 
 ```bash
-spinal-plug handoff "$SPINAL_PLUG_DB_PATH" . '<json object with title, completed, decisions, openTasks, blockers, nextAction, artifactRefs>'
+spinal-plug handoff "$SPINAL_PLUG_DB_PATH" . --latest
+```
+
+Keep its unresolved `openTasks` and `blockers`, drop what this session finished, and add what this session opened; a still-open task that is dropped disappears from every future boot. `--list` shows the full chain.
+
+Include `title` plus a one-line `summary` — the boot context prints it directly under the title. Omit a field with no content rather than filling it with a placeholder like `"none"`, which is stored verbatim and reappears as a real blocker. Prefix artifact references with their type (`branch:`, `commit:`, `file:`, `space:`). Pass the JSON through a quoted heredoc, not an inline single-quoted string, so an apostrophe in the content cannot break the argument:
+
+```bash
+spinal-plug handoff "$SPINAL_PLUG_DB_PATH" . "$(cat <<'JSON'
+{"title":"…","summary":"…","completed":["…"],"openTasks":["…"],"nextAction":"…","artifactRefs":["branch:…"]}
+JSON
+)"
 ```
 
 Use concise project facts. Confirm what will be handed off. An approved handoff is published on the next Stop lifecycle boundary; another linked Agent receives the latest handoff in its next boot context after synchronization.
