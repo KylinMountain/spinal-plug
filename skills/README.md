@@ -15,7 +15,7 @@ itself, so the binary must be resolvable before the skill is useful. From a
 tagged release, the client is a single dependency-free file on npm:
 
 ```bash
-npm install -g @spinal-plug/cli
+npm install -g spinal-plug
 spinal-plug --help
 ```
 

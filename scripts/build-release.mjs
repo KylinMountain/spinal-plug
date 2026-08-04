@@ -32,6 +32,7 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(releaseVersion)) {
 const entryPoint = resolve(repositoryRoot, "packages/cli/dist/index.js");
 const outputDirectory = resolve(repositoryRoot, "release/npm");
 const bundleName = "spinal-plug.mjs";
+const PUBLISHED_NAME = "spinal-plug";
 
 if (!existsSync(entryPoint)) {
   console.error(`Missing ${entryPoint}. Run pnpm build first.`);
@@ -69,7 +70,11 @@ if (/from\s*["']@spinal-plug\//.test(bundle)) {
 
 const rootManifest = JSON.parse(readFileSync(resolve(repositoryRoot, "package.json"), "utf8"));
 const publishManifest = {
-  name: cliManifest.name,
+  // Published as `spinal-plug`, not as the workspace package name: what a user
+  // installs should be what a user types, and the binary is `spinal-plug`. The
+  // workspace keeps `@spinal-plug/cli` because that name is a dependency of the
+  // private server repository, which resolves it over `link:`.
+  name: PUBLISHED_NAME,
   version: releaseVersion,
   description: "Spinal Plug client: durable, project-scoped agent memory with local-first storage and selective sync.",
   type: "module",
