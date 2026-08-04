@@ -15,7 +15,7 @@ itself, so the binary must be resolvable before the skill is useful. From a
 tagged release, the client is a single dependency-free file on npm:
 
 ```bash
-npm install -g @spinal-plug/cli
+npm install -g spinal-plug
 spinal-plug --help
 ```
 
@@ -25,7 +25,8 @@ developing the client:
 ```bash
 pnpm install
 pnpm build
-pnpm -C packages/cli link --global   # exposes `spinal-plug` on PATH
+pnpm -C packages/cli link --global   # exposes `spinal-plug` on PATH; conflicts
+                                     # with a globally installed copy, so use one
 ```
 
 If you would rather not link globally, point the host at the built entry point

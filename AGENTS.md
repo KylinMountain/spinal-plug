@@ -34,13 +34,16 @@ bundling resolves them, so the published package declares no runtime
 dependencies.
 
 A tag is the whole release, and nothing in the repository records a version.
-Pushing `v0.2.0` makes `release.yml` build the client at 0.2.0, publish
-`@spinal-plug/cli`, and attach the bundle to the GitHub Release — no file is
+Pushing `v0.2.0` makes `release.yml` build the client at 0.2.0, publish it to npm
+as `spinal-plug`, and attach the bundle to the GitHub Release — no file is
 edited, no pull request bumps anything, and no commit goes back to a branch. The
 plugins need no publish step because this repository is their marketplace, and no
 version because each host versions a plugin by the commit it fetched.
 `packages/cli/package.json` keeps a `0.0.0-dev` placeholder so a local
-`pnpm build:release` produces something honestly unreleasable.
+`pnpm build:release` produces something honestly unreleasable. It also keeps the
+workspace name `@spinal-plug/cli`, which the private server repository depends on
+over `link:`; the published name is `spinal-plug`, set in `build-release.mjs`,
+because what a user installs should be what a user types.
 
 Publishing uses npm trusted publishing (OIDC): no stored credential, and none to
 rotate. npm is retiring 2FA-bypass tokens — account management in August 2026,

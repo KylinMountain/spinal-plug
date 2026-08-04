@@ -115,7 +115,7 @@ Spinal Plug 不取代宿主记忆，也不覆盖用户自己写的内容。它�
 客户端是一个零依赖单文件（tag 发布后可用）：
 
 ```bash
-npm install -g @spinal-plug/cli
+npm install -g spinal-plug
 ```
 
 从源码构建（首个 tag 之前唯一的方式，也是开发客户端时用的方式）：

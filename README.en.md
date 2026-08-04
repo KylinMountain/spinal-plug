@@ -115,7 +115,7 @@ Spinal Plug does not replace host memory or overwrite user-owned content. It onl
 From a tagged release the client is a single dependency-free file:
 
 ```bash
-npm install -g @spinal-plug/cli
+npm install -g spinal-plug
 ```
 
 From source — the only option before the first tag, and what to use while

@@ -1,7 +1,7 @@
 name: Release
 
 # The tag is the version, and nothing in the repository records it. `v0.2.0`
-# publishes @spinal-plug/cli@0.2.0 and attaches the same bundle to the GitHub
+# publishes spinal-plug@0.2.0 to npm and attaches the same bundle to the GitHub
 # Release: no version is edited by hand, no pull request bumps one, and no commit
 # goes back to a branch. npm reads the version from the tarball this job builds,
 # and both plugin hosts version a plugin by the commit they fetched — so a tag is
