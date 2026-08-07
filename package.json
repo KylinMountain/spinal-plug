@@ -11,8 +11,9 @@
   "scripts": {
     "build": "pnpm -r build",
     "build:release": "pnpm build && node scripts/build-release.mjs",
-    "check": "pnpm check:repository && pnpm check:architecture && pnpm check:plugins",
+    "check": "pnpm check:repository && pnpm check:architecture && pnpm check:plugins && pnpm check:docs",
     "check:architecture": "node scripts/check-architecture.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
     "check:plugins": "node scripts/check-plugins.mjs",
     "check:repository": "node scripts/check-repository.mjs",
     "typecheck": "pnpm -r typecheck",
