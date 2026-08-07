@@ -146,6 +146,8 @@ export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
 
 只需要配置端点。设备身份来自 `~/.spinal-plug/device.env`（由认证端点签发）；手工设置 `SPINAL_PLUG_DEVICE_ID` 会覆盖该凭据，请求将被端点拒绝。
 
+目标是认证 Control Plane 时，先在本机跑一次 `spinal-plug login --url <endpoint>`：它打印一次性验证码并打开浏览器批准页（`--no-open` 只打印 URL），批准后把设备凭据写入 `~/.spinal-plug/device.env`(0600)，后续命令自动读取，token 不会回显。本地开发模式无需 login;login 返回 404 说明目标不是认证 Control Plane。
+
 公开客户端**不包含** Control Plane 服务。请接入或部署兼容同步端点。
 
 ### 04 / 在宿主中使用
