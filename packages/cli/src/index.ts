@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, resolve, sep } from "node:path";
 import { ClaudeAutoMemoryImporter, ClaudeAutoMemoryMaterializer, ClaudeCodeAdapter } from "@spinal-plug/adapter-claude-code";
@@ -79,6 +80,10 @@ Commands are grouped by who runs them. If you are a person at a terminal,
 the first group is the whole tool, and a host plugin usually runs it for you.
 
 For you:
+  login [--url <url>] [--no-open]                    Authorize this device on an authenticated Control Plane:
+                                                     prints a one-time code, opens the approval page, and stores
+                                                     the credential in ~/.spinal-plug/device.env. Local
+                                                     development mode needs no login
   connect <db-path> <project-dir> [mode]           Bind this directory; without a mode a Git repository
                                                      becomes a project and anything else an archive.
                                                      Modes: general | archive [name] | link <space-id> [name]
@@ -827,6 +832,134 @@ async function runStdinHook(args: string[]): Promise<void> {
   await executeHook(host, event, rawDbPath, cwd, prompt, sessionId, output, toolFilePath);
 }
 
+/** Every device-authorization request gets one hard ceiling; a hung endpoint must not park the terminal. */
+const LOGIN_REQUEST_TIMEOUT_MS = 30_000;
+
+interface DeviceAuthResponse {
+  readonly status: number;
+  readonly body: Record<string, unknown>;
+}
+
+/** One JSON POST against a Control Plane's unauthenticated device-authorization surface. */
+async function postDeviceAuth(endpoint: string, path: string, body?: Record<string, unknown>): Promise<DeviceAuthResponse> {
+  const response = await fetch(`${endpoint}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(LOGIN_REQUEST_TIMEOUT_MS)
+  });
+  const text = await response.text();
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    // A proxy or framework error page is not JSON; the HTTP status still says enough.
+  }
+  return { status: response.status, body: parsed };
+}
+
+/**
+ * Best-effort browser open. The approval URL is printed regardless, so a
+ * missing opener (headless Linux, no $DISPLAY) degrades to copy-and-paste —
+ * never an error, and nothing to await.
+ */
+function openInBrowser(url: string): void {
+  const [command, commandArgs] = process.platform === "darwin"
+    ? ["open", [url]]
+    : process.platform === "win32"
+      ? ["cmd", ["/c", "start", "", url]]
+      : ["xdg-open", [url]];
+  const child = spawn(command, commandArgs, { detached: true, stdio: "ignore" });
+  child.on("error", () => { /* the printed URL is the fallback */ });
+  child.unref();
+}
+
+/** The file loadDeviceEnvFile() reads back on every later invocation. */
+function deviceEnvFilePath(): string {
+  const home = process.env.SPINAL_PLUG_HOME?.trim() || homedir();
+  return process.env.SPINAL_PLUG_ENV_FILE ?? resolve(home, ".spinal-plug", "device.env");
+}
+
+/**
+ * OAuth-style device authorization against an authenticated Control Plane:
+ * start a flow, show the one-time code, poll until the user approves in the
+ * browser, then store the issued credential where every other command already
+ * looks for it. The token is written to the file and never printed.
+ */
+async function runLogin(args: string[]): Promise<void> {
+  const { flags, rest } = takeLeadingFlags(args, { "--url": "value", "--no-open": "boolean" });
+  if (rest.length > 0) {
+    throw new Error("Usage: spinal-plug login [--url <endpoint>] [--no-open]");
+  }
+  const explicitUrl = typeof flags["--url"] === "string" ? flags["--url"].trim() : "";
+  const endpoint = (explicitUrl || resolveSyncEndpoint().url).replace(/\/+$/, "");
+
+  const started = await postDeviceAuth(endpoint, "/v1/device-auth/start");
+  if (started.status === 404) {
+    throw new Error(
+      `${endpoint} is not an authenticated Control Plane: it has no device authorization flow. ` +
+      "Local development mode needs no login — point SPINAL_PLUG_SYNC_URL at the endpoint and work as-is."
+    );
+  }
+  if (started.status < 200 || started.status >= 300) {
+    const detail = typeof started.body.error === "string" ? `: ${started.body.error}` : "";
+    throw new Error(`Device authorization failed to start (HTTP ${started.status})${detail}`);
+  }
+  const deviceCode = started.body.deviceCode;
+  const userCode = started.body.userCode;
+  if (typeof deviceCode !== "string" || typeof userCode !== "string") {
+    throw new Error("The endpoint's device authorization response was malformed.");
+  }
+  const expiresIn = typeof started.body.expiresIn === "number" ? started.body.expiresIn : 600;
+  const interval = Math.max(0, typeof started.body.interval === "number" ? started.body.interval : 3);
+
+  // Prompts go to stderr so stdout stays a machine-readable result.
+  const approvalUrl = `${endpoint}/palace#/approve?code=${encodeURIComponent(userCode)}`;
+  console.error(`Device authorization code: ${userCode}`);
+  console.error(`Approve this device at: ${approvalUrl}`);
+  if (flags["--no-open"] !== true) openInBrowser(approvalUrl);
+
+  // Small margin past expiresIn: the server's own expiry is the real deadline,
+  // this clock only keeps a slightly-late last poll from hanging forever.
+  const deadline = Date.now() + expiresIn * 1000 + 15_000;
+  for (;;) {
+    if (Date.now() > deadline) {
+      throw new Error("Device authorization expired before it was approved; run login again.");
+    }
+    const polled = await postDeviceAuth(endpoint, "/v1/device-auth/poll", { deviceCode });
+    if (polled.status === 200 && polled.body.status === "pending") {
+      await new Promise(resolveWait => setTimeout(resolveWait, interval * 1000));
+      continue;
+    }
+    if (
+      polled.status === 200 && polled.body.status === "approved"
+      && typeof polled.body.token === "string"
+      && typeof polled.body.deviceId === "string"
+      && typeof polled.body.accountId === "string"
+    ) {
+      const envFile = deviceEnvFilePath();
+      ensureParentDir(envFile);
+      // One credential per device: the file is rewritten wholesale, never merged.
+      writeFileSync(envFile, [
+        `SPINAL_PLUG_DEVICE_ID=${polled.body.deviceId}`,
+        `SPINAL_PLUG_DEVICE_TOKEN=${polled.body.token}`,
+        `SPINAL_PLUG_SYNC_URL=${endpoint}`,
+        ""
+      ].join("\n"));
+      chmodSync(envFile, 0o600);
+      console.log(JSON.stringify({
+        device: { deviceId: polled.body.deviceId, accountId: polled.body.accountId },
+        endpoint,
+        envFile
+      }, null, 2));
+      return;
+    }
+    const code = typeof polled.body.code === "string" ? ` (${polled.body.code})` : "";
+    const reason = typeof polled.body.error === "string" ? polled.body.error : `HTTP ${polled.status}`;
+    throw new Error(`Device authorization failed${code}: ${reason}`);
+  }
+}
+
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   if (!command || command === "--help" || command === "-h") {
@@ -836,6 +969,13 @@ async function main(): Promise<void> {
 
   if (command === "hook-stdin") {
     await runStdinHook(args);
+    return;
+  }
+  if (command === "login") {
+    // Device authorization is per-machine setup, not project work: it takes no
+    // db-path or project directory, and the credential it stores is what the
+    // project commands read back.
+    await runLogin(args);
     return;
   }
   const [rawDbPath, projectDir, ...rest] = args;

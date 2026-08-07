@@ -43,6 +43,8 @@ Endpoint resolution is three-tier: a configured `SPINAL_PLUG_SYNC_URL` wins; oth
 
 To sync between devices or agents, export `SPINAL_PLUG_SYNC_URL` pointing at a compatible sync endpoint. Local mode is complete on its own; an endpoint is only needed for cross-device or cross-agent sync.
 
+If that endpoint is an authenticated Control Plane — one that rejects unauthenticated sync — the user first authorizes this device once at their own terminal: `spinal-plug login --url "<control-plane-endpoint>"` prints a one-time code and opens the approval page in a browser (`--no-open` prints the URL instead). Approving stores the credential in `~/.spinal-plug/device.env` (owner-only), which every later command reads; the token is never printed. Local development mode needs no login, and a 404 from `login` means the target is not an authenticated Control Plane. This is a person-at-the-terminal flow — never run it unattended on the user's behalf.
+
 Then use `/spinal-plug:share` to publish local memory, or `/spinal-plug:sync` to download central updates.
 
 Claude Code's native Auto Memory extraction is asynchronous. Spinal Plug's SessionStart, prompt, PostToolUse and Stop hooks opportunistically publish completed native topic files; a missing or unavailable sync endpoint never blocks Claude Code. Use `/spinal-plug:share` when an immediate upload is required.

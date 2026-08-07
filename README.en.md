@@ -147,6 +147,8 @@ export SPINAL_PLUG_SYNC_URL="https://your-sync-endpoint.example"
 
 The endpoint is the only thing to configure. This device's identity comes from `~/.spinal-plug/device.env`, which an authenticated endpoint issues; setting `SPINAL_PLUG_DEVICE_ID` by hand overrides that credential and the endpoint rejects the request.
 
+When the endpoint is an authenticated Control Plane, run `spinal-plug login --url <endpoint>` once on this device first: it prints a one-time code and opens the approval page in a browser (`--no-open` prints the URL instead), and approving writes the device credential to `~/.spinal-plug/device.env` (mode 0600), which every later command picks up — the token is never echoed. Local development mode needs no login, and a 404 from `login` means the target is not an authenticated Control Plane.
+
 The public client does **not** include a Control Plane service. Connect or deploy a compatible endpoint separately.
 
 ### 04 / Use it in a host

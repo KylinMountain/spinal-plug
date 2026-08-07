@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -1188,4 +1188,98 @@ test("a handoff is minted with the credential's device, so a push is not rejecte
     ["dev_credential"],
     "every event names the credential's device, not the hostname"
   );
+});
+
+/** A device-authorization stub: start once, then script each poll's answer. */
+function deviceAuthServer(pollAnswers: Array<Record<string, unknown> | { http: number; body: Record<string, unknown> }>) {
+  const seen = { starts: 0, polls: 0 };
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      if (request.method === "POST" && request.url === "/v1/device-auth/start") {
+        seen.starts += 1;
+        response.writeHead(201, { "content-type": "application/json" });
+        // interval: 0 keeps the test fast; the client honors the server's pacing.
+        response.end(JSON.stringify({ deviceCode: "mpdc_test", userCode: "ABCD-1234", expiresIn: 600, interval: 0 }));
+        return;
+      }
+      if (request.method === "POST" && request.url === "/v1/device-auth/poll") {
+        assert.equal((JSON.parse(body || "{}") as { deviceCode?: string }).deviceCode, "mpdc_test");
+        const answer = pollAnswers[Math.min(seen.polls, pollAnswers.length - 1)];
+        seen.polls += 1;
+        const wrapped = typeof (answer as { http?: unknown }).http === "number";
+        const http = wrapped ? (answer as { http: number }).http : 200;
+        const payload = wrapped ? (answer as { body: Record<string, unknown> }).body : answer;
+        response.writeHead(http, { "content-type": "application/json" });
+        response.end(JSON.stringify(payload));
+        return;
+      }
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "Not found" }));
+    });
+  });
+  return { server, seen };
+}
+
+test("login stores the approved credential in device.env without echoing the token", async t => {
+  const { server, seen } = deviceAuthServer([
+    { status: "pending" },
+    { status: "approved", token: "spt_secret_token", deviceId: "dev_approved", accountId: "acc_owner" }
+  ]);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const workspace = createWorkspace();
+  const result = expectSuccess(await runCliAsync(workspace, ["login", "--no-open", "--url", url]));
+  const output = JSON.parse(result.stdout) as {
+    device: { deviceId: string; accountId: string };
+    endpoint: string;
+    envFile: string;
+  };
+  assert.deepEqual(output.device, { deviceId: "dev_approved", accountId: "acc_owner" });
+  assert.equal(output.endpoint, url);
+  assert.ok(!result.stdout.includes("spt_secret_token"), "the token never reaches the terminal");
+  assert.ok(seen.polls >= 2, "a pending answer is polled through, not mistaken for failure");
+
+  const envFile = join(workspace.home, ".spinal-plug", "device.env");
+  assert.equal(output.envFile, envFile);
+  const content = readFileSync(envFile, "utf8");
+  assert.match(content, /^SPINAL_PLUG_DEVICE_ID=dev_approved$/m);
+  assert.match(content, /^SPINAL_PLUG_DEVICE_TOKEN=spt_secret_token$/m);
+  assert.match(content, new RegExp(`^SPINAL_PLUG_SYNC_URL=${url.replace(/[.:/]/g, "\\$&")}$`, "m"));
+  assert.equal(statSync(envFile).mode & 0o777, 0o600, "the credential file is owner-only");
+});
+
+test("login against an endpoint without device authorization explains the mismatch", async t => {
+  const server = createServer((_request, response) => {
+    response.writeHead(404, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: "Not found" }));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const workspace = createWorkspace();
+  const result = await runCliAsync(workspace, ["login", "--no-open", "--url", url]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /not an authenticated Control Plane/);
+  assert.match(result.stderr, /no login/);
+});
+
+test("login fails clearly when the authorization expires before approval", async t => {
+  const { server } = deviceAuthServer([
+    { http: 400, body: { error: "Device authorization expired; run login again.", code: "device_auth_expired" } }
+  ]);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const workspace = createWorkspace();
+  const result = await runCliAsync(workspace, ["login", "--no-open", "--url", url]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /device_auth_expired/);
+  assert.match(result.stderr, /expired/);
 });

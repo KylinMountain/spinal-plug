@@ -22,6 +22,7 @@ Candidates are not active memory. They remain reviewable until explicitly promot
 | `share` / "共享记忆" / "上传记忆" | 手动补充或审核当前会话中值得长期保留的项目经验。正常会话会在结束时自动生成候选。 |
 | `sync` / "同步记忆" / "下载记忆" | Pull central memory and write it into Codex's reserved native-memory record. |
 | `status` / "记忆状态" | Show linked Space, local memory, and pending synchronization. |
+| "登录" / "授权这台设备" | Authorize this device on an authenticated Control Plane (the user approves in a browser). |
 | "查看候选记忆" / "确认候选" | 审查自动提取候选，只有用户明确同意时才晋升为 active memory。 |
 | "交接工作" / "保存进度" / "让另一个 Agent 继续" | 创建 Project Handoff，不把临时工作状态写成长期记忆。 |
 
@@ -90,6 +91,16 @@ spinal-plug project "${SPINAL_PLUG_DB_PATH:-$HOME/.spinal-plug/spinal-plug.db}" 
 ```
 
 Report what was shared and why it is durable. The selection step is internal behavior of **共享记忆**, not a separate user-facing command.
+
+## Login (only against an authenticated Control Plane)
+
+Local mode and the local development server never need this. When the user points this device at an authenticated Control Plane — one that rejects unauthenticated sync — the device must be authorized once, by the user at their own terminal:
+
+```bash
+spinal-plug login --url "<control-plane-endpoint>"
+```
+
+The command prints a one-time code and opens the approval page in a browser (`--no-open` prints the URL instead). Approving stores the device credential in `~/.spinal-plug/device.env` (owner-only), and every later command picks it up from there — never set `SPINAL_PLUG_DEVICE_ID` by hand. The token is never printed. Re-run it when the credential is revoked or the endpoint changes; a 404 there means the target is not an authenticated Control Plane. Do not run this on the user's behalf unattended: a person must see the code and approve it.
 
 ## Sync
 
